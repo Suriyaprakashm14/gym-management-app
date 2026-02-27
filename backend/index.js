@@ -1,0 +1,145 @@
+require('dotenv').config();
+const express = require('express');
+const cors = require('cors');
+const mongoose = require('mongoose');
+const helmet = require('helmet');
+const rateLimit = require('express-rate-limit');
+const { attachRequestContext } = require('./middleware/requestContext');
+const { requestLogger } = require('./middleware/requestLogger');
+const { responseEnvelope } = require('./middleware/responseEnvelope');
+const { notFoundHandler } = require('./middleware/notFoundHandler');
+const { errorHandler } = require('./middleware/errorHandler');
+const { ok } = require('./utils/apiResponse');
+
+// Legacy routes (for backward compatibility)
+const memberRoutes = require('./routes/memberRoutes');
+const detailsRoutes = require('./routes/membersPersonalDetailsRoutes');
+const legacyPriceRoutes = require('./routes/membershipPriceRoutes');
+const legacyPaymentRoutes = require('./routes/paymentRoutes');
+const authRoutes = require('./routes/authRoutes');
+const attendanceRoutes = require('./routes/attendanceRoutes');
+const fingerprintRoutes = require('./routes/fingerprintRoutes');
+
+// RBAC routes
+const gymRoutes = require('./routes/gymRoutes');
+const branchRoutes = require('./routes/branchRoutes');
+const membershipPriceRoutes = require('./routes/membershipPriceRoutes');
+const paymentRoutes = require('./routes/paymentRoutes');
+
+const port = process.env.PORT || 3000;
+const MONGODB_URI = process.env.MONGODB_URI || 'mongodb+srv://Gym:Gym%4029@cluster0.3301njo.mongodb.net/Gym';
+
+
+
+const app = express();
+
+app.disable('x-powered-by');
+app.set('trust proxy', 1);
+
+app.use(
+  helmet({
+    crossOriginResourcePolicy: false,
+  })
+);
+app.use(cors());
+app.use(express.json());
+app.use(express.urlencoded({ limit: '10mb', extended: true }));
+app.use(attachRequestContext);
+app.use(requestLogger);
+app.use(responseEnvelope);
+
+const globalRateLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 300,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: {
+    success: false,
+    error: {
+      code: 'RATE_LIMITED',
+      message: 'Too many requests, please try again later.',
+      details: null,
+    },
+  },
+});
+
+const authRateLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 40,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: {
+    success: false,
+    error: {
+      code: 'AUTH_RATE_LIMITED',
+      message: 'Too many authentication attempts, please try again later.',
+      details: null,
+    },
+  },
+});
+
+app.use('/api', globalRateLimiter);
+
+
+mongoose.connect(MONGODB_URI)
+  .then(() => console.log('Connected to MongoDB'))
+  .catch((error) => console.error('Error connecting:', error));
+
+// Unified API routes (primary)
+app.use('/api/auth', authRateLimiter, authRoutes);
+app.use('/api/gyms', gymRoutes);
+app.use('/api/branches', branchRoutes);
+app.use('/api/members', memberRoutes);
+app.use('/api/membership-prices', membershipPriceRoutes);
+app.use('/api/payments', paymentRoutes);
+app.use('/api/attendance', attendanceRoutes);
+app.use('/api/fingerprints', fingerprintRoutes);
+app.use('/api/members-personal-details', detailsRoutes);
+
+// Legacy API routes (for backward compatibility)
+app.use('/api/legacy/auth', authRoutes);
+app.use('/api/legacy/members', memberRoutes);
+app.use('/api/legacy/details', detailsRoutes);
+app.use('/api/legacy/membership-prices', legacyPriceRoutes);
+app.use('/api/legacy/payments', legacyPaymentRoutes);
+app.use('/api/legacy/attendance', attendanceRoutes);
+app.use('/api/legacy/fingerprint', fingerprintRoutes);
+
+// Health endpoint for uptime checks and deployment verification
+app.get('/api/health', (req, res) => {
+  return ok(res, {
+    status: 'ok',
+    service: 'gym-backend',
+    timestamp: new Date().toISOString(),
+    requestId: req.requestId,
+  });
+});
+
+// Schedule daily membership expiry check
+const Member = require('./models/member');
+
+// Function to check expired memberships
+const checkExpiredMemberships = async () => {
+  try {
+    console.log('Running daily membership expiry check...');
+    const result = await Member.checkAndUpdateExpiredMemberships();
+    console.log('Membership expiry check completed:', result.message);
+  } catch (error) {
+    console.error('Error in scheduled membership expiry check:', error);
+  }
+};
+
+// Run immediately on startup
+checkExpiredMemberships();
+
+// Schedule to run daily at midnight
+setInterval(checkExpiredMemberships, 24 * 60 * 60 * 1000); // 24 hours in milliseconds
+
+// 404 and error handling should be last in middleware chain
+app.use(notFoundHandler);
+app.use(errorHandler);
+
+app.listen(port, () => {
+  console.log(`App listening at http://localhost:${port}`);
+  console.log('Daily membership expiry check scheduled');
+});

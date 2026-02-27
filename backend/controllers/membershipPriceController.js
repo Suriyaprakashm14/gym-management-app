@@ -1,0 +1,147 @@
+const MembershipPrice = require('../models/membershipPrice');
+
+
+exports.create = async (req, res) => {
+  try {
+    // Check authorization - only gym_owner can create membership prices (admin cannot access gym internal operations)
+    const allowedRoles = ['gym_owner'];
+    if (!allowedRoles.includes(req.user.role)) {
+      return res.status(403).json({ error: "Access denied. Only gym_owner can create membership prices. Admin cannot access gym internal operations." });
+    }
+
+    // Validate required fields
+    if (!req.body.type || !req.body.price || !req.body.description || !req.body.duration) {
+      return res.status(400).json({ 
+        error: "Missing required fields. Please provide: type, price, description, and duration." 
+      });
+    }
+
+    // For gym owners, add gymId to the membership price
+    if (req.user.role === 'gym_owner' && req.user.gymId) {
+      req.body.gymId = req.user.gymId;
+    }
+
+    // Check if price already exists for this gym and type
+    const existingPrice = await MembershipPrice.findOne({ 
+      gymId: req.body.gymId, 
+      type: req.body.type 
+    });
+    
+    if (existingPrice) {
+      return res.status(400).json({ 
+        error: `Membership price for type "${req.body.type}" already exists for this gym. Use update instead.`,
+        existingPrice: {
+          id: existingPrice._id,
+          type: existingPrice.type,
+          price: existingPrice.price
+        }
+      });
+    }
+
+    const price = new MembershipPrice(req.body);
+    await price.save();
+    res.status(201).json(price);
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+};
+
+exports.getAll = async (req, res) => {
+  try {
+    // Check authorization - only gym_owner and manager can view pricing (admin cannot access gym internal operations)
+    const allowedRoles = ['gym_owner', 'manager'];
+    if (!allowedRoles.includes(req.user.role)) {
+      return res.status(403).json({ error: "Access denied. Only gym_owner or manager can view membership prices. Admin cannot access gym internal operations." });
+    }
+
+    let filter = {};
+
+    // Gym owners can only see prices from their gym
+    if (req.user.role === 'gym_owner' && req.user.gymId) {
+      filter.gymId = req.user.gymId;
+    }
+
+    // Managers can only see prices from their gym (via gymId from branch)
+    if (req.user.role === 'manager' && req.user.gymId) {
+      filter.gymId = req.user.gymId;
+    }
+
+    // Gym owners and managers see only their gym's prices (filter applied)
+    const prices = await MembershipPrice.find(filter);
+    res.json(prices);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
+exports.getOne = async (req, res) => {
+  try {
+    // Check authorization - only gym_owner and manager can view individual pricing (admin cannot access gym internal operations)
+    const allowedRoles = ['gym_owner', 'manager'];
+    if (!allowedRoles.includes(req.user.role)) {
+      return res.status(403).json({ error: "Access denied. Only gym_owner or manager can view membership prices. Admin cannot access gym internal operations." });
+    }
+
+    const price = await MembershipPrice.findById(req.params.id);
+    if (!price) return res.status(404).json({ error: 'Membership Price not found' });
+
+    // Check access permissions
+    if (req.user.role === 'gym_owner' && price.gymId !== req.user.gymId) {
+      return res.status(403).json({ error: 'Access denied: Not authorized to view this membership price' });
+    }
+
+    if (req.user.role === 'manager' && price.gymId !== req.user.gymId) {
+      return res.status(403).json({ error: 'Access denied: Not authorized to view this membership price' });
+    }
+
+    res.json(price);
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+};
+
+exports.update = async (req, res) => {
+  try {
+    // Check authorization - only gym_owner can update membership prices (admin cannot access gym internal operations)
+    const allowedRoles = ['gym_owner'];
+    if (!allowedRoles.includes(req.user.role)) {
+      return res.status(403).json({ error: "Access denied. Only gym_owner can update membership prices. Admin cannot access gym internal operations." });
+    }
+
+    const price = await MembershipPrice.findById(req.params.id);
+    if (!price) return res.status(404).json({ error: 'Membership Price not found' });
+
+    // Check access permissions - gym owners can only update their own gym's prices
+    if (req.user.role === 'gym_owner' && price.gymId !== req.user.gymId) {
+      return res.status(403).json({ error: 'Access denied: Not authorized to update this membership price' });
+    }
+
+    const updatedPrice = await MembershipPrice.findByIdAndUpdate(req.params.id, req.body, { new: true });
+    res.json(updatedPrice);
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+};
+
+exports.remove = async (req, res) => {
+  try {
+    // Check authorization - only gym_owner can delete membership prices (admin cannot access gym internal operations)
+    const allowedRoles = ['gym_owner'];
+    if (!allowedRoles.includes(req.user.role)) {
+      return res.status(403).json({ error: "Access denied. Only gym_owner can delete membership prices. Admin cannot access gym internal operations." });
+    }
+
+    const price = await MembershipPrice.findById(req.params.id);
+    if (!price) return res.status(404).json({ error: 'Membership Price not found' });
+
+    // Check access permissions - gym owners can only delete their own gym's prices
+    if (req.user.role === 'gym_owner' && price.gymId !== req.user.gymId) {
+      return res.status(403).json({ error: 'Access denied: Not authorized to delete this membership price' });
+    }
+
+    await MembershipPrice.findByIdAndDelete(req.params.id);
+    res.json({ message: 'Membership price deleted' });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+};
