@@ -21,7 +21,8 @@ export default function OverduePaymentsCard({ items }: OverduePaymentsCardProps)
       style={{
         borderRadius: 14,
         background: '#FFFFFF',
-        border: '1px solid #f0f0f0',
+        border: 'none',
+        boxShadow: '0 1px 4px rgba(0,0,0,0.08)',
       }}
       styles={{ body: { height: 300 } }}
     >
