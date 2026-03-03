@@ -27,7 +27,7 @@ const membershipPriceRoutes = require('./routes/membershipPriceRoutes');
 const paymentRoutes = require('./routes/paymentRoutes');
 
 const port = process.env.PORT || 3000;
-const MONGODB_URI = process.env.MONGODB_URI || 'mongodb+srv://Gym:Gym%4029@cluster0.3301njo.mongodb.net/Gym';
+const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://localhost:27017/';
 
 
 
