@@ -1,8 +1,8 @@
 'use client';
 
-import React, { useState } from 'react';
+import React from 'react';
 import { usePathname, useRouter } from 'next/navigation';
-import Sidebar from '../sidebars/Sidebar';
+import Link from 'next/link';
 import type { MenuProps } from 'antd';
 import {
   Layout,
@@ -27,7 +27,6 @@ import {
   PrinterOutlined,
   ExportOutlined,
 } from '@ant-design/icons';
-import ProtectedRoute from '../auth/ProtectedRoute';
 
 const { Header, Content } = Layout;
 const { Title, Text } = Typography;
@@ -43,7 +42,6 @@ const MembersLayout: React.FC<MembersLayoutProps> = ({
 }) => {
   const pathname = usePathname();
   const router = useRouter();
-  const [collapsed, setCollapsed] = useState(false);
 
   const getCurrentTab = () => {
     if (pathname === '/members') return 'members';
@@ -92,18 +90,8 @@ const MembersLayout: React.FC<MembersLayoutProps> = ({
   };
 
   return (
-    <ProtectedRoute allowedRoles={['gym_owner', 'manager']}>
-      <Layout style={{ minHeight: '100vh' }}>
-        {/* Sidebar */}
-        <Sidebar collapsed={collapsed} onCollapse={setCollapsed} />
-
-      {/* Main Content Area */}
-      <Layout style={{ 
-        background: '#f0f2f5',
-        marginLeft: collapsed ? 80 : 200,
-        transition: 'margin-left 0.2s'
-      }}>
-        {/* Header */}
+    <Layout style={{ minHeight: '100vh', background: '#f0f2f5' }}>
+      {/* Header */}
         <Header
           style={{
             background: '#fff',
@@ -177,64 +165,45 @@ const MembersLayout: React.FC<MembersLayoutProps> = ({
           </div>
         </div>
 
-        {/* Action Bar */}
-        {currentTab === 'members' && (
-          <div
-            style={{
-              background: '#fff',
-              padding: '16px 24px',
-              borderBottom: '1px solid #f0f0f0',
-              display: 'flex',
-              justifyContent: 'space-between',
-              alignItems: 'center',
-              position: 'sticky',
-              top: 144,
-              zIndex: 997,
-            }}
-          >
-            <Space size={12}>
+      {/* Action Bar */}
+      {currentTab === 'members' && (
+        <div
+          style={{
+            background: '#fff',
+            padding: '16px 24px',
+            borderBottom: '1px solid #f0f0f0',
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            position: 'sticky',
+            top: 144,
+            zIndex: 997,
+          }}
+        >
+          <Space size={12}>
+            <Link href="/members/add-members">
               <Button
                 type="primary"
                 icon={<PlusOutlined />}
-                style={{
-                  backgroundColor: '#13c2c2',
-                  borderColor: '#13c2c2',
-                }}
+                style={{ backgroundColor: '#13c2c2', borderColor: '#13c2c2' }}
               >
                 ADD MEMBER
               </Button>
+            </Link>
+            <Button icon={<UserAddOutlined />} style={{ backgroundColor: '#595959', borderColor: '#595959', color: '#fff' }}>
+              INVITE
+            </Button>
+          </Space>
+          <Space size={12}>
+            <Button icon={<PrinterOutlined />}>PRINT</Button>
+            <Button icon={<ExportOutlined />}>EXPORT</Button>
+          </Space>
+        </div>
+      )}
 
-              <Button
-                icon={<UserAddOutlined />}
-                style={{
-                  backgroundColor: '#595959',
-                  borderColor: '#595959',
-                  color: '#fff',
-                }}
-              >
-                INVITE
-              </Button>
-            </Space>
-
-            <Space size={12}>
-              <Button icon={<PrinterOutlined />}>PRINT</Button>
-              <Button icon={<ExportOutlined />}>EXPORT</Button>
-            </Space>
-          </div>
-        )}
-
-        {/* Main Page Content */}
-        <Content
-          style={{
-            background: '#f0f2f5',
-            minHeight: 'calc(100vh - 80px)',
-          }}
-        >
-          {children}
-        </Content>
-      </Layout>
-      </Layout>
-    </ProtectedRoute>
+      {/* Main Page Content */}
+      <Content style={{ background: '#f0f2f5', minHeight: 'calc(100vh - 80px)' }}>{children}</Content>
+    </Layout>
   );
 };
 

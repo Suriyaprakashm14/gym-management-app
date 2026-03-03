@@ -21,7 +21,7 @@ export default function HomePage() {
       fontSize: '18px',
       color: '#666'
     }}>
-      Redirecting to dashboard...
+      Redirecting...
     </div>
   );
 }

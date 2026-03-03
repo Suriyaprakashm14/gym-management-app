@@ -162,6 +162,9 @@ exports.getMemberPaymentSummary = async (req, res) => {
 // Branch Manager Analytics - Branch Revenue and Pending Payments
 exports.getGymOwnerAnalytics = async (req, res) => {
   try {
+    // Only gym_owner and manager are supported here. Including admin without
+    // a dedicated code path leaves key collections (e.g. payments) undefined
+    // and leads to runtime errors when calling .reduce().
     const allowedRoles = ['gym_owner', 'manager'];
     if (!allowedRoles.includes(req.user.role)) {
       return res.status(403).json({ error: "Access denied. Only gym_owner and manager can view analytics." });
@@ -416,7 +419,7 @@ exports.getBranchManagerAnalytics = async (req, res) => {
 // Gym Owner Overdue Analytics - All Branches
 exports.getGymOwnerOverdueAnalytics = async (req, res) => {
   try {
-    const allowedRoles = ['gym_owner'];
+    const allowedRoles = ['gym_owner', 'admin'];
     if (!allowedRoles.includes(req.user.role)) {
       return res.status(403).json({ error: "Access denied. Only gym_owner can view gym overdue analytics." });
     }

@@ -37,10 +37,27 @@ export const fetchMembers = createAsyncThunk(
   async (params: Record<string, string | number> | undefined, { rejectWithValue }) => {
     try {
       const res = await api.members.getAll(params);
-      // API shape: direct array response
-      const list: any[] = Array.isArray(res) ? res : [];
+      // API shape: usually a plain array; also tolerate { data: [] } or { members: [] }
+      const listSource: any =
+        Array.isArray(res)
+          ? res
+          : Array.isArray((res as any)?.data)
+            ? (res as any).data
+            : Array.isArray((res as any)?.members)
+              ? (res as any).members
+              : [];
+      const list: any[] = Array.isArray(listSource) ? listSource : [];
+
+      if (process.env.NODE_ENV !== 'production') {
+        // eslint-disable-next-line no-console
+        console.debug('[members] fetchMembers resolved', { count: list.length });
+      }
       return list as Member[];
     } catch (err: any) {
+      if (process.env.NODE_ENV !== 'production') {
+        // eslint-disable-next-line no-console
+        console.error('[members] fetchMembers failed', err);
+      }
       return rejectWithValue(err?.message || 'Failed to fetch members');
     }
   }
@@ -82,7 +99,8 @@ const membersSlice = createSlice({
     });
     builder.addCase(fetchMembers.fulfilled, (state, action: PayloadAction<Member[]>) => {
       state.loading = false;
-      state.members = action.payload.map((m: any) => ({
+      const incoming = Array.isArray(action.payload) ? action.payload : [];
+      state.members = incoming.map((m: any) => ({
         id: m.id || m._id,
         name: m.name || [m.firstName, m.lastName].filter(Boolean).join(' '),
         firstName: m.firstName, // Preserve original firstName

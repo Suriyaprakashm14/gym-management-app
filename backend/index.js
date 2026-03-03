@@ -81,8 +81,16 @@ const authRateLimiter = rateLimit({
 app.use('/api', globalRateLimiter);
 
 
-mongoose.connect(MONGODB_URI)
-  .then(() => console.log('Connected to MongoDB'))
+const { runSeed } = require('./scripts/seedDev');
+
+mongoose
+  .connect(MONGODB_URI, {
+    serverSelectionTimeoutMS: 3000,
+  })
+  .then(() => {
+    console.log('Connected to MongoDB');
+    return runSeed();
+  })
   .catch((error) => console.error('Error connecting:', error));
 
 // Unified API routes (primary)
@@ -121,6 +129,10 @@ const Member = require('./models/member');
 // Function to check expired memberships
 const checkExpiredMemberships = async () => {
   try {
+    if (mongoose.connection.readyState !== 1) {
+      console.warn('Skipping membership expiry check: MongoDB is not connected');
+      return;
+    }
     console.log('Running daily membership expiry check...');
     const result = await Member.checkAndUpdateExpiredMemberships();
     console.log('Membership expiry check completed:', result.message);

@@ -28,10 +28,30 @@ export const fetchMembershipPrices = createAsyncThunk(
   'membershipPrices/fetchAll',
   async (_, { rejectWithValue }) => {
     try {
-      const res = await api.request('/membership-prices');
-      const list: any[] = res?.items || res || [];
+      const res = await api.membershipPrices.getAll();
+      // API shape: usually plain array; also tolerate { data: [] } or { items: [] }
+      const listSource: any =
+        Array.isArray(res)
+          ? res
+          : Array.isArray((res as any)?.data)
+            ? (res as any).data
+            : Array.isArray((res as any)?.items)
+              ? (res as any).items
+              : [];
+      const list: any[] = Array.isArray(listSource) ? listSource : [];
+
+      if (process.env.NODE_ENV !== 'production') {
+        // eslint-disable-next-line no-console
+        console.debug('[membershipPrices] fetchMembershipPrices resolved', {
+          count: list.length,
+        });
+      }
       return list as MembershipPrice[];
     } catch (err: any) {
+      if (process.env.NODE_ENV !== 'production') {
+        // eslint-disable-next-line no-console
+        console.error('[membershipPrices] fetchMembershipPrices failed', err);
+      }
       return rejectWithValue(err?.message || 'Failed to fetch membership prices');
     }
   }
@@ -50,7 +70,8 @@ const membershipsSlice = createSlice({
       fetchMembershipPrices.fulfilled,
       (state, action: PayloadAction<MembershipPrice[]>) => {
         state.loading = false;
-        state.items = action.payload.map((p: any) => ({
+        const incoming = Array.isArray(action.payload) ? action.payload : [];
+        state.items = incoming.map((p: any) => ({
           id: p.id || p._id,
           name: p.name,
           description: p.description,
