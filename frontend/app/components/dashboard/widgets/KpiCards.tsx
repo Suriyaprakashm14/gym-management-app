@@ -1,13 +1,6 @@
 'use client';
 
-import { Card, Col, Row, Statistic } from 'antd';
-import {
-  BankOutlined,
-  DollarCircleOutlined,
-  TeamOutlined,
-  TransactionOutlined,
-  WalletOutlined,
-} from '@ant-design/icons';
+import { Col, Row } from 'antd';
 import type { CSSProperties } from 'react';
 import { KpiSummary } from '../types';
 
@@ -16,73 +9,118 @@ interface KpiCardsProps {
   showBranchStats: boolean;
 }
 
-const cardStyle: CSSProperties = {
-  borderRadius: 14,
-  background: '#FFFFFF',
-  border: '1px solid #f0f0f0',
-  transition: 'transform 180ms ease, box-shadow 180ms ease',
+const totalSum = (kpis: KpiSummary) => {
+  const sum = kpis.revenueThisMonth + kpis.pendingAmount + kpis.overdueAmount;
+  return sum > 0 ? sum : 1;
 };
 
-const valueStyle = { color: '#1f1f1f' };
+function CircularPaymentCard({
+  label,
+  value,
+  color,
+  percent,
+}: {
+  label: string;
+  value: number;
+  color: string;
+  percent: number;
+}) {
+  const size = 120;
+  const stroke = 10;
+  const r = (size - stroke) / 2;
+  const circumference = 2 * Math.PI * r;
+  const filled = Math.min(100, Math.max(0, percent));
+  const strokeDashoffset = circumference - (filled / 100) * circumference;
 
-export default function KpiCards({ kpis, showBranchStats }: KpiCardsProps) {
-  const items = [
-    {
-      key: 'revenue',
-      title: 'Revenue This Month',
-      value: kpis.revenueThisMonth,
-      prefix: <DollarCircleOutlined style={{ color: '#22C55E' }} />,
-    },
-    {
-      key: 'pending',
-      title: 'Pending Amount',
-      value: kpis.pendingAmount,
-      prefix: <WalletOutlined style={{ color: '#F59E0B' }} />,
-    },
-    {
-      key: 'overdue',
-      title: 'Overdue Amount',
-      value: kpis.overdueAmount,
-      prefix: <BankOutlined style={{ color: '#EF4444' }} />,
-    },
-    {
-      key: 'members',
-      title: 'Total Members',
-      value: kpis.totalMembers,
-      prefix: <TeamOutlined style={{ color: '#FFFFFF' }} />,
-    },
-    {
-      key: 'payments',
-      title: 'Total Payments',
-      value: kpis.totalPayments,
-      prefix: <TransactionOutlined style={{ color: '#FFFFFF' }} />,
-    },
-  ];
-
-  if (showBranchStats) {
-    items.push({
-      key: 'branches',
-      title: 'Total Branches',
-      value: kpis.totalBranches || 0,
-      prefix: <BankOutlined style={{ color: '#FFFFFF' }} />,
-    });
-  }
+  const cardStyle: CSSProperties = {
+    padding: 20,
+    textAlign: 'center',
+    background: 'transparent',
+    border: 'none',
+    boxShadow: 'none',
+  };
 
   return (
-    <Row gutter={[16, 16]}>
-      {items.map((item) => (
-        <Col key={item.key} xs={24} sm={12} lg={8}>
-          <Card style={cardStyle} styles={{ body: { padding: 16 } }}>
-            <Statistic
-              title={<span style={{ color: '#666666' }}>{item.title}</span>}
-              value={item.value}
-              precision={item.key.includes('amount') || item.key === 'revenue' || item.key === 'pending' ? 2 : 0}
-              prefix={item.prefix}
-              valueStyle={valueStyle}
-            />
-          </Card>
+    <div style={cardStyle}>
+      <div style={{ position: 'relative', display: 'inline-block', marginBottom: 12 }}>
+        <svg width={size} height={size} style={{ transform: 'rotate(-90deg)' }}>
+          <circle
+            cx={size / 2}
+            cy={size / 2}
+            r={r}
+            fill="none"
+            stroke="rgba(255,255,255,0.25)"
+            strokeWidth={stroke}
+          />
+          <circle
+            cx={size / 2}
+            cy={size / 2}
+            r={r}
+            fill="none"
+            stroke={color}
+            strokeWidth={stroke}
+            strokeDasharray={circumference}
+            strokeDashoffset={strokeDashoffset}
+            strokeLinecap="round"
+            style={{ transition: 'stroke-dashoffset 0.4s ease' }}
+          />
+        </svg>
+        <div
+          style={{
+            position: 'absolute',
+            top: '50%',
+            left: '50%',
+            transform: 'translate(-50%, -50%)',
+            fontWeight: 700,
+            fontSize: '1.1rem',
+            color: '#fff',
+          }}
+        >
+          ${value.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+        </div>
+      </div>
+      <div style={{ fontSize: '0.875rem', color: 'rgba(255,255,255,0.9)', fontWeight: 500 }}>{label}</div>
+    </div>
+  );
+}
+
+export default function KpiCards({ kpis, showBranchStats }: KpiCardsProps) {
+  const sum = totalSum(kpis);
+  const revenuePercent = (kpis.revenueThisMonth / sum) * 100;
+  const pendingPercent = (kpis.pendingAmount / sum) * 100;
+  const overduePercent = (kpis.overdueAmount / sum) * 100;
+
+  return (
+    <div style={{ marginBottom: 8 }}>
+      <div style={{ fontSize: '0.875rem', color: 'rgba(255,255,255,0.9)', marginBottom: 12 }}>
+        Payments this month
+      </div>
+      <Row gutter={[16, 16]}>
+        <Col xs={24} sm={8}>
+          <CircularPaymentCard
+            label="Revenue This Month"
+            value={kpis.pendingAmount}
+            color="#3B82F6"
+            percent={pendingPercent}
+          />
         </Col>
-      ))}
-    </Row>
+        <Col xs={24} sm={8}>
+          <CircularPaymentCard
+            label="Pending Amount"
+            value={kpis.revenueThisMonth}
+            color="#22C55E"
+            percent={revenuePercent}
+          />
+        </Col>
+        <Col xs={24} sm={8}>
+          <CircularPaymentCard
+            label="Overdue Amount"
+            value={kpis.overdueAmount}
+            color="#F59E0B"
+            percent={overduePercent}
+          />
+        </Col>
+      </Row>
+    </div>
   );
 }
