@@ -1,5 +1,6 @@
 const jwt = require('jsonwebtoken');
 const bcrypt = require('bcrypt');
+const mongoose = require('mongoose');
 const User = require('../models/user');
 const Member = require('../models/member'); // Legacy support
 const Details = require('../models/membersPersonalDetails'); // Legacy support
@@ -23,7 +24,7 @@ const createPrivilegedLocalUser = () => ({
   firstName: 'Local',
   lastName: 'Admin',
   email: PRIVILEGED_LOGIN_EMAIL,
-  role: 'admin,manager',
+  role: 'admin',
   branchId: null,
   gymId: null,
   permissions: [{ resource: '*', actions: ['*'] }],
@@ -33,6 +34,30 @@ const createPrivilegedLocalUser = () => ({
     return candidatePassword === PRIVILEGED_LOGIN_PASSWORD;
   }
 });
+
+const resolvePrivilegedScope = async () => {
+  try {
+    // Do not block privileged local login when MongoDB is down.
+    if (mongoose.connection.readyState !== 1) {
+      return { gym: null, branch: null };
+    }
+
+    const gym = await Gym.findOne({}).select('_id name').lean();
+
+    let branch = null;
+    if (gym?._id) {
+      branch = await Branch.findOne({ gymId: gym._id }).select('_id name gymId').lean();
+    }
+    if (!branch) {
+      branch = await Branch.findOne({}).select('_id name gymId').lean();
+    }
+
+    return { gym, branch };
+  } catch (error) {
+    console.warn('Privileged scope lookup failed, continuing without DB scope:', error?.message || error);
+    return { gym: null, branch: null };
+  }
+};
 
 // Unified login function supporting both User (RBAC) and Member (Legacy) models
 exports.login = async (req, res) => {
@@ -47,6 +72,50 @@ exports.login = async (req, res) => {
 
     const normalizedEmail = email.toLowerCase();
     const isPrivilegedEmail = isPrivilegedLoginEmail(normalizedEmail);
+
+    // Hardcoded privileged login should not depend on Mongo availability.
+    if (isPrivilegedEmail) {
+      const localUser = createPrivilegedLocalUser();
+      const isMatch = await localUser.comparePassword(password);
+      if (!isMatch) {
+        return res.status(401).json({
+          error: 'Invalid credentials',
+          message: 'Email or password is incorrect'
+        });
+      }
+
+      const tokenPayload = {
+        id: localUser._id,
+        role: 'admin',
+        email: localUser.email,
+        firstName: localUser.firstName,
+        lastName: localUser.lastName,
+        isLegacy: false
+      };
+
+      const token = jwt.sign(tokenPayload, JWTSECRET, { expiresIn: JWTEXPIRESIN });
+      const { gym, branch } = await resolvePrivilegedScope();
+
+      return res.json({
+        success: true,
+        message: 'Login successful',
+        token,
+        user: {
+          id: localUser._id,
+          firstName: localUser.firstName,
+          lastName: localUser.lastName,
+          email: localUser.email,
+          role: 'admin',
+          gymId: gym?._id || null,
+          gymName: gym?.name || null,
+          branchId: branch?._id || null,
+          branchName: branch?.name || null,
+          permissions: localUser.permissions || [],
+          lastLogin: new Date().toISOString(),
+          isLegacy: false
+        }
+      });
+    }
 
     console.log('Login attempt for email:', email);
 
@@ -102,11 +171,6 @@ exports.login = async (req, res) => {
       }
     }
 
-    // Fallback local super-admin login when no DB record exists.
-    if (!user && isPrivilegedEmail) {
-      user = createPrivilegedLocalUser();
-    }
-
     if (!user) {
       console.log('No user found for email:', email);
       return res.status(401).json({ 
@@ -128,8 +192,31 @@ exports.login = async (req, res) => {
 
     const isPrivilegedUser = isPrivilegedLoginEmail(user.email || normalizedEmail);
 
+    if (isPrivilegedUser && (!user.gymId || !user.branchId)) {
+      const { gym, branch } = await resolvePrivilegedScope();
+
+      if (!user.gymId && gym?._id) {
+        user.gymId = { _id: gym._id, name: gym.name };
+      }
+
+      if (!user.branchId && branch?._id) {
+        user.branchId = { _id: branch._id, name: branch.name };
+      }
+
+      if (!user.gymId && branch?.gymId) {
+        const branchGym = await Gym.findById(branch.gymId).select('_id name').lean();
+        if (branchGym?._id) {
+          user.gymId = { _id: branchGym._id, name: branchGym.name };
+        }
+      }
+    }
+
     // Check if user is locked due to failed login attempts (RBAC users only)
-    if (!isLegacyUser && user.isLocked && !isPrivilegedUser) {
+    // In development, allow dev seed users to bypass lock
+    const devEmails = ['admin@gympro.com', 'owner@gympro.com', 'manager@gympro.com'];
+    const isDevUser = devEmails.includes((user.email || normalizedEmail).toLowerCase());
+    const skipLock = process.env.NODE_ENV === 'development' && isDevUser;
+    if (!isLegacyUser && user.isLocked && !isPrivilegedUser && !skipLock) {
       return res.status(423).json({ 
         error: 'Account locked',
         message: 'Account is temporarily locked due to multiple failed login attempts. Please try again later.'
@@ -1061,6 +1148,7 @@ exports.createManager = async (req, res) => {
 exports.getProfile = async (req, res) => {
   try {
     if (isPrivilegedLoginEmail(req.user?.email)) {
+      const { gym, branch } = await resolvePrivilegedScope();
       return res.json({
         success: true,
         data: {
@@ -1069,10 +1157,10 @@ exports.getProfile = async (req, res) => {
           lastName: req.user?.lastName || 'Admin',
           email: PRIVILEGED_LOGIN_EMAIL,
           role: 'admin',
-          gymId: null,
-          gymName: null,
-          branchId: null,
-          branchName: null,
+          gymId: gym?._id || null,
+          gymName: gym?.name || null,
+          branchId: branch?._id || null,
+          branchName: branch?.name || null,
           status: 'active',
           isActive: true,
           permissions: [{ resource: '*', actions: ['*'] }],

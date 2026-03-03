@@ -2,7 +2,7 @@
 
 import React, { useState } from 'react';
 import { Layout, Menu, Button, Typography, message } from 'antd';
-import { useRouter } from 'next/navigation';
+import { useRouter, usePathname } from 'next/navigation';
 import {
   DashboardOutlined,
   UserOutlined,
@@ -22,6 +22,7 @@ interface SidebarProps {
 
 const Sidebar: React.FC<SidebarProps> = ({ collapsed, onCollapse }) => {
   const router = useRouter();
+  const pathname = usePathname();
   const { user, logout } = useAuth();
   const [logoutLoading, setLogoutLoading] = useState(false);
   
@@ -33,8 +34,12 @@ const Sidebar: React.FC<SidebarProps> = ({ collapsed, onCollapse }) => {
     gymId: 'demo-gym-id'
   };
 
-  // Check if user is gym owner
-  const isGymOwner = currentUser.role === 'gym_owner' || currentUser.role === 'admin';
+  // Normalize role variants from different auth payloads.
+  const normalizedRole = String(currentUser.role || '').toLowerCase().replace(/\s+/g, '_');
+  const isGymOwner =
+    normalizedRole === 'gym_owner' ||
+    normalizedRole === 'owner' ||
+    normalizedRole === 'admin';
 
   const baseMenuItems = [
     {
@@ -148,7 +153,7 @@ const Sidebar: React.FC<SidebarProps> = ({ collapsed, onCollapse }) => {
           theme="dark"
           mode="inline"
           items={menuItems}
-          defaultSelectedKeys={['/dashboard']}
+          selectedKeys={[pathname?.startsWith('/members') ? '/members' : pathname || '/dashboard']}
           onClick={handleClick}
           style={{ border: 'none' }}
         />

@@ -1,6 +1,8 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-const DEFAULT_LOCAL_API_PORT = '3000';
+const DEFAULT_LOCAL_API_PORT = '5000';
 const ENV_API_BASE_URL = process.env.NEXT_PUBLIC_API_URL;
+const DEFAULT_API_TIMEOUT_MS = Number(process.env.NEXT_PUBLIC_API_TIMEOUT_MS || '5000');
+const IS_DEV = process.env.NODE_ENV !== 'production';
 
 const resolveApiBaseUrls = (): string[] => {
   if (ENV_API_BASE_URL) {
@@ -55,52 +57,127 @@ export const api = {
       }
     }
 
-    const config: RequestInit = {
-      ...options,
-      headers: {
-        ...defaultHeaders,
-        ...options.headers,
-      },
-    };
+    // Build headers as a plain object only (never undefined). Some environments
+    // call .reduce on headers; passing undefined or a Headers instance can throw.
+    const headersObj: Record<string, string> = { ...defaultHeaders };
+    if (options.headers != null && typeof options.headers === 'object' && !(options.headers instanceof Headers)) {
+      if (Array.isArray(options.headers)) {
+        options.headers.forEach(([k, v]) => {
+          if (k != null && v != null) headersObj[String(k)] = String(v);
+        });
+      } else {
+        Object.entries(options.headers).forEach(([k, v]) => {
+          if (v != null) headersObj[k] = String(v);
+        });
+      }
+    }
+
+    // Build a minimal RequestInit with only plain values. Do NOT spread options:
+    // some environments (e.g. Next.js / polyfills) iterate init with .reduce()
+    // and throw if any value is undefined or an unexpected type.
+    const method = (options.method != null && typeof options.method === 'string') ? options.method : 'GET';
+    const fetchInit: RequestInit = {};
+
+    fetchInit.method = method;
+
+    // Only attach headers if non-empty
+    if (headersObj && Object.keys(headersObj).length > 0) {
+      fetchInit.headers = headersObj;
+    }
+
+    // Only attach body if truly defined
+    if (typeof options.body !== 'undefined' && options.body !== null) {
+      fetchInit.body = options.body;
+    }
 
     const baseUrls = resolveApiBaseUrls();
+    const urlList: string[] = Array.isArray(baseUrls) && baseUrls.length > 0 ? baseUrls : [api.baseURL];
     let lastError: unknown = null;
 
     try {
-      for (const baseUrl of baseUrls) {
+      for (const baseUrl of urlList) {
         const url = `${baseUrl}${endpoint}`;
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), DEFAULT_API_TIMEOUT_MS);
 
         try {
-          const response = await fetch(url, config);
+          if (IS_DEV) {
+            // eslint-disable-next-line no-console
+            console.debug('[api] request', { url, method });
+          }
+
+          const response = await fetch(url, {
+            ...fetchInit,
+            signal: controller.signal ?? undefined,
+          });
           const contentType = response.headers.get('content-type') || '';
           const isJsonResponse = contentType.includes('application/json');
-          const payload: ApiEnvelope | any = isJsonResponse ? await response.json() : await response.text();
+          const rawPayload: ApiEnvelope | any = isJsonResponse ? await response.json() : await response.text();
 
           if (!response.ok) {
+            if (response.status === 401 && typeof window !== 'undefined') {
+              window.dispatchEvent(new CustomEvent('auth:logout'));
+            }
             const errorMessage =
-              payload?.error?.message ||
-              payload?.message ||
+              rawPayload?.error?.message ||
+              rawPayload?.message ||
               `HTTP error! status: ${response.status}`;
             throw new Error(errorMessage);
           }
 
-          // Standard contract: return payload.data.
-          if (
-            payload &&
-            typeof payload === 'object' &&
-            'success' in payload &&
-            (payload as ApiEnvelope).success === true &&
-            'data' in payload
-          ) {
-            return (payload as ApiEnvelope).data;
+          let payload: any = rawPayload;
+
+          // Normalize common API envelope shapes:
+          // - { success, data }
+          // - { data }
+          if (payload && typeof payload === 'object') {
+            const hasSuccessFlag = 'success' in payload;
+            const hasDataField = 'data' in payload;
+
+            if (hasDataField && (hasSuccessFlag ? (payload as ApiEnvelope).success !== false : true)) {
+              payload = (payload as ApiEnvelope).data;
+            }
           }
+
+          if (IS_DEV) {
+            // eslint-disable-next-line no-console
+            console.debug('[api] response', {
+              url,
+              ok: response.ok,
+              status: response.status,
+              isJsonResponse,
+              typeofPayload: typeof payload,
+            });
+          }
+
+          // If payload is null or undefined, normalize it
+        // Normalize null/undefined safely
+        if (payload == null) {
+          return [];
+        }
+
+        // If API returns array → good
+        if (Array.isArray(payload)) {
           return payload;
+        }
+
+        // If API returns object → return as-is
+        if (typeof payload === 'object') {
+          return payload;
+        }
+
+        // Fallback safety
+        return [];
         } catch (fetchError) {
           lastError = fetchError;
-          const isNetworkError = fetchError instanceof TypeError;
+          const isAbortError =
+            fetchError instanceof DOMException && fetchError.name === 'AbortError';
+          const isNetworkError = fetchError instanceof TypeError || isAbortError;
           if (!isNetworkError) {
             throw fetchError;
           }
+        } finally {
+          clearTimeout(timeoutId);
         }
       }
 
