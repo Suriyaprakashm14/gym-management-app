@@ -81,7 +81,7 @@ const authRateLimiter = rateLimit({
 app.use('/api', globalRateLimiter);
 
 
-const { runSeed } = require('./scripts/seedDev');
+
 
 mongoose
   .connect(MONGODB_URI, {
@@ -89,7 +89,7 @@ mongoose
   })
   .then(() => {
     console.log('Connected to MongoDB');
-    return runSeed();
+    return;
   })
   .catch((error) => console.error('Error connecting:', error));
 
