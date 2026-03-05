@@ -27,7 +27,7 @@ const membershipPriceRoutes = require('./routes/membershipPriceRoutes');
 const paymentRoutes = require('./routes/paymentRoutes');
 
 const port = process.env.PORT || 3000;
-const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://localhost:27017/Gym_app';
+const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://localhost:27017/';
 
 
 
@@ -81,7 +81,7 @@ const authRateLimiter = rateLimit({
 app.use('/api', globalRateLimiter);
 
 
-const { runSeed } = require('./scripts/seedDev');
+
 
 mongoose
   .connect(MONGODB_URI, {
@@ -89,7 +89,7 @@ mongoose
   })
   .then(() => {
     console.log('Connected to MongoDB');
-    return runSeed();
+    return;
   })
   .catch((error) => console.error('Error connecting:', error));
 
