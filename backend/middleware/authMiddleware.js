@@ -35,14 +35,12 @@ const blacklist = require('./tokenBlacklist');
 
 module.exports = function authMiddleware(req, res, next) {
   const authHeader = req.header('Authorization');
-  console.log('Authorization Header:', authHeader);
 
   if (!authHeader || !authHeader.startsWith('Bearer ')) {
     return res.status(401).json({ error: 'No token provided' });
   }
 
   const token = authHeader.substring(7);
-  console.log('Token extracted:', token);
 
   if (blacklist.has(token)) {
     return res.status(401).json({ error: 'Token has been revoked' });

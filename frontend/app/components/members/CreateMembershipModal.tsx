@@ -1,15 +1,7 @@
 'use client';
 
 import React, { useState } from 'react';
-import {
-  Modal,
-  Form,
-  Input,
-  InputNumber,
-  Button,
-  Space,
-  message,
-} from 'antd';
+import { Modal, Form, Input, InputNumber, Button, Space, App } from 'antd';
 import {
   PlusOutlined,
   DollarOutlined,
@@ -37,6 +29,7 @@ const CreateMembershipModal: React.FC<CreateMembershipModalProps> = ({
   onClose,
   onSuccess,
 }) => {
+  const { message } = App.useApp();
   const [form] = Form.useForm();
   const [loading, setLoading] = useState(false);
 

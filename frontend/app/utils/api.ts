@@ -119,7 +119,7 @@ export const api = {
               window.dispatchEvent(new CustomEvent('auth:logout'));
             }
             const errorMessage =
-              rawPayload?.error?.message ||
+              (typeof rawPayload?.error === 'string' ? rawPayload.error : rawPayload?.error?.message) ||
               rawPayload?.message ||
               `HTTP error! status: ${response.status}`;
             throw new Error(errorMessage);
@@ -304,7 +304,7 @@ export const api = {
       }),
     update: (branchId: string, branchData: any) => 
       api.request(`/branches/branches/${branchId}`, {
-        method: 'PATCH',
+        method: 'PUT',
         body: JSON.stringify(branchData),
       }),
     delete: (branchId: string) => 

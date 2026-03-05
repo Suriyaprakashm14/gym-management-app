@@ -39,9 +39,10 @@ interface Branch {
   key: string;
   _id: string;
   name: string;
-  address: { street: string; city: string; state: string; zipCode: string; country: string };
-  contactInfo: { phone: string; email: string };
-  managerName?: string;
+  address: { street?: string; city?: string; state?: string; zipCode?: string; country?: string };
+  contactInfo?: { phone?: string; email?: string };
+  managerName?: string | null;
+  managerStatus?: 'Assigned' | 'Not Assigned';
   memberCount?: number;
   isActive: boolean;
 }
@@ -83,8 +84,21 @@ export default function BranchesContent() {
       const response = await api.branches.getByGym(user.gymId);
       const branchList = Array.isArray(response)
         ? response
-        : (response as any)?.branches ?? (response as any)?.data?.branches ?? [];
-      const branchesData = (branchList as any[]).map((b: any) => ({ key: b._id, ...b }));
+        : (response as any)?.data?.branches ?? (response as any)?.branches ?? [];
+      const branchesData = (branchList as any[]).map((b: any) => {
+        const branchManager = b.branchManager || null;
+        const managerFullName = branchManager
+          ? `${branchManager.firstName || ''} ${branchManager.lastName || ''}`.trim() ||
+            branchManager.name ||
+            null
+          : b.managerName ?? null;
+        return {
+          key: b._id,
+          ...b,
+          managerName: managerFullName,
+          managerStatus: managerFullName ? 'Assigned' : 'Not Assigned',
+        };
+      });
       setBranches(branchesData);
       if (branchList.length === 0) {
         message.info('No branches found. Click "Add Branch" to create your first branch.');
@@ -119,15 +133,17 @@ export default function BranchesContent() {
 
   const handleEditBranch = (branch: Branch) => {
     setEditingBranch(branch);
+    const addr = branch.address ?? {};
+    const contact = branch.contactInfo ?? {};
     form.setFieldsValue({
-      name: branch.name,
-      'address.street': branch.address?.street,
-      'address.city': branch.address?.city,
-      'address.state': branch.address?.state,
-      'address.zipCode': branch.address?.zipCode,
-      'address.country': branch.address?.country,
-      'contactInfo.phone': branch.contactInfo?.phone,
-      'contactInfo.email': branch.contactInfo?.email,
+      name: branch.name ?? '',
+      'address.street': addr.street ?? '',
+      'address.city': addr.city ?? '',
+      'address.state': addr.state ?? '',
+      'address.zipCode': addr.zipCode ?? '',
+      'address.country': addr.country ?? '',
+      'contactInfo.phone': contact.phone ?? '',
+      'contactInfo.email': contact.email ?? '',
     });
     setModalVisible(true);
   };
@@ -161,14 +177,19 @@ export default function BranchesContent() {
     try {
       if (editingBranch) {
         await api.branches.update(editingBranch._id, branchData);
+        setModalVisible(false);
+        setEditingBranch(null);
+        form.resetFields();
+        await fetchBranches();
         message.success('Branch updated successfully');
       } else {
         await api.branches.create(user.gymId, branchData);
+        setModalVisible(false);
+        setEditingBranch(null);
+        form.resetFields();
+        await fetchBranches();
         message.success('Branch created successfully');
       }
-      setModalVisible(false);
-      form.resetFields();
-      fetchBranches();
     } catch (err) {
       message.error(editingBranch ? 'Failed to update branch' : 'Failed to create branch');
     }
@@ -251,6 +272,7 @@ export default function BranchesContent() {
         <Space size={4}><TeamOutlined style={{ color: '#8c8c8c' }} /><Text style={{ fontSize: 13 }}>{managerName || 'Not Assigned'}</Text></Space>
       ),
     },
+    // Status column removed per requirements
     { title: 'Members', dataIndex: 'memberCount', key: 'memberCount', width: 100, render: (c: number) => <Text strong>{c || 0}</Text> },
     {
       title: 'Actions',
@@ -292,9 +314,16 @@ export default function BranchesContent() {
           <Title level={4} style={{ margin: 0 }}>All Branches ({branches.length})</Title>
           <Button type="primary" icon={<PlusOutlined />} onClick={handleAddBranch} style={{ backgroundColor: '#13c2c2', borderColor: '#13c2c2' }}>Add Branch</Button>
         </div>
-        <Table columns={columns} dataSource={branches} loading={loading} pagination={{ pageSize: 10, showSizeChanger: true, showTotal: (t, r) => `${r[0]}-${r[1]} of ${t} branches` }} scroll={{ x: 1000 }} />
+        <Table
+          columns={columns}
+          dataSource={branches}
+          loading={loading}
+          pagination={{ pageSize: 10, showSizeChanger: true, showTotal: (t, r) => `${r[0]}-${r[1]} of ${t} branches` }}
+          sticky
+          scroll={{ x: 1000, y: 500 }}
+        />
       </Card>
-      <Modal title={editingBranch ? 'Edit Branch' : 'Add New Branch'} open={modalVisible} onCancel={() => { setModalVisible(false); form.resetFields(); }} onOk={() => form.submit()} okText={editingBranch ? 'Update' : 'Create'} cancelText="Cancel" width={600}>
+      <Modal title={editingBranch ? 'Edit Branch' : 'Add New Branch'} open={modalVisible} onCancel={() => { setModalVisible(false); setEditingBranch(null); form.resetFields(); }} onOk={() => form.submit()} okText={editingBranch ? 'Update' : 'Create'} cancelText="Cancel" width={600}>
         <Form form={form} layout="vertical" onFinish={handleModalSubmit}>
           <Form.Item name="name" label="Branch Name" rules={[{ required: true, message: 'Please enter branch name' }]}><Input placeholder="Enter branch name" /></Form.Item>
           <Title level={5}>Address</Title>

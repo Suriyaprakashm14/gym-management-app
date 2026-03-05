@@ -81,6 +81,11 @@ export default function BillingContent() {
 
   const handlePaymentSubmit = async (values: { amount: number }) => {
     if (!selectedMember) return;
+
+    if (values.amount > selectedMember.overdueAmount) {
+      message.error('Payment amount cannot exceed the overdue amount');
+      return;
+    }
     const branchId = selectedMember.branchId || user?.branchId;
     if (!branchId) {
       message.error('Unable to determine branch for this payment');
@@ -155,7 +160,8 @@ export default function BillingContent() {
           dataSource={pendingMembers}
           rowKey="memberId"
           pagination={{ pageSize: 10, showSizeChanger: true, showQuickJumper: true, showTotal: (t, r) => `${r[0]}-${r[1]} of ${t} pending payments` }}
-          scroll={{ x: 800 }}
+          sticky
+          scroll={{ x: 800, y: 500 }}
         />
       </Card>
       <Modal
@@ -177,7 +183,19 @@ export default function BillingContent() {
           <Form.Item
             label="Payment Amount"
             name="amount"
-            rules={[{ required: true, message: 'Please enter payment amount' }, { type: 'number', min: 0.01, message: 'Amount must be greater than 0' }]}
+            rules={[
+              { required: true, message: 'Please enter payment amount' },
+              { type: 'number', min: 0.01, message: 'Amount must be greater than 0' },
+              () => ({
+                validator(_, value) {
+                  if (!value || !selectedMember) return Promise.resolve();
+                  if (value > selectedMember.overdueAmount) {
+                    return Promise.reject(new Error('Payment amount cannot exceed the overdue amount'));
+                  }
+                  return Promise.resolve();
+                },
+              }),
+            ]}
           >
             <InputNumber prefix="₹" placeholder="Enter payment amount" style={{ width: '100%' }} min={0.01} step={0.01} />
           </Form.Item>

@@ -845,13 +845,18 @@ exports.getWeeklyAttendanceReport = async (req, res) => {
       };
     }
     
-    // Process attendance records
+    // Process attendance records (guard against null/deleted memberId)
     attendanceRecords.forEach(record => {
+      if (!record.memberId) return;
       const dateKey = record.attendanceDate.toISOString().split('T')[0];
       if (dailyAttendance[dateKey]) {
+        const mid = record.memberId._id || record.memberId;
+        const name = record.memberId.firstName != null && record.memberId.lastName != null
+          ? `${record.memberId.firstName} ${record.memberId.lastName}`.trim()
+          : 'Unknown';
         dailyAttendance[dateKey].presentMembers.push({
-          memberId: record.memberId._id,
-          memberName: `${record.memberId.firstName} ${record.memberId.lastName}`,
+          memberId: mid,
+          memberName: name || 'Unknown',
           checkInTime: record.attendanceDate,
           status: record.status
         });
@@ -890,11 +895,12 @@ exports.getWeeklyAttendanceReport = async (req, res) => {
       presentCount: day.presentCount
     }));
     
-    const mostActiveDay = dayStats.reduce((max, day) => 
-      day.attendanceRate > max.attendanceRate ? day : max, dayStats[0]);
-    
-    const leastActiveDay = dayStats.reduce((min, day) => 
-      day.attendanceRate < min.attendanceRate ? day : min, dayStats[0]);
+    const mostActiveDay = dayStats.length > 0
+      ? dayStats.reduce((max, day) => day.attendanceRate > max.attendanceRate ? day : max, dayStats[0])
+      : { date: null, dayName: 'N/A', attendanceRate: 0, presentCount: 0 };
+    const leastActiveDay = dayStats.length > 0
+      ? dayStats.reduce((min, day) => day.attendanceRate < min.attendanceRate ? day : min, dayStats[0])
+      : { date: null, dayName: 'N/A', attendanceRate: 0, presentCount: 0 };
     
     // Top attendees (members who came most days)
     const memberAttendanceCount = {};
@@ -907,10 +913,13 @@ exports.getWeeklyAttendanceReport = async (req, res) => {
     
     const topAttendees = Object.entries(memberAttendanceCount)
       .map(([memberId, count]) => {
-        const member = allMembers.find(m => m._id.toString() === memberId);
+        const member = allMembers.find(m => m && m._id && m._id.toString() === memberId);
+        const name = member && (member.firstName != null || member.lastName != null)
+          ? `${member.firstName || ''} ${member.lastName || ''}`.trim()
+          : 'Unknown';
         return {
           memberId,
-          memberName: member ? `${member.firstName} ${member.lastName}` : 'Unknown',
+          memberName: name || 'Unknown',
           attendanceDays: count,
           attendanceRate: Math.round((count / 7) * 10000) / 100
         };

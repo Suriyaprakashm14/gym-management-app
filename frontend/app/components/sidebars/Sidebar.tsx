@@ -1,7 +1,8 @@
 'use client';
 
 import React, { useState } from 'react';
-import { Layout, Menu, Button, Typography, message } from 'antd';
+import Link from 'next/link';
+import { Layout, Menu, Button, Typography, App } from 'antd';
 import { useRouter, usePathname } from 'next/navigation';
 import {
   DashboardOutlined,
@@ -21,6 +22,7 @@ interface SidebarProps {
 }
 
 const Sidebar: React.FC<SidebarProps> = ({ collapsed, onCollapse }) => {
+  const { message } = App.useApp();
   const router = useRouter();
   const pathname = usePathname();
   const { user, logout } = useAuth();
@@ -45,31 +47,31 @@ const Sidebar: React.FC<SidebarProps> = ({ collapsed, onCollapse }) => {
     {
       key: '/dashboard',
       icon: <DashboardOutlined />,
-      label: 'Dashboard',
+      label: <Link href="/dashboard" prefetch>Dashboard</Link>,
     },
     {
       key: '/members',
       icon: <UserOutlined />,
-      label: 'Members',
+      label: <Link href="/members" prefetch>Members</Link>,
     },
   ];
 
   const branchesMenuItem = {
     key: '/branches',
     icon: <BankOutlined />,
-    label: 'Branches',
+    label: <Link href="/branches" prefetch>Branches</Link>,
   };
 
   const billingMenuItem = {
     key: '/revenue',
     icon: <DollarOutlined />,
-    label: 'Revenue',
+    label: <Link href="/revenue" prefetch>Revenue</Link>,
   };
 
   const pendingBillingMenuItem = {
     key: '/billing',
     icon: <BankOutlined />,
-    label: 'Billing',
+    label: <Link href="/billing" prefetch>Billing</Link>,
   };
 
   const logoutMenuItem = {
@@ -89,8 +91,6 @@ const Sidebar: React.FC<SidebarProps> = ({ collapsed, onCollapse }) => {
   const handleClick = (e: { key: string }) => {
     if (e.key === 'logout') {
       handleLogout();
-    } else {
-      router.push(e.key); // Navigate to the route corresponding to the menu key
     }
   };
 

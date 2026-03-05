@@ -1,14 +1,17 @@
 'use client';
 
-import React, { useEffect, useMemo, useState } from 'react';
-import { 
-  Table, 
-  Tag, 
-  Space, 
-  Button, 
-  Avatar, 
+import React, { useEffect, useMemo, useState, useCallback, useRef } from 'react';
+import {
+  Table,
+  Tag,
+  Space,
+  Button,
+  Avatar,
   Tooltip,
   Typography,
+  Popconfirm,
+  App,
+  Empty,
 } from 'antd';
 import {
   EditOutlined,
@@ -18,14 +21,35 @@ import {
   CheckCircleOutlined,
   WarningOutlined,
   CreditCardOutlined,
+  EyeOutlined,
 } from '@ant-design/icons';
 import type { ColumnsType } from 'antd/es/table';
 import { useAppDispatch, useAppSelector } from '../../redux/hooks';
 import { fetchMembers, Member as StoreMember } from '../../redux/membersSlice';
+import { useMemberFilter } from '../../contexts/MemberFilterContext';
+import { api } from '../../utils/api';
 import EditMemberModal from './EditMemberModal';
 import MemberDetailsModal from './MemberDetailsModal';
 
 const { Text } = Typography;
+
+const EMPTY = '—';
+
+function formatDateDDMMYY(value: string | undefined | null): string {
+  if (value == null || value === '') return EMPTY;
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return EMPTY;
+  const day = String(d.getDate()).padStart(2, '0');
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const year = String(d.getFullYear()).slice(-2);
+  return `${day}-${month}-${year}`;
+}
+
+function getEndTime(expiry: string | undefined | null): number | null {
+  if (expiry == null || expiry === '') return null;
+  const d = new Date(expiry);
+  return Number.isNaN(d.getTime()) ? null : d.getTime();
+}
 
 interface Member {
   key: string;
@@ -46,26 +70,43 @@ interface Member {
   status: 'active' | 'inactive';
 }
 
+const PAGE_SIZE = 10;
+
 const MemberTable: React.FC = () => {
+  const { message } = App.useApp();
   const [selectedRowKeys, setSelectedRowKeys] = useState<React.Key[]>([]);
   const [editModalVisible, setEditModalVisible] = useState(false);
   const [detailsModalVisible, setDetailsModalVisible] = useState(false);
   const [selectedMember, setSelectedMember] = useState<any>(null);
   const [selectedMemberId, setSelectedMemberId] = useState<string | null>(null);
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(PAGE_SIZE);
   const dispatch = useAppDispatch();
-  const { members, loading } = useAppSelector((s) => s.members);
+  const { members, total, loading } = useAppSelector((s) => s.members);
+  const { filter } = useMemberFilter();
 
-  useEffect(() => {
-    // Always fetch members when component mounts
-    dispatch(fetchMembers(undefined));
-  }, [dispatch]);
+  const loadPage = useCallback(
+    (p: number, size: number) => {
+      dispatch(
+        fetchMembers({
+          page: p,
+          limit: size,
+          status: filter,
+        })
+      );
+    },
+    [dispatch, filter]
+  );
 
-  // Also fetch if members array becomes empty (e.g., after reload)
+  const prevFilterRef = useRef(filter);
   useEffect(() => {
-    if (members.length === 0 && !loading) {
-      dispatch(fetchMembers(undefined));
+    const pageToLoad = prevFilterRef.current !== filter ? 1 : page;
+    if (prevFilterRef.current !== filter) {
+      prevFilterRef.current = filter;
+      setPage(1);
     }
-  }, [dispatch, members.length, loading]);
+    loadPage(pageToLoad, pageSize);
+  }, [filter, page, pageSize]); // eslint-disable-line react-hooks/exhaustive-deps -- loadPage from filter/page/pageSize
 
   const handleEdit = (record: Member) => {
     // Find the original member data from Redux state
@@ -91,26 +132,39 @@ const MemberTable: React.FC = () => {
     setSelectedMemberId(null);
   };
 
+  const handleDelete = async (record: Member) => {
+    try {
+      await api.members.delete(record.key);
+      message.success('Member removed');
+      loadPage(page, pageSize);
+    } catch (err: any) {
+      message.error(err?.message || 'Failed to remove member');
+    }
+  };
 
   const dataSource: Member[] = useMemo(() => {
-    return (members as StoreMember[]).map((m) => ({
-      key: m.id,
-      name: m.name || `${m.firstName || ''} ${m.lastName || ''}`.trim() || 'Unknown',
-      email: m.email || '',
-      phone: m.phone || '',
-      age: (m.age as number) || 0,
-      dob: m.dob || '',
-      discipline: '',
-      membership: m.membership || '',
-      expiryInfo: m.expires || '',
-      lastVisit: m.lastVisit || '',
-      billingAmount: m.billingAmount || '',
-      billingDate: m.billingDate || '',
-      billingStatus: (m.billingStatus as any) || 'paid',
-      hasPaymentCard: true,
-      isFamilyAccount: false,
-      status: (m.status as any) === 'inactive' ? 'inactive' : 'active',
-    }));
+    return (members as StoreMember[]).map((m) => {
+      const name = m.name || `${m.firstName || ''} ${m.lastName || ''}`.trim() || EMPTY;
+      const ageVal = m.age != null ? Number(m.age) : undefined;
+      return {
+        key: m.id,
+        name,
+        email: m.email ?? EMPTY,
+        phone: m.phone ?? EMPTY,
+        age: ageVal ?? 0,
+        dob: m.dob ?? EMPTY,
+        discipline: '',
+        membership: m.membership ?? EMPTY,
+        expiryInfo: m.expires ?? EMPTY,
+        lastVisit: m.lastVisit ?? EMPTY,
+        billingAmount: m.billingAmount ?? EMPTY,
+        billingDate: m.billingDate ?? EMPTY,
+        billingStatus: ((m.billingStatus as string) || 'pending') as 'paid' | 'overdue' | 'pending',
+        hasPaymentCard: true,
+        isFamilyAccount: false,
+        status: (m.status as any) === 'inactive' ? 'inactive' : 'active',
+      };
+    });
   }, [members]);
 
   const columns: ColumnsType<Member> = [
@@ -121,24 +175,21 @@ const MemberTable: React.FC = () => {
       width: 220,
       render: (text: string, record: Member) => (
         <Space>
-          <Avatar 
-            size={40} 
-            style={{ 
+          <Avatar
+            size={40}
+            style={{
               backgroundColor: '#1890ff',
-              verticalAlign: 'middle'
+              verticalAlign: 'middle',
             }}
           >
-            {text.split(' ').map(n => n[0]).join('')}
+            {text && text !== EMPTY ? text.split(' ').map((n) => n[0]).join('') || '?' : '?'}
           </Avatar>
           <div>
-            <div 
-              style={{ 
-                fontWeight: 500, 
-                cursor: 'pointer',
-                color: '#1890ff',
-                textDecoration: 'underline'
+            <div
+              style={{
+                fontWeight: 500,
+                color: '#1f1f1f',
               }}
-              onClick={() => handleRowClick(record)}
             >
               {text}
             </div>
@@ -157,7 +208,7 @@ const MemberTable: React.FC = () => {
       render: (email: string) => (
         <Space size={4}>
           <MailOutlined style={{ color: '#8c8c8c' }} />
-          <Text style={{ fontSize: 13 }}>{email}</Text>
+          <Text style={{ fontSize: 13 }}>{email === EMPTY ? EMPTY : email}</Text>
         </Space>
       ),
     },
@@ -169,7 +220,7 @@ const MemberTable: React.FC = () => {
       render: (phone: string) => (
         <Space size={4}>
           <PhoneOutlined style={{ color: '#8c8c8c' }} />
-          <Text style={{ fontSize: 13 }}>{phone}</Text>
+          <Text style={{ fontSize: 13 }}>{phone === EMPTY ? EMPTY : phone}</Text>
         </Space>
       ),
     },
@@ -178,10 +229,7 @@ const MemberTable: React.FC = () => {
       key: 'age',
       width: 100,
       render: (_: unknown, record: Member) => (
-        <Space direction="vertical" size={0}>
-          <Text strong>{record.age}</Text>
-          <Text type="secondary" style={{ fontSize: 12 }}>{record.dob}</Text>
-        </Space>
+        <Text strong>{record.age || EMPTY}</Text>
       ),
     },
     {
@@ -190,9 +238,9 @@ const MemberTable: React.FC = () => {
       width: 220,
       render: (_: unknown, record: Member) => (
         <Space direction="vertical" size={4}>
-          <Text>{record.membership}</Text>
-          {record.expiryInfo && (
-            <Text type="secondary" style={{ fontSize: 12 }}>{record.expiryInfo}</Text>
+          <Text>{record.membership === EMPTY ? EMPTY : record.membership}</Text>
+          {record.expiryInfo && record.expiryInfo !== EMPTY && (
+            <Text type="secondary" style={{ fontSize: 12 }}>{formatDateDDMMYY(record.expiryInfo)}</Text>
           )}
           {record.isFamilyAccount && (
             <Tag color="blue">FAMILY ACCOUNT</Tag>
@@ -205,7 +253,9 @@ const MemberTable: React.FC = () => {
       dataIndex: 'lastVisit',
       key: 'lastVisit',
       width: 120,
-      render: (text: string) => <Text type="secondary">{text}</Text>,
+      render: (text: string) => (
+        <Text type="secondary">{text === EMPTY ? EMPTY : formatDateDDMMYY(text)}</Text>
+      ),
     },
     {
       title: 'Billing Status',
@@ -243,7 +293,9 @@ const MemberTable: React.FC = () => {
                 >
                   {record.billingAmount}
                 </Text>
-                <Text type="secondary" style={{ fontSize: 12 }}>{record.billingDate}</Text>
+                <Text type="secondary" style={{ fontSize: 12 }}>
+                  {record.billingDate === EMPTY ? EMPTY : formatDateDDMMYY(record.billingDate)}
+                </Text>
               </Space>
             </Space>
           );
@@ -255,9 +307,17 @@ const MemberTable: React.FC = () => {
     {
       title: 'Actions',
       key: 'actions',
-      width: 100,
+      width: 140,
+      fixed: 'right',
       render: (_: unknown, record: Member) => (
         <Space size={8}>
+          <Tooltip title="View Details">
+            <Button
+              type="text"
+              icon={<EyeOutlined style={{ color: '#1890ff' }} />}
+              onClick={() => handleRowClick(record)}
+            />
+          </Tooltip>
           <Tooltip title="Edit">
             <Button
               type="text"
@@ -265,14 +325,16 @@ const MemberTable: React.FC = () => {
               onClick={() => handleEdit(record)}
             />
           </Tooltip>
-          <Tooltip title="Delete">
-            <Button
-              type="text"
-              danger
-              icon={<DeleteOutlined />}
-              onClick={() => console.log('Delete', record.key)}
-            />
-          </Tooltip>
+          <Popconfirm
+            title="Remove this member?"
+            onConfirm={() => handleDelete(record)}
+            okText="Yes"
+            cancelText="No"
+          >
+            <Tooltip title="Delete">
+              <Button type="text" danger icon={<DeleteOutlined />} />
+            </Tooltip>
+          </Popconfirm>
         </Space>
       ),
     },
@@ -292,12 +354,29 @@ const MemberTable: React.FC = () => {
         columns={columns}
         dataSource={dataSource}
         loading={loading}
+        rowKey="key"
         pagination={{
-          pageSize: 10,
+          current: page,
+          pageSize,
+          total,
+          pageSizeOptions: ['10', '20', '50'],
           showSizeChanger: true,
-          showTotal: (total, range) => `${range[0]}-${range[1]} of ${total} items`,
+          showTotal: (tot, range) => `${range[0]}-${range[1]} of ${tot} members`,
+          onChange: (p, size) => {
+            setPage(p);
+            if (size !== pageSize) setPageSize(size);
+          },
         }}
-        scroll={{ x: 1200 }}
+        locale={{
+          emptyText: (
+            <Empty
+              image={Empty.PRESENTED_IMAGE_SIMPLE}
+              description={<span style={{ color: '#666' }}>No Data Found</span>}
+            />
+          ),
+        }}
+        sticky
+        scroll={{ x: 1200, y: 500 }}
         style={{ background: '#fff' }}
       />
       

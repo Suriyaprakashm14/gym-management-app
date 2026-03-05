@@ -21,15 +21,55 @@ export interface Member {
 
 interface MembersState {
   members: Member[];
+  total: number;
   loading: boolean;
   error: string | null;
 }
 
 const initialState: MembersState = {
   members: [],
+  total: 0,
   loading: false,
   error: null,
 };
+
+/** Normalize raw API member (and optional overlay) to store Member shape. */
+export function normalizeMember(m: any, overlay?: Partial<Member>): Member {
+  const id = overlay?.id ?? m?.id ?? m?._id;
+  const membershipObj = m?.membership ?? null;
+  const membershipType =
+    typeof membershipObj === 'string' ? membershipObj : membershipObj?.type;
+  const endDate = membershipObj?.endDate ?? null;
+  const expires =
+    endDate != null
+      ? typeof endDate === 'string'
+        ? endDate
+        : (endDate as Date)?.toISOString?.() ?? String(endDate)
+      : '';
+  return {
+    id: id != null ? String(id) : '',
+    firstName: overlay?.firstName ?? m?.firstName ?? '',
+    lastName: overlay?.lastName ?? m?.lastName ?? '',
+    name:
+      overlay?.name ??
+      m?.name ??
+      ([m?.firstName, m?.lastName].filter(Boolean).join(' ').trim() || ''),
+    email: overlay?.email ?? m?.email ?? '',
+    phone: overlay?.phone ?? m?.profile?.phone ?? m?.phone ?? '',
+    age: overlay?.age ?? m?.profile?.age ?? m?.age,
+    dob: overlay?.dob ?? m?.profile?.dateOfBirth ?? m?.dateOfBirth ?? '',
+    status:
+      overlay?.status ??
+      m?.status ??
+      (m?.membership?.isActive ? 'active' : 'inactive'),
+    membership: overlay?.membership ?? membershipType ?? '',
+    expires: overlay?.expires ?? expires ?? '',
+    lastVisit: overlay?.lastVisit ?? m?.lastVisit ?? m?.lastVisitDate ?? '',
+    billingStatus: overlay?.billingStatus ?? m?.billingStatus ?? '',
+    billingAmount: overlay?.billingAmount ?? m?.billingAmount ?? '',
+    billingDate: overlay?.billingDate ?? m?.billingDate ?? '',
+  };
+}
 
 // Thunks
 export const fetchMembers = createAsyncThunk(
@@ -37,22 +77,25 @@ export const fetchMembers = createAsyncThunk(
   async (params: Record<string, string | number> | undefined, { rejectWithValue }) => {
     try {
       const res = await api.members.getAll(params);
-      // API shape: usually a plain array; also tolerate { data: [] } or { members: [] }
-      const listSource: any =
-        Array.isArray(res)
-          ? res
-          : Array.isArray((res as any)?.data)
-            ? (res as any).data
-            : Array.isArray((res as any)?.members)
-              ? (res as any).members
-              : [];
-      const list: any[] = Array.isArray(listSource) ? listSource : [];
-
+      // API shape: { list: Member[], total: number } for paginated, or legacy array
+      const envelope = res as any;
+      let list: any[] = [];
+      let total = 0;
+      if (envelope && typeof envelope === 'object' && Array.isArray(envelope.list)) {
+        list = envelope.list;
+        total = typeof envelope.total === 'number' ? envelope.total : list.length;
+      } else if (Array.isArray(res)) {
+        list = res;
+        total = res.length;
+      } else if (Array.isArray(envelope?.data)) {
+        list = envelope.data;
+        total = envelope.total ?? list.length;
+      }
       if (process.env.NODE_ENV !== 'production') {
         // eslint-disable-next-line no-console
-        console.debug('[members] fetchMembers resolved', { count: list.length });
+        console.debug('[members] fetchMembers resolved', { count: list.length, total });
       }
-      return list as Member[];
+      return { list, total };
     } catch (err: any) {
       if (process.env.NODE_ENV !== 'production') {
         // eslint-disable-next-line no-console
@@ -90,37 +133,26 @@ export const updateMember = createAsyncThunk(
 const membersSlice = createSlice({
   name: 'members',
   initialState,
-  reducers: {},
+  reducers: {
+    addMember(state, action: PayloadAction<Member>) {
+      const member = action.payload;
+      if (!member?.id) return;
+      if (state.members.some((m) => m.id === member.id)) return;
+      state.members.unshift(member);
+    },
+  },
   extraReducers: (builder) => {
     // fetch
     builder.addCase(fetchMembers.pending, (state) => {
       state.loading = true;
       state.error = null;
     });
-    builder.addCase(fetchMembers.fulfilled, (state, action: PayloadAction<Member[]>) => {
+    builder.addCase(fetchMembers.fulfilled, (state, action: PayloadAction<{ list: Member[]; total: number }>) => {
       state.loading = false;
-      const incoming = Array.isArray(action.payload) ? action.payload : [];
-      state.members = incoming.map((m: any) => ({
-        id: m.id || m._id,
-        name: m.name || [m.firstName, m.lastName].filter(Boolean).join(' '),
-        firstName: m.firstName, // Preserve original firstName
-        lastName: m.lastName,   // Preserve original lastName
-        email: m.email,
-        phone: m.profile?.phone || m.phone,
-        age: m.profile?.age || m.age,
-        gender: m.profile?.gender || m.gender,
-        role: m.role,
-        branchId: m.branchId,
-        image: m.image,
-        dob: m.profile?.dateOfBirth || m.dateOfBirth,
-        status: m.status || (m.membership?.isActive ? 'active' : 'inactive'),
-        membership: m.membership?.type,
-        expires: m.membership?.endDate,
-        lastVisit: m.lastVisit,
-        billingStatus: m.billingStatus,
-        billingAmount: m.billingAmount,
-        billingDate: m.billingDate,
-      }));
+      const payload = action.payload;
+      const incoming = Array.isArray(payload?.list) ? payload.list : [];
+      state.members = incoming.map((m: any) => normalizeMember(m));
+      state.total = typeof payload?.total === 'number' ? payload.total : state.members.length;
     });
     builder.addCase(fetchMembers.rejected, (state, action) => {
       state.loading = false;
@@ -133,21 +165,8 @@ const membersSlice = createSlice({
     });
     builder.addCase(createMember.fulfilled, (state, action: PayloadAction<Member>) => {
       const m: any = action.payload;
-      state.members.unshift({
-        id: m.id || (m as any)._id,
-        name: m.name || [m.firstName, m.lastName].filter(Boolean).join(' '),
-        email: m.email,
-        phone: m.profile?.phone || m.phone,
-        age: m.age,
-        dob: m.profile?.dateOfBirth || m.dateOfBirth,
-        status: m.status || (m.membership?.isActive ? 'active' : 'inactive'),
-        membership: m.membership?.type,
-        expires: m.membership?.endDate,
-        lastVisit: m.lastVisit,
-        billingStatus: m.billingStatus,
-        billingAmount: m.billingAmount,
-        billingDate: m.billingDate,
-      });
+      state.members.unshift(normalizeMember(m));
+      state.total = Math.max(state.total, state.members.length);
     });
     builder.addCase(createMember.rejected, (state, action) => {
       state.error = (action.payload as string) || 'Failed to create member';
@@ -184,4 +203,5 @@ const membersSlice = createSlice({
   },
 });
 
+export const { addMember } = membersSlice.actions;
 export default membersSlice.reducer;

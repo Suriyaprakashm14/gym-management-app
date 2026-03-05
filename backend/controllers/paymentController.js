@@ -34,6 +34,18 @@ exports.create = async (req, res) => {
 
     const totalAmount = priceDoc.price;
 
+    // Enforce that the payment does not exceed remaining due
+    const currentPaid = details.paidAmount || 0;
+    const totalDue = details.totalAmount || totalAmount;
+    const remaining = Math.max(0, totalDue - currentPaid);
+
+    if (paidAmount > remaining) {
+      return res.status(400).json({
+        error: 'Payment exceeds remaining due amount',
+        message: `Maximum payable amount is ${remaining}`,
+      });
+    }
+
     const payment = new Payment({
       memberId,
       branchId,
