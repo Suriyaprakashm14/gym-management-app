@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { Card, Form, Input, Select, Button, Upload, message, Row, Col, DatePicker, Divider, InputNumber } from 'antd';
+import { App, Card, Form, Input, Select, Button, Upload, Row, Col, DatePicker, Divider, InputNumber } from 'antd';
 import { UserOutlined, UploadOutlined, HomeOutlined, PhoneOutlined, PlusOutlined, MinusCircleOutlined } from '@ant-design/icons';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '../../../contexts/AuthContext';
@@ -25,6 +25,7 @@ export default function MemberCreationPage() {
   const [membershipTypesLoading, setMembershipTypesLoading] = useState(false);
   const { user } = useAuth();
   const router = useRouter();
+   const { message } = App.useApp();
 
   useEffect(() => {
     const fetchMembershipTypes = async () => {

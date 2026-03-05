@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
 import {
+  App,
   Table,
   Tag,
   Space,
@@ -17,7 +18,6 @@ import {
   DatePicker,
   Spin,
   Alert,
-  message,
 } from 'antd';
 import {
   UserOutlined,
@@ -91,6 +91,7 @@ export default function CheckInPage() {
   const [selectedPeriod, setSelectedPeriod] = useState<'day' | 'week' | 'month'>('day');
   const [selectedDate, setSelectedDate] = useState(dayjs());
   const [viewMode, setViewMode] = useState<'all' | 'present' | 'absent'>('all');
+  const { message } = App.useApp();
 
   const fetchAttendanceReport = async () => {
     try {

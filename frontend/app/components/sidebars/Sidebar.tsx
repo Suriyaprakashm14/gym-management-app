@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState } from 'react';
-import { Layout, Menu, Button, Typography, message } from 'antd';
+import { App, Layout, Menu, Button, Typography } from 'antd';
 import { useRouter, usePathname } from 'next/navigation';
 import {
   DashboardOutlined,
@@ -25,6 +25,7 @@ const Sidebar: React.FC<SidebarProps> = ({ collapsed, onCollapse }) => {
   const pathname = usePathname();
   const { user, logout } = useAuth();
   const [logoutLoading, setLogoutLoading] = useState(false);
+  const { message } = App.useApp();
   
   // Use actual user data or fallback to mock for demo
   const currentUser = user || {

@@ -18,6 +18,7 @@ import {
   CheckCircleOutlined,
   WarningOutlined,
   CreditCardOutlined,
+  EyeOutlined,
 } from '@ant-design/icons';
 import type { ColumnsType } from 'antd/es/table';
 import { useAppDispatch, useAppSelector } from '../../redux/hooks';
@@ -37,6 +38,7 @@ interface Member {
   discipline: string;
   membership: string;
   expiryInfo: string;
+  image?: string;
   lastVisit: string;
   billingAmount: string;
   billingDate: string;
@@ -52,6 +54,7 @@ const MemberTable: React.FC = () => {
   const [detailsModalVisible, setDetailsModalVisible] = useState(false);
   const [selectedMember, setSelectedMember] = useState<any>(null);
   const [selectedMemberId, setSelectedMemberId] = useState<string | null>(null);
+  const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'inactive'>('all');
   const dispatch = useAppDispatch();
   const { members, loading } = useAppSelector((s) => s.members);
 
@@ -93,7 +96,13 @@ const MemberTable: React.FC = () => {
 
 
   const dataSource: Member[] = useMemo(() => {
-    return (members as StoreMember[]).map((m) => ({
+    const filtered = (members as StoreMember[]).filter((m) => {
+      if (statusFilter === 'all') return true;
+      const status = (m.status as string) || 'active';
+      return statusFilter === 'active' ? status === 'active' : status === 'inactive';
+    });
+
+    return filtered.map((m) => ({
       key: m.id,
       name: m.name || `${m.firstName || ''} ${m.lastName || ''}`.trim() || 'Unknown',
       email: m.email || '',
@@ -103,15 +112,16 @@ const MemberTable: React.FC = () => {
       discipline: '',
       membership: m.membership || '',
       expiryInfo: m.expires || '',
+      image: (m as any).image,
       lastVisit: m.lastVisit || '',
-      billingAmount: m.billingAmount || '',
-      billingDate: m.billingDate || '',
+      billingAmount: m.billingAmount != null ? String(m.billingAmount) : '',
+      billingDate: m.billingDate ? String(m.billingDate) : '',
       billingStatus: (m.billingStatus as any) || 'paid',
       hasPaymentCard: true,
       isFamilyAccount: false,
       status: (m.status as any) === 'inactive' ? 'inactive' : 'active',
     }));
-  }, [members]);
+  }, [members, statusFilter]);
 
   const columns: ColumnsType<Member> = [
     {
@@ -127,8 +137,9 @@ const MemberTable: React.FC = () => {
               backgroundColor: '#1890ff',
               verticalAlign: 'middle'
             }}
+            src={record.image ? `data:image/jpeg;base64,${record.image}` : undefined}
           >
-            {text.split(' ').map(n => n[0]).join('')}
+            {!record.image && text.split(' ').map(n => n[0]).join('')}
           </Avatar>
           <div>
             <div 
@@ -205,7 +216,11 @@ const MemberTable: React.FC = () => {
       dataIndex: 'lastVisit',
       key: 'lastVisit',
       width: 120,
-      render: (text: string) => <Text type="secondary">{text}</Text>,
+      render: (text: string) => (
+        <Text type="secondary">
+          {text ? new Date(text).toLocaleDateString() : 'N/A'}
+        </Text>
+      ),
     },
     {
       title: 'Billing Status',
@@ -258,6 +273,13 @@ const MemberTable: React.FC = () => {
       width: 100,
       render: (_: unknown, record: Member) => (
         <Space size={8}>
+          <Tooltip title="View details">
+            <Button
+              type="text"
+              icon={<EyeOutlined style={{ color: '#1890ff' }} />}
+              onClick={() => handleRowClick(record)}
+            />
+          </Tooltip>
           <Tooltip title="Edit">
             <Button
               type="text"
@@ -287,6 +309,20 @@ const MemberTable: React.FC = () => {
 
   return (
     <>
+      <div style={{ marginBottom: 16, display: 'flex', justifyContent: 'flex-end' }}>
+        <Space size={8}>
+          <Text type="secondary">Status:</Text>
+          <select
+            value={statusFilter}
+            onChange={(e) => setStatusFilter(e.target.value as 'all' | 'active' | 'inactive')}
+            style={{ padding: '4px 8px', borderRadius: 4, border: '1px solid #d9d9d9' }}
+          >
+            <option value="all">All</option>
+            <option value="active">Active</option>
+            <option value="inactive">Inactive</option>
+          </select>
+        </Space>
+      </div>
       <Table
         rowSelection={rowSelection}
         columns={columns}

@@ -13,9 +13,10 @@ export interface Member {
   status?: string;
   membership?: string;
   expires?: string;
+  image?: string;
   lastVisit?: string;
   billingStatus?: string;
-  billingAmount?: string;
+  billingAmount?: number | string;
   billingDate?: string;
 }
 

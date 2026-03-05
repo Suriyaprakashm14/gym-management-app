@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import {
+  App,
   Modal,
   Form,
   Input,
@@ -10,7 +11,6 @@ import {
   Card,
   Row,
   Col,
-  message,
   Upload,
   Space,
   Typography,
@@ -77,6 +77,7 @@ const EditMemberModal: React.FC<EditMemberModalProps> = ({
   onClose,
   member,
 }) => {
+  const { message } = App.useApp();
   const [form] = Form.useForm();
   const [loading, setLoading] = useState(false);
   const [fileList, setFileList] = useState<any[]>([]);

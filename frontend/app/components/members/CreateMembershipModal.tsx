@@ -2,13 +2,13 @@
 
 import React, { useState } from 'react';
 import {
+  App,
   Modal,
   Form,
   Input,
   InputNumber,
   Button,
   Space,
-  message,
 } from 'antd';
 import {
   PlusOutlined,
@@ -37,6 +37,7 @@ const CreateMembershipModal: React.FC<CreateMembershipModalProps> = ({
   onClose,
   onSuccess,
 }) => {
+  const { message } = App.useApp();
   const [form] = Form.useForm();
   const [loading, setLoading] = useState(false);
 

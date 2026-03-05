@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import {
+  App,
   Table,
   Tag,
   Space,
@@ -13,7 +14,6 @@ import {
   Modal,
   Form,
   Input,
-  message,
   Popconfirm,
   Tooltip,
   Statistic,
@@ -62,6 +62,7 @@ interface ManagerFormData {
 }
 
 export default function BranchesContent() {
+  const { message } = App.useApp();
   const [branches, setBranches] = useState<Branch[]>([]);
   const [loading, setLoading] = useState(true);
   const [modalVisible, setModalVisible] = useState(false);

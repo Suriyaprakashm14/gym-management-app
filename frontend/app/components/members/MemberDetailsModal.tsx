@@ -69,6 +69,7 @@ interface MemberDetails {
   dob: string;
   membership: string;
   expires: string;
+   image?: string;
   lastVisit: string;
   billingAmount: string;
   billingDate: string;
@@ -197,9 +198,10 @@ const MemberDetailsModal: React.FC<MemberDetailsModalProps> = ({
                 <Avatar 
                   size={80} 
                   style={{ backgroundColor: '#1890ff' }}
-                  icon={<UserOutlined />}
+                  src={memberDetails.image ? `data:image/jpeg;base64,${memberDetails.image}` : undefined}
                 >
-                  {memberDetails.name?.split(' ').map(n => n[0]).join('') || 'M'}
+                  {!memberDetails.image &&
+                    (memberDetails.name?.split(' ').map(n => n[0]).join('') || 'M')}
                 </Avatar>
               </Col>
               <Col flex={1}>

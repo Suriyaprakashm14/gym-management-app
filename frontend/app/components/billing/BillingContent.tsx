@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { Table, Button, Modal, Form, InputNumber, message, Spin, Card, Typography, Space, Tag } from 'antd';
+import { App, Table, Button, Modal, Form, InputNumber, Spin, Card, Typography, Space, Tag } from 'antd';
 import { PlusOutlined, DollarOutlined, ClockCircleOutlined } from '@ant-design/icons';
 import { useAuth } from '../../contexts/AuthContext';
 import { api } from '../../utils/api';
@@ -20,6 +20,7 @@ interface PendingMember {
 }
 
 export default function BillingContent() {
+  const { message } = App.useApp();
   const { user } = useAuth();
   const [pendingMembers, setPendingMembers] = useState<PendingMember[]>([]);
   const [loading, setLoading] = useState(true);

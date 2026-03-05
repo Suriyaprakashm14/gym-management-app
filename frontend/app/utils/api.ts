@@ -41,11 +41,14 @@ type ApiEnvelope<T = any> = {
 export const api = {
   baseURL: ENV_API_BASE_URL || `http://localhost:${DEFAULT_LOCAL_API_PORT}/api`,
   
-  async request(endpoint: string, options: RequestInit = {}) {
+  async request(endpoint: string, options?: RequestInit | null) {
+    // Normalize so we never read from undefined/null (avoids "Cannot convert undefined or null to object")
+    const opts: RequestInit = options != null && typeof options === 'object' ? options : {};
+
     const defaultHeaders: Record<string, string> = {};
 
     // Only set Content-Type for non-FormData requests
-    if (!(options.body instanceof FormData)) {
+    if (!(opts.body instanceof FormData)) {
       defaultHeaders['Content-Type'] = 'application/json';
     }
 
@@ -60,34 +63,36 @@ export const api = {
     // Build headers as a plain object only (never undefined). Some environments
     // call .reduce on headers; passing undefined or a Headers instance can throw.
     const headersObj: Record<string, string> = { ...defaultHeaders };
-    if (options.headers != null && typeof options.headers === 'object' && !(options.headers instanceof Headers)) {
-      if (Array.isArray(options.headers)) {
-        options.headers.forEach(([k, v]) => {
-          if (k != null && v != null) headersObj[String(k)] = String(v);
-        });
-      } else {
-        Object.entries(options.headers).forEach(([k, v]) => {
-          if (v != null) headersObj[k] = String(v);
-        });
+    const rawHeaders = opts.headers;
+    if (rawHeaders != null && typeof rawHeaders === 'object' && !(rawHeaders instanceof Headers)) {
+      try {
+        if (Array.isArray(rawHeaders)) {
+          rawHeaders.forEach(([k, v]) => {
+            if (k != null && v != null) headersObj[String(k)] = String(v);
+          });
+        } else {
+          Object.entries(rawHeaders).forEach(([k, v]) => {
+            if (v != null) headersObj[k] = String(v);
+          });
+        }
+      } catch {
+        // Ignore invalid headers (e.g. non-plain object)
       }
     }
 
-    // Build a minimal RequestInit with only plain values. Do NOT spread options:
-    // some environments (e.g. Next.js / polyfills) iterate init with .reduce()
-    // and throw if any value is undefined or an unexpected type.
-    const method = (options.method != null && typeof options.method === 'string') ? options.method : 'GET';
-    const fetchInit: RequestInit = {};
+    // Build a minimal RequestInit with only plain values. Do NOT pass undefined/null
+    // so polyfills that do Object.keys/entries on init don't throw.
+    const method = (opts.method != null && typeof opts.method === 'string') ? opts.method : 'GET';
+    const fetchInit: RequestInit = {
+      method,
+    };
 
-    fetchInit.method = method;
-
-    // Only attach headers if non-empty
-    if (headersObj && Object.keys(headersObj).length > 0) {
+    if (Object.keys(headersObj).length > 0) {
       fetchInit.headers = headersObj;
     }
 
-    // Only attach body if truly defined
-    if (typeof options.body !== 'undefined' && options.body !== null) {
-      fetchInit.body = options.body;
+    if (opts.body !== undefined && opts.body !== null) {
+      fetchInit.body = opts.body;
     }
 
     const baseUrls = resolveApiBaseUrls();
@@ -106,10 +111,11 @@ export const api = {
             console.debug('[api] request', { url, method });
           }
 
-          const response = await fetch(url, {
-            ...fetchInit,
-            signal: controller.signal ?? undefined,
-          });
+          const init: RequestInit = { ...fetchInit };
+          if (controller.signal != null) {
+            init.signal = controller.signal;
+          }
+          const response = await fetch(url, init);
           const contentType = response.headers.get('content-type') || '';
           const isJsonResponse = contentType.includes('application/json');
           const rawPayload: ApiEnvelope | any = isJsonResponse ? await response.json() : await response.text();
