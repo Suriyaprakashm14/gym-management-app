@@ -1,4 +1,6 @@
 const MembershipPrice = require('../models/membershipPrice');
+const Member = require('../models/member');
+const Details = require('../models/membersPersonalDetails');
 
 
 exports.create = async (req, res) => {
@@ -137,6 +139,20 @@ exports.remove = async (req, res) => {
     // Check access permissions - gym owners can only delete their own gym's prices
     if (req.user.role === 'gym_owner' && price.gymId !== req.user.gymId) {
       return res.status(403).json({ error: 'Access denied: Not authorized to delete this membership price' });
+    }
+
+    // Block delete if any active users are assigned to this plan (subscription not yet expired)
+    const gymMemberIds = await Member.find({ gymId: price.gymId }).distinct('_id');
+    const activeCount = await Details.countDocuments({
+      memberId: { $in: gymMemberIds.map((id) => id.toString()) },
+      membership: price.type,
+      membership_end_date: { $gt: new Date() },
+    });
+    if (activeCount > 0) {
+      return res.status(400).json({
+        error: 'Cannot delete this membership plan because active users are currently assigned.',
+        message: 'Cannot delete this membership plan because active users are currently assigned.',
+      });
     }
 
     await MembershipPrice.findByIdAndDelete(req.params.id);

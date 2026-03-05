@@ -11,6 +11,7 @@ import {
   Card,
   Row,
   Col,
+  App,
   Upload,
   Space,
   Typography,
@@ -245,7 +246,17 @@ const EditMemberModal: React.FC<EditMemberModalProps> = ({
       onCancel={handleCancel}
       footer={null}
       width={1000}
-      destroyOnHidden
+      destroyOnClose
+      styles={{
+        body: {
+          maxHeight: 'none',
+          overflow: 'visible',
+          padding: 0,
+        },
+        content: {
+          overflow: 'visible',
+        },
+      }}
     >
       <Card>
         <Form

@@ -541,7 +541,7 @@ const BillingOverview: React.FC = () => {
                 <option value="">All Months</option>
                 {Array.from({ length: 12 }, (_, i) => i + 1).map(month => (
                   <option key={month} value={month}>
-                    {new Date().toLocaleString('default', { month: 'long' })}
+                    {new Date(2000, month - 1, 1).toLocaleString('default', { month: 'long' })}
                   </option>
                 ))}
               </select>

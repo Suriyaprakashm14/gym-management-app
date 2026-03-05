@@ -21,8 +21,10 @@ const panelStyle: React.CSSProperties = {
 /** Top section: full-width teal bg with Row 1 (Payments + Attendance) inside it; extends down to overlap ~20% of Today check-ins */
 const topSectionStyle: React.CSSProperties = {
   width: '100%',
-  padding: 24,
+  paddingTop: 24,
+  paddingRight: 24,
   paddingBottom: 80,
+  paddingLeft: 24,
   background: 'linear-gradient(135deg, #0f766e 0%, #0d9488 35%, #0891b2 70%, #0e7490 100%)',
   position: 'relative',
   zIndex: 0,
@@ -32,8 +34,10 @@ const topSectionStyle: React.CSSProperties = {
 const contentWrapperStyle: React.CSSProperties = {
   position: 'relative',
   zIndex: 1,
-  padding: 24,
   paddingTop: 0,
+  paddingRight: 24,
+  paddingBottom: 24,
+  paddingLeft: 24,
   marginTop: -80,
 };
 
