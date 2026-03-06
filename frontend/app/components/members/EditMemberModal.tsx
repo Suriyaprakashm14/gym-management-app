@@ -15,7 +15,6 @@ import {
   Space,
   Typography,
   Divider,
-  InputNumber,
 } from 'antd';
 import {
   UserOutlined,
@@ -59,10 +58,6 @@ interface MemberFormData {
   state: string;
   country: string;
   phoneNumber: string;
-  // Membership Details
-  membership: string;
-  totalAmount: number;
-  paidAmount: number;
   // Emergency Contacts
   emergencyContacts: Array<{
     name: string;
@@ -81,8 +76,6 @@ const EditMemberModal: React.FC<EditMemberModalProps> = ({
   const [loading, setLoading] = useState(false);
   const [fileList, setFileList] = useState<any[]>([]);
   const [personalDetails, setPersonalDetails] = useState<any>(null);
-  const [membershipTypes, setMembershipTypes] = useState<any[]>([]);
-  const [membershipTypesLoading, setMembershipTypesLoading] = useState(false);
   const dispatch = useAppDispatch();
 
   useEffect(() => {
@@ -91,31 +84,6 @@ const EditMemberModal: React.FC<EditMemberModalProps> = ({
       fetchPersonalDetails().catch(() => {});
     }
   }, [visible, member?.id, form]);
-
-  useEffect(() => {
-    if (!visible) return;
-    const fetchPlans = async () => {
-      setMembershipTypesLoading(true);
-      try {
-        const response = await api.membershipPrices.getAll();
-        const listSource: any =
-          Array.isArray(response)
-            ? response
-            : Array.isArray((response as any)?.data)
-              ? (response as any).data
-              : Array.isArray((response as any)?.items)
-                ? (response as any).items
-                : [];
-        const list = Array.isArray(listSource) ? listSource : [];
-        setMembershipTypes(list);
-      } catch {
-        setMembershipTypes([]);
-      } finally {
-        setMembershipTypesLoading(false);
-      }
-    };
-    fetchPlans();
-  }, [visible]);
 
   const fetchPersonalDetails = async () => {
     if (!member?.id) return;
@@ -142,9 +110,6 @@ const EditMemberModal: React.FC<EditMemberModalProps> = ({
       state: personalData?.state ?? '',
       country: personalData?.country ?? '',
       phoneNumber: personalData?.phoneNumber ?? '',
-      membership: personalData?.membership ?? undefined,
-      totalAmount: personalData?.totalAmount ?? 0,
-      paidAmount: personalData?.paidAmount ?? 0,
       emergencyContacts: personalData?.emergencyContacts ?? [],
     });
   };
@@ -192,8 +157,8 @@ const EditMemberModal: React.FC<EditMemberModalProps> = ({
 
       await dispatch(updateMember({ id: member.id, data: memberData })).unwrap();
 
-      // Update personal details
-      const personalDetailsData = {
+      // Update personal details (membership info is not edited here)
+      const personalDetailsData: Record<string, unknown> = {
         gender: values.gender,
         streetAddress: values.streetAddress,
         city: values.city,
@@ -202,9 +167,6 @@ const EditMemberModal: React.FC<EditMemberModalProps> = ({
         country: values.country,
         phoneNumber: values.phoneNumber,
         dateOfBirth: values.dateOfBirth,
-        membership: values.membership,
-        totalAmount: values.totalAmount,
-        paidAmount: values.paidAmount,
         emergencyContacts: values.emergencyContacts,
       };
 
@@ -215,7 +177,9 @@ const EditMemberModal: React.FC<EditMemberModalProps> = ({
           await api.membersPersonalDetails.create({
             memberId: member.id,
             ...personalDetailsData,
-            paidAmount: String(personalDetailsData.paidAmount ?? 0),
+            membership: (member as any).membership?.type || 'Monthly',
+            totalAmount: 0,
+            paidAmount: '0',
           });
         }
       } catch (personalError) {
@@ -262,7 +226,7 @@ const EditMemberModal: React.FC<EditMemberModalProps> = ({
       onCancel={handleCancel}
       footer={null}
       width={1000}
-      destroyOnClose
+      destroyOnHidden
       style={{ top: 24 }}
       styles={{
         body: {
@@ -471,55 +435,6 @@ const EditMemberModal: React.FC<EditMemberModalProps> = ({
           >
             <Input placeholder="Enter country" />
           </Form.Item>
-
-          <Divider>Membership Information</Divider>
-
-          <Row gutter={16}>
-            <Col span={8}>
-              <Form.Item
-                label="Membership Type"
-                name="membership"
-                rules={[{ required: true, message: 'Please select membership type' }]}
-              >
-                <Select
-                  placeholder="Select membership type"
-                  loading={membershipTypesLoading}
-                  showSearch
-                  optionFilterProp="label"
-                  options={membershipTypes.map((m: any) => ({
-                    value: m.type,
-                    label: `${m.type} – ₹${m.price} (${m.duration} days)`,
-                  }))}
-                />
-              </Form.Item>
-            </Col>
-            <Col span={8}>
-              <Form.Item
-                label="Total Amount"
-                name="totalAmount"
-              >
-                <InputNumber
-                  prefix={<span style={{ fontWeight: 600 }}>₹</span>}
-                  placeholder="Enter total amount"
-                  style={{ width: '100%' }}
-                  min={0}
-                />
-              </Form.Item>
-            </Col>
-            <Col span={8}>
-              <Form.Item
-                label="Paid Amount"
-                name="paidAmount"
-              >
-                <InputNumber
-                  prefix={<span style={{ fontWeight: 600 }}>₹</span>}
-                  placeholder="Enter paid amount"
-                  style={{ width: '100%' }}
-                  min={0}
-                />
-              </Form.Item>
-            </Col>
-          </Row>
 
           <Form.Item>
             <Space>

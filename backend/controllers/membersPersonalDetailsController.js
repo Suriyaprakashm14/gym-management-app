@@ -132,13 +132,22 @@ exports.create = async (req, res) => {
   }
 };
 
+async function findMembershipPriceByType(type, gymId = null) {
+  const typeTrimmed = (type || '').trim();
+  if (!typeTrimmed) return null;
+  const typeRegex = new RegExp(`^${typeTrimmed.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i');
+  let doc = gymId
+    ? await MembershipPrice.findOne({ type: { $regex: typeRegex }, gymId })
+    : null;
+  if (!doc) doc = await MembershipPrice.findOne({ type: { $regex: typeRegex } });
+  return doc;
+}
+
 exports.update = async (req, res) => {
   try {
     // Only update totalAmount if membership is updated in request
     if (req.body.membership) {
-      const priceDoc = await MembershipPrice.findOne({
-        type: req.body.membership.trim().toLowerCase()
-      });
+      const priceDoc = await findMembershipPriceByType(req.body.membership);
       if (priceDoc) {
         req.body.totalAmount = priceDoc.price;
       } else {
@@ -255,15 +264,15 @@ exports.update = async (req, res) => {
     
     // Calculate membership dates if membership is being updated
     if (membership) {
-      const priceDoc = await MembershipPrice.findOne({ type: membership.toLowerCase() });
+      const priceDoc = await findMembershipPriceByType(membership);
       if (priceDoc) {
         req.body.totalAmount = priceDoc.price;
-        
+
         // Calculate new membership dates
         const membershipStartDate = new Date(); // Today's date
         const membershipEndDate = new Date();
         membershipEndDate.setDate(membershipStartDate.getDate() + priceDoc.duration); // Add duration in days
-        
+
         req.body.membership_start_date = membershipStartDate;
         req.body.membership_end_date = membershipEndDate;
       } else {
@@ -319,22 +328,24 @@ exports.updateByMemberId = async (req, res) => {
     
     // Calculate membership dates if membership is being updated
     if (membership) {
-      const priceDoc = await MembershipPrice.findOne({ type: membership.toLowerCase() });
+      const memberForGym = await Member.findById(memberId).select('gymId').lean();
+      const gymId = memberForGym?.gymId || null;
+      const priceDoc = await findMembershipPriceByType(membership, gymId);
       if (priceDoc) {
         req.body.totalAmount = priceDoc.price;
-        
+
         // Calculate new membership dates
         const membershipStartDate = new Date(); // Today's date
         const membershipEndDate = new Date();
         membershipEndDate.setDate(membershipStartDate.getDate() + priceDoc.duration); // Add duration in days
-        
+
         req.body.membership_start_date = membershipStartDate;
         req.body.membership_end_date = membershipEndDate;
       } else {
         return res.status(400).json({ error: `Membership type '${membership}' not found` });
       }
     }
-    
+
     const details = await Details.findOneAndUpdate({ memberId }, req.body, { new: true });
     if (!details) return res.status(404).json({ error: 'Personal details not found for this member' });
     res.json(details);

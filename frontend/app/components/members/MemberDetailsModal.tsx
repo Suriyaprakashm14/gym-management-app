@@ -167,6 +167,17 @@ const MemberDetailsModal: React.FC<MemberDetailsModalProps> = ({
       onCancel={onClose}
       width={1000}
       footer={null}
+      style={{ top: 24 }}
+      styles={{
+        body: {
+          maxHeight: 'calc(100vh - 120px)',
+          overflowY: 'auto',
+          overflowX: 'hidden',
+        },
+        content: {
+          overflow: 'hidden',
+        },
+      }}
     >
       {!memberDetails ? (
         <Alert
