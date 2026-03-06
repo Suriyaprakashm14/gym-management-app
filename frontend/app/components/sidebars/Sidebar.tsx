@@ -7,7 +7,6 @@ import { useRouter, usePathname } from 'next/navigation';
 import {
   DashboardOutlined,
   UserOutlined,
-  DollarOutlined,
   LogoutOutlined,
   BankOutlined,
 } from '@ant-design/icons';
@@ -64,7 +63,7 @@ const Sidebar: React.FC<SidebarProps> = ({ collapsed, onCollapse }) => {
 
   const billingMenuItem = {
     key: '/revenue',
-    icon: <DollarOutlined />,
+    icon: <span style={{ fontWeight: 600, fontSize: '1em' }}>₹</span>,
     label: <Link href="/revenue" prefetch>Revenue</Link>,
   };
 

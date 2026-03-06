@@ -4,7 +4,6 @@ import React, { useState } from 'react';
 import { Modal, Form, Input, InputNumber, Button, Space, App } from 'antd';
 import {
   PlusOutlined,
-  DollarOutlined,
   CalendarOutlined,
 } from '@ant-design/icons';
 import { api } from '../../utils/api';
@@ -101,7 +100,7 @@ const CreateMembershipModal: React.FC<CreateMembershipModalProps> = ({
           rules={[{ required: true, message: 'Please enter price' }]}
         >
           <InputNumber
-            prefix={<DollarOutlined />}
+            prefix={<span style={{ fontWeight: 600 }}>₹</span>}
             placeholder="Enter price"
             style={{ width: '100%' }}
             min={0}

@@ -295,12 +295,39 @@ exports.getAll = async (req, res) => {
     }
 
     for (const m of members) {
-      const details = detailsByMemberId[m._id];
+      let details = detailsByMemberId[m._id];
       if (details) {
         if (!m.profile) m.profile = {};
         if (details.phoneNumber) m.profile.phone = details.phoneNumber;
         if (!m.membership) m.membership = {};
         if (details.membership) m.membership.type = details.membership;
+        if (Array.isArray(details.subscriptionPeriods) && details.subscriptionPeriods.length > 0) {
+          const currentEnd = details.membership_end_date ? new Date(details.membership_end_date) : null;
+          if (currentEnd && currentEnd < now) {
+            const nextPeriod = details.subscriptionPeriods.find(
+              (p) => p.endDate && new Date(p.endDate) > now
+            );
+            if (nextPeriod) {
+              const nextStart = new Date(nextPeriod.startDate);
+              const nextEnd = new Date(nextPeriod.endDate);
+              await Details.findOneAndUpdate(
+                { memberId: m._id },
+                { membership_start_date: nextStart, membership_end_date: nextEnd }
+              );
+              await Member.findByIdAndUpdate(m._id, {
+                'membership.startDate': nextStart,
+                'membership.endDate': nextEnd,
+                'membership.isActive': true,
+                status: 'active'
+              });
+              if (!m.membership) m.membership = {};
+              m.membership.startDate = nextStart;
+              m.membership.endDate = nextEnd;
+              m.membership.isActive = true;
+              details = { ...details, membership_start_date: nextStart, membership_end_date: nextEnd };
+            }
+          }
+        }
       }
       const payment = paymentByMemberId[m._id];
       if (payment) {
@@ -403,14 +430,17 @@ exports.patch = async (req, res) => {
       return res.status(403).json({ error: 'Cannot change branch of member outside your branch' });
     }
 
-    // Use findByIdAndUpdate with $set to handle nested objects properly
+    // Map top-level fields to profile where the schema expects them
+    const profileKeys = ['phone', 'age', 'gender', 'dateOfBirth', 'address'];
     const updateData = {};
     for (const [key, value] of Object.entries(req.body)) {
       if (key.startsWith('profile.')) {
-        // Handle nested profile fields
         const profileField = key.split('.')[1];
         if (!updateData['profile']) updateData['profile'] = {};
         updateData['profile'][profileField] = value;
+      } else if (profileKeys.includes(key)) {
+        if (!updateData['profile']) updateData['profile'] = {};
+        updateData['profile'][key] = value;
       } else {
         updateData[key] = value;
       }

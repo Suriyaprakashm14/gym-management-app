@@ -146,7 +146,9 @@ export default function MembershipsPage() {
           </Button>
         )}
       </div>
-      {error && <Text type="danger" style={{ display: 'block', marginBottom: 12 }}>{error}</Text>}
+      {error && items.length === 0 && (
+        <Text type="danger" style={{ display: 'block', marginBottom: 12 }}>{error}</Text>
+      )}
       <Table
         columns={columns}
         dataSource={data}

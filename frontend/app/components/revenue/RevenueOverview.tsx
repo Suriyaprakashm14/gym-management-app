@@ -5,8 +5,9 @@ import {
   AlertCircle, 
   CheckCircle, 
   Clock,
-  TrendingUp,
-  CreditCard
+  CreditCard,
+  TrendingDown,
+  TrendingUp
 } from 'lucide-react'
 import { 
   BarChart, 
@@ -379,6 +380,16 @@ const BillingOverview: React.FC = () => {
 
   const monthlyRevenue = prepareChartData()
 
+  // Revenue trend: compare latest month to previous month (from same data as chart)
+  const revenueTrend = (() => {
+    if (!monthlyRevenue || monthlyRevenue.length < 2) return null
+    const sorted = [...monthlyRevenue].sort((a, b) => (a.month < b.month ? -1 : 1))
+    const prev = sorted[sorted.length - 2]?.amount ?? 0
+    const curr = sorted[sorted.length - 1]?.amount ?? 0
+    if (prev === 0) return curr > 0 ? 100 : 0
+    return ((curr - prev) / prev) * 100
+  })()
+
   if (loading) {
     return (
       <div style={{
@@ -645,10 +656,22 @@ const BillingOverview: React.FC = () => {
                   display: 'flex',
                   alignItems: 'center',
                   gap: '0.5rem',
-                  color: '#10B981'
+                  color: revenueTrend === null
+                    ? '#64748B'
+                    : revenueTrend >= 0
+                      ? '#10B981'
+                      : '#EF4444'
                 }}>
-                  <TrendingUp style={{width: '1.25rem', height: '1.25rem'}} />
-                  <span style={{fontSize: 'clamp(0.875rem, 2vw, 1rem)', fontWeight: '600'}}>+12.5%</span>
+                  {revenueTrend !== null && (
+                    revenueTrend >= 0
+                      ? <TrendingUp style={{ width: '1.25rem', height: '1.25rem' }} />
+                      : <TrendingDown style={{ width: '1.25rem', height: '1.25rem' }} />
+                  )}
+                  <span style={{ fontSize: 'clamp(0.875rem, 2vw, 1rem)', fontWeight: '600' }}>
+                    {revenueTrend === null
+                      ? '—'
+                      : `${revenueTrend >= 0 ? '+' : ''}${revenueTrend.toFixed(1)}%`}
+                  </span>
                 </div>
               </div>
             </div>

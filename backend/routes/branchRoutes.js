@@ -27,7 +27,7 @@ router.put('/branches/:branchId', gymOwnerOrAdmin, requireBranchAccess('branchId
 router.put('/branches/:branchId/deactivate', gymOwnerOrAdmin, requireBranchAccess('branchId'), requireActiveGym, branchController.deactivateBranch);
 router.put('/branches/:branchId/reactivate', gymOwnerOrAdmin, requireBranchAccess('branchId'), requireActiveGym, branchController.reactivateBranch);
 
-// Admin only routes
-router.delete('/branches/:branchId', adminOnly, requireBranchAccess('branchId'), branchController.deleteBranch);
+// Gym owner and admin can delete branches
+router.delete('/branches/:branchId', gymOwnerOrAdmin, requireBranchAccess('branchId'), branchController.deleteBranch);
 
 module.exports = router;

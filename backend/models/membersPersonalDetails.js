@@ -31,6 +31,11 @@ const personalDetailsSchema = new mongoose.Schema({
   membership: { type: String},
   membership_start_date: { type: Date, default: null },
   membership_end_date: { type: Date, default: null },
+  planQuantity: { type: Number, default: 1 },
+  subscriptionPeriods: [{
+    startDate: { type: Date },
+    endDate: { type: Date },
+  }],
   totalAmount: { type: Number, default: 0 },
   paidAmount: { type: Number, default: 0 },
   last_visit: { type: Date, default: null },

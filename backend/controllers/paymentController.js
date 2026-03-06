@@ -29,7 +29,12 @@ exports.create = async (req, res) => {
     const { membership } = details;
     if (!membership) return res.status(400).json({ error: 'Membership type not set in personal details' });
 
-    const priceDoc = await MembershipPrice.findOne({ type: membership.trim().toLowerCase() });
+    const typeTrimmed = membership.trim();
+    const typeRegex = new RegExp(`^${typeTrimmed.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i');
+    let priceDoc = member.gymId
+      ? await MembershipPrice.findOne({ type: { $regex: typeRegex }, gymId: member.gymId })
+      : null;
+    if (!priceDoc) priceDoc = await MembershipPrice.findOne({ type: { $regex: typeRegex } });
     if (!priceDoc) return res.status(400).json({ error: `Membership type '${membership}' not found in price table` });
 
     const totalAmount = priceDoc.price;
@@ -42,7 +47,7 @@ exports.create = async (req, res) => {
     if (paidAmount > remaining) {
       return res.status(400).json({
         error: 'Payment exceeds remaining due amount',
-        message: `Maximum payable amount is ${remaining}`,
+        message: `Maximum payable amount is ₹${remaining}`,
       });
     }
 

@@ -25,7 +25,6 @@ import {
   HomeOutlined,
   HeartOutlined,
   FileTextOutlined,
-  DollarOutlined,
   ContactsOutlined,
   ManOutlined,
   WomanOutlined,
@@ -251,13 +250,13 @@ const MemberDetailsModal: React.FC<MemberDetailsModalProps> = ({
               <Descriptions.Item label="Membership Type">
                 {personalDetails?.membership || memberDetails.membership || 'N/A'}
               </Descriptions.Item>
-              <Descriptions.Item label={<><DollarOutlined /> Total Amount</>}>
+              <Descriptions.Item label="Total Amount (₹)">
                 ₹{personalDetails?.totalAmount || 0}
               </Descriptions.Item>
-              <Descriptions.Item label={<><DollarOutlined /> Paid Amount</>}>
+              <Descriptions.Item label="Paid Amount (₹)">
                 ₹{personalDetails?.paidAmount || 0}
               </Descriptions.Item>
-              <Descriptions.Item label={<><DollarOutlined /> Outstanding Amount</>}>
+              <Descriptions.Item label="Outstanding Amount (₹)">
                 <Text 
                   style={{ 
                     color: (personalDetails?.totalAmount || 0) - (personalDetails?.paidAmount || 0) > 0 ? '#ff4d4f' : '#52c41a' 

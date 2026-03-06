@@ -115,8 +115,12 @@ export const api = {
           const rawPayload: ApiEnvelope | any = isJsonResponse ? await response.json() : await response.text();
 
           if (!response.ok) {
+            // Only trigger global logout for 401 on authenticated requests, not on login failure
             if (response.status === 401 && typeof window !== 'undefined') {
-              window.dispatchEvent(new CustomEvent('auth:logout'));
+              const isLoginRequest = endpoint.toLowerCase().includes('/auth/login');
+              if (!isLoginRequest) {
+                window.dispatchEvent(new CustomEvent('auth:logout'));
+              }
             }
             const errorMessage =
               (typeof rawPayload?.error === 'string' ? rawPayload.error : rawPayload?.error?.message) ||
@@ -172,7 +176,10 @@ export const api = {
           lastError = fetchError;
           const isAbortError =
             fetchError instanceof DOMException && fetchError.name === 'AbortError';
-          const isNetworkError = fetchError instanceof TypeError || isAbortError;
+          const isNetworkError =
+            fetchError instanceof TypeError ||
+            isAbortError ||
+            (fetchError instanceof Error && fetchError.message === 'Failed to fetch');
           if (!isNetworkError) {
             throw fetchError;
           }
@@ -181,7 +188,17 @@ export const api = {
         }
       }
 
-      throw lastError || new Error('Unable to connect to API server');
+      const err = lastError as Error | null;
+      const isConnectionError =
+        err instanceof TypeError ||
+        (err instanceof Error && (err.message === 'Failed to fetch' || err.message.includes('fetch'))) ||
+        (err instanceof DOMException && err.name === 'AbortError');
+      if (isConnectionError) {
+        throw new Error(
+          'Unable to reach the server. Check that the backend is running (e.g. run "npm run dev" in the backend folder) and that the API URL is correct.'
+        );
+      }
+      throw err || new Error('Unable to connect to API server');
     } catch (error) {
       console.error('API request failed:', error);
       throw error;

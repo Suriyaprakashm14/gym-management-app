@@ -13,6 +13,8 @@ import {
   DatePicker,
   Divider,
   InputNumber,
+  Card,
+  Typography,
 } from 'antd';
 import {
   UploadOutlined,
@@ -27,6 +29,7 @@ import { useAppDispatch } from '../../redux/hooks';
 import { addMember, fetchMembers, normalizeMember } from '../../redux/membersSlice';
 
 const { Option } = Select;
+const { Text } = Typography;
 
 interface Branch {
   _id: string;
@@ -147,22 +150,29 @@ export default function AddMemberForm({ onSuccess, onCancel }: AddMemberFormProp
       if (!memberId) throw new Error('Failed to get member ID from response');
 
       const gender = values.personalGender === 'other' ? 'others' : values.personalGender;
-      await api.membersPersonalDetails.create({
-        memberId,
-        gender,
-        streetAddress: values.streetAddress || '',
-        city: values.city || '',
-        zipcode: values.zipcode || '',
-        state: values.state || '',
-        country: values.country || '',
-        phoneNumber: values.phoneNumber,
-        emergencyContacts: values.emergencyContacts || [],
-        dateOfBirth: values.dateOfBirth
-          ? new Date(values.dateOfBirth).toISOString().split('T')[0]
-          : '',
-        membership: values.membership,
-        paidAmount: values.paidAmount ? String(values.paidAmount) : '0',
-      });
+      try {
+        await api.membersPersonalDetails.create({
+          memberId,
+          gender,
+          streetAddress: values.streetAddress || '',
+          city: values.city || '',
+          zipcode: values.zipcode || '',
+          state: values.state || '',
+          country: values.country || '',
+          phoneNumber: values.phoneNumber,
+          emergencyContacts: values.emergencyContacts || [],
+          dateOfBirth: values.dateOfBirth
+            ? new Date(values.dateOfBirth).toISOString().split('T')[0]
+            : '',
+          membership: values.membership,
+          planQuantity: values.planQuantity ?? 1,
+          paidAmount: values.paidAmount ? String(values.paidAmount) : '0',
+        });
+      } catch (detailsErr: any) {
+        message.warning(
+          detailsErr?.message || 'Member created but membership/personal details could not be saved. You can edit the member to add details.'
+        );
+      }
 
       const normalized = normalizeMember(memberObj ?? {}, {
         id: memberId,
@@ -320,22 +330,105 @@ export default function AddMemberForm({ onSuccess, onCancel }: AddMemberFormProp
       <Form.Item label="Country" name="country">
         <Input placeholder="Enter country" />
       </Form.Item>
-      <Form.Item
-        label="Membership Type"
-        name="membership"
-        rules={[{ required: true, message: 'Please select membership type' }]}
-      >
-        <Select placeholder="Select membership type" loading={membershipTypesLoading}>
-          {membershipTypes.map((m) => (
-            <Option key={m.id || m._id} value={m.type}>
-              {m.type} - ₹{m.price} ({m.duration} days)
-            </Option>
-          ))}
-        </Select>
-      </Form.Item>
-      <Form.Item label="Paid Amount" name="paidAmount" initialValue={0}>
-        <InputNumber style={{ width: '100%' }} placeholder="Enter paid amount" min={0} />
-      </Form.Item>
+
+      <Divider>Plan & payment</Divider>
+      <Card size="small" style={{ marginBottom: 16, background: '#fafafa' }}>
+        <Row gutter={16}>
+          <Col span={14}>
+            <Form.Item
+              label="Membership plan"
+              name="membership"
+              rules={[{ required: true, message: 'Please select a plan' }]}
+            >
+              <Select
+                placeholder="Select plan"
+                loading={membershipTypesLoading}
+                showSearch
+                optionFilterProp="children"
+              >
+                {membershipTypes.map((m) => (
+                  <Option key={m.id || m._id} value={m.type}>
+                    {m.type} – ₹{m.price} ({m.duration} days)
+                  </Option>
+                ))}
+              </Select>
+            </Form.Item>
+          </Col>
+          <Col span={10}>
+            <Form.Item
+              label="Quantity (periods)"
+              name="planQuantity"
+              initialValue={1}
+              tooltip="Consecutive periods; after one ends, the next starts automatically."
+              rules={[
+                { type: 'number', min: 1, max: 12, message: 'Between 1 and 12' },
+              ]}
+            >
+              <InputNumber
+                style={{ width: '100%' }}
+                min={1}
+                max={12}
+                addonAfter="periods"
+              />
+            </Form.Item>
+          </Col>
+        </Row>
+        <Form.Item
+          noStyle
+          shouldUpdate={(prev, curr) =>
+            prev.membership !== curr.membership || prev.planQuantity !== curr.planQuantity
+          }
+        >
+          {() => {
+            const plan = membershipTypes.find(
+              (m: any) => m.type === form.getFieldValue('membership')
+            );
+            const qty = form.getFieldValue('planQuantity') || 1;
+            const maxAmount =
+              plan && typeof plan.price === 'number' ? plan.price * qty : null;
+            return maxAmount != null ? (
+              <div style={{ marginBottom: 12 }}>
+                <Text type="secondary">Maximum amount for selected plan: </Text>
+                <Text strong>₹{maxAmount.toLocaleString('en-IN')}</Text>
+              </div>
+            ) : null;
+          }}
+        </Form.Item>
+        <Form.Item
+          label="Paid amount"
+          name="paidAmount"
+          initialValue={0}
+          rules={[
+            { type: 'number', min: 0, message: 'Amount must be ≥ 0' },
+            () => ({
+              validator(_, value) {
+                if (value == null || value === '' || !membershipTypes.length) {
+                  return Promise.resolve();
+                }
+                const selectedType = form.getFieldValue('membership');
+                const quantity = form.getFieldValue('planQuantity') || 1;
+                if (!selectedType) return Promise.resolve();
+                const plan = membershipTypes.find((m: any) => m.type === selectedType);
+                if (!plan || typeof plan.price !== 'number') return Promise.resolve();
+                const maxAmount = plan.price * quantity;
+                if (value > maxAmount) {
+                  return Promise.reject(
+                    new Error(`Cannot exceed maximum (₹${maxAmount.toLocaleString('en-IN')})`),
+                  );
+                }
+                return Promise.resolve();
+              },
+            }),
+          ]}
+        >
+          <InputNumber
+            style={{ width: '100%' }}
+            placeholder="Enter amount (max shown above)"
+            min={0}
+            addonBefore="₹"
+          />
+        </Form.Item>
+      </Card>
       <Form.List name="emergencyContacts">
         {(fields, { add, remove }) => (
           <>

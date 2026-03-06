@@ -132,6 +132,7 @@ export default function MemberCreationPage() {
         emergencyContacts: values.emergencyContacts || [],
         dateOfBirth: values.dateOfBirth ? new Date(values.dateOfBirth).toISOString().split('T')[0] : '',
         membership: values.membership,
+        planQuantity: values.planQuantity ?? 1,
         paidAmount: values.paidAmount ? String(values.paidAmount) : '0',
       });
 
@@ -230,6 +231,9 @@ export default function MemberCreationPage() {
                 <Option key={m.id || m._id} value={m.type}>{m.type} - ₹{m.price} ({m.duration} days)</Option>
               ))}
             </Select>
+          </Form.Item>
+          <Form.Item label="Plan Quantity" name="planQuantity" initialValue={1} tooltip="Number of consecutive periods; after one ends, the next activates automatically.">
+            <InputNumber style={{ width: '100%' }} min={1} max={12} placeholder="1 = single period" />
           </Form.Item>
           <Form.Item label="Paid Amount" name="paidAmount" initialValue={0}>
             <InputNumber style={{ width: '100%' }} placeholder="Enter paid amount" min={0} />

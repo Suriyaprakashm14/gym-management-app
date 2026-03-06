@@ -77,19 +77,25 @@ export const fetchMembers = createAsyncThunk(
   async (params: Record<string, string | number> | undefined, { rejectWithValue }) => {
     try {
       const res = await api.members.getAll(params);
-      // API shape: { list: Member[], total: number } for paginated, or legacy array
+      // API shape: { list: Member[], total: number } (or wrapped in .data by envelope)
       const envelope = res as any;
       let list: any[] = [];
       let total = 0;
-      if (envelope && typeof envelope === 'object' && Array.isArray(envelope.list)) {
-        list = envelope.list;
-        total = typeof envelope.total === 'number' ? envelope.total : list.length;
-      } else if (Array.isArray(res)) {
+      if (envelope && typeof envelope === 'object') {
+        const rawList =
+          Array.isArray(envelope.list) ? envelope.list
+            : Array.isArray(envelope?.data?.list) ? envelope.data.list
+              : Array.isArray(envelope?.data) ? envelope.data
+                : [];
+        list = rawList;
+        total =
+          typeof envelope.total === 'number' ? envelope.total
+            : typeof envelope?.data?.total === 'number' ? envelope.data.total
+              : list.length;
+      }
+      if (list.length === 0 && Array.isArray(res)) {
         list = res;
         total = res.length;
-      } else if (Array.isArray(envelope?.data)) {
-        list = envelope.data;
-        total = envelope.total ?? list.length;
       }
       if (process.env.NODE_ENV !== 'production') {
         // eslint-disable-next-line no-console
@@ -149,6 +155,7 @@ const membersSlice = createSlice({
     });
     builder.addCase(fetchMembers.fulfilled, (state, action: PayloadAction<{ list: Member[]; total: number }>) => {
       state.loading = false;
+      state.error = null;
       const payload = action.payload;
       const incoming = Array.isArray(payload?.list) ? payload.list : [];
       state.members = incoming.map((m: any) => normalizeMember(m));
@@ -175,27 +182,8 @@ const membersSlice = createSlice({
     // update
     builder.addCase(updateMember.fulfilled, (state, action) => {
       const { id, member } = action.payload as { id: string; member: any };
-      state.members = state.members.map((m) =>
-        m.id === id
-          ? {
-              ...m,
-              ...{
-                name: member.name || [member.firstName, member.lastName].filter(Boolean).join(' '),
-                email: member.email,
-                phone: member.profile?.phone || member.phone,
-                age: member.age,
-                dob: member.profile?.dateOfBirth || member.dateOfBirth,
-                status: member.status || (member.membership?.isActive ? 'active' : 'inactive'),
-                membership: member.membership?.type,
-                expires: member.membership?.endDate,
-                lastVisit: member.lastVisit,
-                billingStatus: member.billingStatus,
-                billingAmount: member.billingAmount,
-                billingDate: member.billingDate,
-              },
-            }
-          : m
-      );
+      const normalized = normalizeMember(member ?? {}, { id });
+      state.members = state.members.map((m) => (m.id === id ? { ...m, ...normalized } : m));
     });
     builder.addCase(updateMember.rejected, (state, action) => {
       state.error = (action.payload as string) || 'Failed to update member';

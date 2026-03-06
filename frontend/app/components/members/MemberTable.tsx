@@ -82,7 +82,7 @@ const MemberTable: React.FC = () => {
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(PAGE_SIZE);
   const dispatch = useAppDispatch();
-  const { members, total, loading } = useAppSelector((s) => s.members);
+  const { members, total, loading, error: membersError } = useAppSelector((s) => s.members);
   const { filter } = useMemberFilter();
 
   const loadPage = useCallback(
@@ -109,11 +109,13 @@ const MemberTable: React.FC = () => {
   }, [filter, page, pageSize]); // eslint-disable-line react-hooks/exhaustive-deps -- loadPage from filter/page/pageSize
 
   const handleEdit = (record: Member) => {
-    // Find the original member data from Redux state
     const originalMember = members.find((m: any) => m.id === record.key);
-    if (originalMember) {
-      setSelectedMember(originalMember);
+    const memberToEdit = originalMember && originalMember.id ? { ...originalMember } : null;
+    if (memberToEdit) {
+      setSelectedMember(memberToEdit);
       setEditModalVisible(true);
+    } else {
+      message.warning('Member data not available. Please refresh and try again.');
     }
   };
 
@@ -193,7 +195,13 @@ const MemberTable: React.FC = () => {
             >
               {text}
             </div>
-            <Tag color="success" style={{ marginTop: 4 }}>
+            <Tag
+              color={record.status === 'inactive' ? 'default' : 'success'}
+              style={{
+                marginTop: 4,
+                ...(record.status === 'inactive' ? { color: '#8c8c8c', borderColor: '#d9d9d9' } : {}),
+              }}
+            >
               {record.status.toUpperCase()}
             </Tag>
           </div>
@@ -275,24 +283,12 @@ const MemberTable: React.FC = () => {
             </Space>
           );
         }
-        
-        if (record.billingAmount) {
+        if (record.billingStatus === 'paid' && record.billingAmount) {
           return (
             <Space>
-              {record.billingStatus === 'paid' ? (
-                <CheckCircleOutlined style={{ color: '#52c41a', fontSize: 16 }} />
-              ) : (
-                <WarningOutlined style={{ color: '#fa8c16', fontSize: 16 }} />
-              )}
+              <CheckCircleOutlined style={{ color: '#52c41a', fontSize: 16 }} />
               <Space direction="vertical" size={0}>
-                <Text 
-                  strong 
-                  style={{ 
-                    color: record.billingStatus === 'paid' ? '#52c41a' : '#fa8c16' 
-                  }}
-                >
-                  {record.billingAmount}
-                </Text>
+                <Text strong style={{ color: '#52c41a' }}>{record.billingAmount}</Text>
                 <Text type="secondary" style={{ fontSize: 12 }}>
                   {record.billingDate === EMPTY ? EMPTY : formatDateDDMMYY(record.billingDate)}
                 </Text>
@@ -300,8 +296,28 @@ const MemberTable: React.FC = () => {
             </Space>
           );
         }
-        
-        return null;
+        if (record.billingStatus === 'overdue' || record.billingStatus === 'pending') {
+          return (
+            <Space>
+              <WarningOutlined style={{ color: '#fa8c16', fontSize: 16 }} />
+              <Space direction="vertical" size={0}>
+                <Text strong style={{ color: '#fa8c16' }}>
+                  {record.billingAmount && record.billingAmount !== EMPTY
+                    ? record.billingAmount
+                    : 'Pending'}
+                </Text>
+                {record.billingDate && record.billingDate !== EMPTY && (
+                  <Text type="secondary" style={{ fontSize: 12 }}>
+                    {formatDateDDMMYY(record.billingDate)}
+                  </Text>
+                )}
+              </Space>
+            </Space>
+          );
+        }
+        return (
+          <Text type="secondary" style={{ fontSize: 13 }}>—</Text>
+        );
       },
     },
     {
@@ -349,6 +365,11 @@ const MemberTable: React.FC = () => {
 
   return (
     <>
+      {membersError && members.length === 0 && !loading && (
+        <div style={{ marginBottom: 12 }}>
+          <Text type="secondary">{membersError}</Text>
+        </div>
+      )}
       <Table
         rowSelection={rowSelection}
         columns={columns}

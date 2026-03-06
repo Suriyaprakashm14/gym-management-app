@@ -7,7 +7,10 @@
     "dev": "nodemon index.js",
     "test": "jest --runInBand",
     "test:watch": "jest --watch",
-    "seed:recently-expired": "node scripts/seedRecentlyExpiredMembers.js"
+    "seed:recently-expired": "node scripts/seedRecentlyExpiredMembers.js",
+    "seed:users": "node scripts/seedUsers.js",
+    "seed:membership-prices": "node scripts/seedMembershipPrices.js",
+    "seed:all": "npm run seed:users && npm run seed:membership-prices && npm run seed:recently-expired"
   },
   "keywords": [],
   "author": "",

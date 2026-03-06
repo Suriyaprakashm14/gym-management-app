@@ -25,7 +25,6 @@ import {
   UploadOutlined,
   HomeOutlined,
   ContactsOutlined,
-  DollarOutlined,
   ManOutlined,
   WomanOutlined,
 } from '@ant-design/icons';
@@ -82,54 +81,85 @@ const EditMemberModal: React.FC<EditMemberModalProps> = ({
   const [loading, setLoading] = useState(false);
   const [fileList, setFileList] = useState<any[]>([]);
   const [personalDetails, setPersonalDetails] = useState<any>(null);
+  const [membershipTypes, setMembershipTypes] = useState<any[]>([]);
+  const [membershipTypesLoading, setMembershipTypesLoading] = useState(false);
   const dispatch = useAppDispatch();
 
   useEffect(() => {
-    if (visible && member) {
-      fetchPersonalDetails();
+    if (visible && member?.id) {
       loadMemberData();
+      fetchPersonalDetails().catch(() => {});
     }
-  }, [visible, member, form]);
+  }, [visible, member?.id, form]);
+
+  useEffect(() => {
+    if (!visible) return;
+    const fetchPlans = async () => {
+      setMembershipTypesLoading(true);
+      try {
+        const response = await api.membershipPrices.getAll();
+        const listSource: any =
+          Array.isArray(response)
+            ? response
+            : Array.isArray((response as any)?.data)
+              ? (response as any).data
+              : Array.isArray((response as any)?.items)
+                ? (response as any).items
+                : [];
+        const list = Array.isArray(listSource) ? listSource : [];
+        setMembershipTypes(list);
+      } catch {
+        setMembershipTypes([]);
+      } finally {
+        setMembershipTypesLoading(false);
+      }
+    };
+    fetchPlans();
+  }, [visible]);
 
   const fetchPersonalDetails = async () => {
     if (!member?.id) return;
-    
+    let personalData: any = null;
     try {
-      const response = await api.membersPersonalDetails.getByMemberId(member.id);
-      const personalData = response;
-      setPersonalDetails(personalData);
-      
-      // Pre-fill form with personal details
-      form.setFieldsValue({
-        dateOfBirth: personalData.dateOfBirth ? new Date(personalData.dateOfBirth).toISOString().split('T')[0] : '',
-        streetAddress: personalData.streetAddress || '',
-        city: personalData.city || '',
-        zipcode: personalData.zipcode || '',
-        state: personalData.state || '',
-        country: personalData.country || '',
-        phoneNumber: personalData.phoneNumber || '',
-        membership: personalData.membership || '',
-        totalAmount: personalData.totalAmount || 0,
-        paidAmount: personalData.paidAmount || 0,
-        emergencyContacts: personalData.emergencyContacts || [],
-      });
-    } catch (error) {
-      console.log('No personal details found for this member');
-      setPersonalDetails(null);
+      personalData = await api.membersPersonalDetails.getByMemberId(member.id);
+    } catch (error: any) {
+      const isNotFound =
+        error?.message?.includes('Personal details not found') ||
+        error?.message?.includes('404') ||
+        String(error?.message || '').toLowerCase().includes('not found');
+      if (!isNotFound) {
+        message.warning('Could not load personal details. You can still edit basic info.');
+      }
     }
+    setPersonalDetails(personalData);
+    form.setFieldsValue({
+      dateOfBirth: personalData?.dateOfBirth
+        ? new Date(personalData.dateOfBirth).toISOString().split('T')[0]
+        : undefined,
+      streetAddress: personalData?.streetAddress ?? '',
+      city: personalData?.city ?? '',
+      zipcode: personalData?.zipcode ?? '',
+      state: personalData?.state ?? '',
+      country: personalData?.country ?? '',
+      phoneNumber: personalData?.phoneNumber ?? '',
+      membership: personalData?.membership ?? undefined,
+      totalAmount: personalData?.totalAmount ?? 0,
+      paidAmount: personalData?.paidAmount ?? 0,
+      emergencyContacts: personalData?.emergencyContacts ?? [],
+    });
   };
 
   const loadMemberData = () => {
-    // Pre-fill form with member data
+    if (!member?.id) return;
     form.setFieldsValue({
-      firstName: member.firstName || '',
-      lastName: member.lastName || '',
-      email: member.email || '',
-      phone: member.phone || '',
-      age: member.age || '',
-      gender: member.gender || 'male',
-      role: member.role || 'member',
-      status: member.status || 'active',
+      firstName: member.firstName ?? '',
+      lastName: member.lastName ?? '',
+      email: member.email ?? '',
+      phone: member.phone ?? member.profile?.phone ?? '',
+      age: member.age ?? member.profile?.age ?? undefined,
+      gender: member.gender ?? member.profile?.gender ?? 'male',
+      role: member.role ?? 'member',
+      status: member.status ?? 'active',
     });
 
     // Set file list if member has an image
@@ -148,7 +178,7 @@ const EditMemberModal: React.FC<EditMemberModalProps> = ({
   const handleSubmit = async (values: MemberFormData) => {
     setLoading(true);
     try {
-      // Update member basic details
+      // Update member basic details (JSON payload; image updates are ignored for now)
       const memberData: any = {
         firstName: values.firstName,
         lastName: values.lastName,
@@ -160,28 +190,7 @@ const EditMemberModal: React.FC<EditMemberModalProps> = ({
         status: values.status,
       };
 
-      // If there's an uploaded file, add it to the form data
-      if (fileList.length > 0 && fileList[0].originFileObj) {
-        memberData.image = fileList[0].originFileObj;
-      }
-
-      // Create FormData for file upload
-      const formData = new FormData();
-      formData.append('firstName', memberData.firstName);
-      formData.append('lastName', memberData.lastName);
-      formData.append('email', memberData.email);
-      formData.append('phone', memberData.phone);
-      formData.append('age', memberData.age.toString());
-      formData.append('gender', memberData.gender);
-      formData.append('role', memberData.role);
-      formData.append('status', memberData.status);
-
-      if (memberData.image) {
-        formData.append('image', memberData.image);
-      }
-
-      // Update member basic details
-      await dispatch(updateMember({ id: member.id, data: formData })).unwrap();
+      await dispatch(updateMember({ id: member.id, data: memberData })).unwrap();
 
       // Update personal details
       const personalDetailsData = {
@@ -200,7 +209,15 @@ const EditMemberModal: React.FC<EditMemberModalProps> = ({
       };
 
       try {
-        await api.membersPersonalDetails.update(member.id, personalDetailsData);
+        if (personalDetails != null) {
+          await api.membersPersonalDetails.update(member.id, personalDetailsData);
+        } else {
+          await api.membersPersonalDetails.create({
+            memberId: member.id,
+            ...personalDetailsData,
+            paidAmount: String(personalDetailsData.paidAmount ?? 0),
+          });
+        }
       } catch (personalError) {
         console.log('Personal details update failed:', personalError);
         // Don't fail the entire operation if personal details update fails
@@ -246,18 +263,20 @@ const EditMemberModal: React.FC<EditMemberModalProps> = ({
       footer={null}
       width={1000}
       destroyOnClose
+      style={{ top: 24 }}
       styles={{
         body: {
-          maxHeight: 'none',
-          overflow: 'visible',
-          padding: 0,
+          maxHeight: '75vh',
+          overflowY: 'auto',
+          overflowX: 'hidden',
+          padding: '16px 0',
         },
         content: {
-          overflow: 'visible',
+          overflow: 'hidden',
         },
       }}
     >
-      <Card>
+      <Card style={{ margin: 0 }}>
         <Form
           form={form}
           layout="vertical"
@@ -462,14 +481,16 @@ const EditMemberModal: React.FC<EditMemberModalProps> = ({
                 name="membership"
                 rules={[{ required: true, message: 'Please select membership type' }]}
               >
-                <Select placeholder="Select membership type">
-                  <Option value="monthly">Monthly</Option>
-                  <Option value="quarterly">Quarterly</Option>
-                  <Option value="yearly">Yearly</Option>
-                  <Option value="basic">Basic</Option>
-                  <Option value="premium">Premium</Option>
-                  <Option value="vip">VIP</Option>
-                </Select>
+                <Select
+                  placeholder="Select membership type"
+                  loading={membershipTypesLoading}
+                  showSearch
+                  optionFilterProp="label"
+                  options={membershipTypes.map((m: any) => ({
+                    value: m.type,
+                    label: `${m.type} – ₹${m.price} (${m.duration} days)`,
+                  }))}
+                />
               </Form.Item>
             </Col>
             <Col span={8}>
@@ -478,7 +499,7 @@ const EditMemberModal: React.FC<EditMemberModalProps> = ({
                 name="totalAmount"
               >
                 <InputNumber
-                  prefix={<DollarOutlined />}
+                  prefix={<span style={{ fontWeight: 600 }}>₹</span>}
                   placeholder="Enter total amount"
                   style={{ width: '100%' }}
                   min={0}
@@ -491,7 +512,7 @@ const EditMemberModal: React.FC<EditMemberModalProps> = ({
                 name="paidAmount"
               >
                 <InputNumber
-                  prefix={<DollarOutlined />}
+                  prefix={<span style={{ fontWeight: 600 }}>₹</span>}
                   placeholder="Enter paid amount"
                   style={{ width: '100%' }}
                   min={0}

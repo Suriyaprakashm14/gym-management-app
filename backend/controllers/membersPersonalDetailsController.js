@@ -11,10 +11,17 @@ exports.create = async (req, res) => {
     let priceDoc = null;
 
     if (membership) {
-      // Normalize type: use your price table, which uses the exact strings ("monthly", "annual", "pay-as-you-go")
-      priceDoc = await MembershipPrice.findOne({
-        type: membership.trim().toLowerCase()
-      });
+      const typeTrimmed = membership.trim();
+      const typeNormalized = typeTrimmed.toLowerCase();
+      const typeRegex = new RegExp(`^${typeTrimmed.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i');
+      const memberForPrice = await Member.findById(memberId).select('gymId').lean();
+      const gymId = memberForPrice?.gymId || null;
+      priceDoc = await MembershipPrice.findOne(
+        gymId ? { type: { $regex: typeRegex }, gymId } : { type: { $regex: typeRegex } }
+      );
+      if (!priceDoc) {
+        priceDoc = await MembershipPrice.findOne({ type: { $regex: typeRegex } });
+      }
       if (priceDoc) {
         totalAmount = priceDoc.price;
       } else {
@@ -70,38 +77,50 @@ exports.create = async (req, res) => {
       }
     }
 
-    // Calculate membership dates
+    // Plan quantity: number of consecutive subscription periods (default 1)
+    const quantity = Math.max(1, parseInt(req.body.planQuantity, 10) || 1);
+    const durationDays = priceDoc ? priceDoc.duration : 30;
+
     let membershipStartDate = null;
     let membershipEndDate = null;
+    const subscriptionPeriods = [];
     if (membership && priceDoc) {
-      membershipStartDate = new Date(); // Today's date
-      membershipEndDate = new Date();
-      membershipEndDate.setDate(membershipStartDate.getDate() + priceDoc.duration); // Add duration in days
+      let periodStart = new Date();
+      periodStart.setHours(0, 0, 0, 0);
+      for (let i = 0; i < quantity; i++) {
+        const periodEnd = new Date(periodStart);
+        periodEnd.setDate(periodEnd.getDate() + durationDays);
+        subscriptionPeriods.push({ startDate: new Date(periodStart), endDate: new Date(periodEnd) });
+        if (i === 0) {
+          membershipStartDate = new Date(periodStart);
+          membershipEndDate = new Date(periodEnd);
+        }
+        periodStart = new Date(periodEnd);
+      }
     }
+
+    const totalAmountForQuantity = priceDoc ? totalAmount * quantity : totalAmount;
 
     const details = new Details({
       ...req.body,
-      branchId: member.branchId, // Use branchId from member data
-      totalAmount, // Always set here from DB!
+      branchId: member.branchId,
+      totalAmount: totalAmountForQuantity,
       paidAmount: req.body.paidAmount || 0,
       last_visit: lastAttendance ? lastAttendance.attendanceDate : null,
       age: calculatedAge,
       membership_start_date: membershipStartDate,
       membership_end_date: membershipEndDate,
+      planQuantity: quantity,
+      subscriptionPeriods: subscriptionPeriods.length ? subscriptionPeriods : undefined,
     });
 
     await details.save();
 
-    // Update member's membership information
-    if (priceDoc) {
-      const startDate = new Date();
-      const endDate = new Date();
-      endDate.setDate(startDate.getDate() + priceDoc.duration); // Add duration in days
-
+    if (priceDoc && membershipStartDate && membershipEndDate) {
       await Member.findByIdAndUpdate(memberId, {
         'membership.type': membership,
-        'membership.startDate': startDate,
-        'membership.endDate': endDate,
+        'membership.startDate': membershipStartDate,
+        'membership.endDate': membershipEndDate,
         'membership.isActive': true,
         status: 'active'
       });
