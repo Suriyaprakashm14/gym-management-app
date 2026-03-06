@@ -286,14 +286,18 @@ export const api = {
     
     getStats: () => api.request('/payments/stats'),
     
-      // Analytics endpoints
-      getGymOwnerAnalytics: (params?: { year?: number; month?: number }) => {
-        const queryString = params ? `?${new URLSearchParams(params as Record<string, string>)}` : '';
+      // Analytics endpoints (year/month OR startDate/endDate for date range)
+      getGymOwnerAnalytics: (params?: { year?: number; month?: number; startDate?: string; endDate?: string }) => {
+        const queryString = params && Object.keys(params).length
+          ? `?${new URLSearchParams(params as Record<string, string>)}`
+          : '';
         return api.request(`/payments/analytics/gym-owner${queryString}`);
       },
-      
-      getBranchManagerAnalytics: (params?: { year?: number; month?: number }) => {
-        const queryString = params ? `?${new URLSearchParams(params as Record<string, string>)}` : '';
+
+      getBranchManagerAnalytics: (params?: { year?: number; month?: number; startDate?: string; endDate?: string }) => {
+        const queryString = params && Object.keys(params).length
+          ? `?${new URLSearchParams(params as Record<string, string>)}`
+          : '';
         return api.request(`/payments/analytics/branch-manager${queryString}`);
       },
       
@@ -308,6 +312,22 @@ export const api = {
       // Pending payments with filters
       getPendingByGymId: (gymId: string) => api.request(`/payments/pending?gymId=${gymId}`),
       getPendingByBranchId: (branchId: string) => api.request(`/payments/pending?branchId=${branchId}`),
+  },
+
+  // Expenses endpoints
+  expenses: {
+    list: (params?: { startDate?: string; endDate?: string; branchId?: string }) => {
+      const q = params ? `?${new URLSearchParams(params as Record<string, string>)}` : '';
+      return api.request(`/expenses${q}`);
+    },
+    getTotal: (startDate: string, endDate: string) =>
+      api.request(`/expenses/total?startDate=${encodeURIComponent(startDate)}&endDate=${encodeURIComponent(endDate)}`),
+    create: (data: { amount: number; date?: string; category?: string; description?: string; branchId?: string }) =>
+      api.request('/expenses', { method: 'POST', body: JSON.stringify(data) }),
+    update: (id: string, data: { amount?: number; date?: string; category?: string; description?: string }) =>
+      api.request(`/expenses/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+    delete: (id: string) =>
+      api.request(`/expenses/${id}`, { method: 'DELETE' }),
   },
 
   // Branches endpoints

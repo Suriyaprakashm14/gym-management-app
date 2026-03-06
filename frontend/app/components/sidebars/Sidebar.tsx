@@ -9,6 +9,7 @@ import {
   UserOutlined,
   LogoutOutlined,
   BankOutlined,
+  DollarOutlined,
 } from '@ant-design/icons';
 import { useAuth } from '../../contexts/AuthContext';
 import { api } from '../../utils/api';
@@ -73,6 +74,12 @@ const Sidebar: React.FC<SidebarProps> = ({ collapsed, onCollapse }) => {
     label: <Link href="/billing" prefetch>Billing</Link>,
   };
 
+  const expensesMenuItem = {
+    key: '/expenses',
+    icon: <DollarOutlined />,
+    label: <Link href="/expenses" prefetch>Expenses</Link>,
+  };
+
   const logoutMenuItem = {
     key: 'logout',
     icon: <LogoutOutlined />,
@@ -84,6 +91,7 @@ const Sidebar: React.FC<SidebarProps> = ({ collapsed, onCollapse }) => {
     ...(isGymOwner ? [branchesMenuItem] : []),
     billingMenuItem,
     pendingBillingMenuItem,
+    expensesMenuItem,
     logoutMenuItem,
   ];
 
@@ -152,7 +160,7 @@ const Sidebar: React.FC<SidebarProps> = ({ collapsed, onCollapse }) => {
           theme="dark"
           mode="inline"
           items={menuItems}
-          selectedKeys={[pathname?.startsWith('/members') ? '/members' : pathname || '/dashboard']}
+          selectedKeys={[pathname?.startsWith('/members') ? '/members' : (pathname && pathname !== '/') ? pathname : '/dashboard']}
           onClick={handleClick}
           style={{ border: 'none' }}
         />

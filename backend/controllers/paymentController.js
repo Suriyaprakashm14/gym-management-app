@@ -187,19 +187,23 @@ exports.getGymOwnerAnalytics = async (req, res) => {
       return res.status(403).json({ error: "Access denied. Only gym_owner and manager can view analytics." });
     }
 
-    const { year, month } = req.query;
+    const { year, month, startDate: startQuery, endDate: endQuery } = req.query;
     let startDate, endDate;
 
-    if (year && month) {
-      // Specific month
+    if (startQuery && endQuery) {
+      startDate = new Date(startQuery);
+      endDate = new Date(endQuery);
+      if (Number.isNaN(startDate.getTime()) || Number.isNaN(endDate.getTime())) {
+        return res.status(400).json({ error: 'Invalid startDate or endDate' });
+      }
+      endDate.setHours(23, 59, 59, 999);
+    } else if (year && month) {
       startDate = new Date(year, month - 1, 1);
       endDate = new Date(year, month, 0, 23, 59, 59, 999);
     } else if (year) {
-      // Entire year
       startDate = new Date(year, 0, 1);
       endDate = new Date(year, 11, 31, 23, 59, 59, 999);
     } else {
-      // Current month
       const now = new Date();
       startDate = new Date(now.getFullYear(), now.getMonth(), 1);
       endDate = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
@@ -336,19 +340,23 @@ exports.getBranchManagerAnalytics = async (req, res) => {
       });
     }
 
-    const { year, month } = req.query;
+    const { year, month, startDate: startQuery, endDate: endQuery } = req.query;
     let startDate, endDate;
 
-    if (year && month) {
-      // Specific month
+    if (startQuery && endQuery) {
+      startDate = new Date(startQuery);
+      endDate = new Date(endQuery);
+      if (Number.isNaN(startDate.getTime()) || Number.isNaN(endDate.getTime())) {
+        return res.status(400).json({ error: 'Invalid startDate or endDate' });
+      }
+      endDate.setHours(23, 59, 59, 999);
+    } else if (year && month) {
       startDate = new Date(year, month - 1, 1);
       endDate = new Date(year, month, 0, 23, 59, 59, 999);
     } else if (year) {
-      // Entire year
       startDate = new Date(year, 0, 1);
       endDate = new Date(year, 11, 31, 23, 59, 59, 999);
     } else {
-      // Current month
       const now = new Date();
       startDate = new Date(now.getFullYear(), now.getMonth(), 1);
       endDate = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);

@@ -8,13 +8,13 @@ import {
   DashboardUser,
   DashboardViewModel,
   KpiSummary,
-  OverdueItem,
+  PendingMemberItem,
 } from '../types';
 
 const EMPTY_KPIS: KpiSummary = {
   revenueThisMonth: 0,
   pendingAmount: 0,
-  overdueAmount: 0,
+  expensesAmount: 0,
   totalPayments: 0,
   totalMembers: 0,
   totalBranches: 0,
@@ -24,7 +24,7 @@ const EMPTY_MODEL: DashboardViewModel = {
   kpis: EMPTY_KPIS,
   attendanceBars: [],
   todayCheckIns: [],
-  overdueMembers: [],
+  pendingMembers: [],
 };
 
 function toNumber(value: unknown) {
@@ -82,42 +82,34 @@ function parseTodayCheckIns(payload: unknown): CheckInItem[] {
   });
 }
 
-function parseOverdue(payload: unknown): { total: number; members: OverdueItem[] } {
+function parsePendingMembers(payload: unknown): PendingMemberItem[] {
+  const data = payload as { members?: Array<{ memberName?: string; pendingAmount?: number; membership?: string; membershipEndDate?: string }> } | undefined;
+  const members = data?.members || [];
+  return members.map((item) => ({
+    memberName: item.memberName || 'Unknown',
+    amount: toNumber(item.pendingAmount),
+    membership: item.membership,
+    dueDate: item.membershipEndDate,
+  }));
+}
+
+function parseOverdueTotal(payload: unknown): number {
   const data = payload as
     | {
         gymSummary?: { totalOverdueAmount?: number };
         summary?: { totalOverdueAmount?: number };
         totalOverdueAmount?: number;
-        topOverdueMembers?: Array<{
-          memberName?: string;
-          overdueAmount?: number;
-          membership?: string;
-        }>;
-        overdueMembers?: Array<{
-          memberName?: string;
-          overdueAmount?: number;
-          membership?: string;
-          membershipEndDate?: string;
-        }>;
       }
     | undefined;
-
-  const total =
+  return (
     toNumber(data?.gymSummary?.totalOverdueAmount) ||
     toNumber(data?.summary?.totalOverdueAmount) ||
-    toNumber(data?.totalOverdueAmount);
-
-  const list = (data?.topOverdueMembers || data?.overdueMembers || []).map((item) => ({
-    memberName: item.memberName || 'Unknown Member',
-    amount: toNumber(item.overdueAmount),
-    membership: item.membership,
-    dueDate: (item as { membershipEndDate?: string }).membershipEndDate,
-  }));
-
-  return { total, members: list };
+    toNumber(data?.totalOverdueAmount)
+  );
 }
 
-function parsePayments(payload: unknown): KpiSummary {
+/** Revenue = paid only; Pending = unpaid only; both for the requested period (month). */
+function parsePayments(payload: unknown): Omit<KpiSummary, 'expensesAmount'> {
   const data = payload as
     | {
         summary?: {
@@ -133,17 +125,52 @@ function parsePayments(payload: unknown): KpiSummary {
   return {
     revenueThisMonth: toNumber(data?.summary?.totalPaidAmount),
     pendingAmount: toNumber(data?.summary?.totalPendingAmount),
-    overdueAmount: 0,
     totalPayments: toNumber(data?.summary?.totalPayments),
     totalMembers: toNumber(data?.summary?.totalMembers),
     totalBranches: Array.isArray(data?.branches) ? data?.branches.length : 0,
   };
 }
 
+export type DashboardDateFilter = 'last3' | 'last6' | 'last1year' | 'custom';
+
+function getDateRangeForFilter(
+  filter: DashboardDateFilter,
+  customStart?: string,
+  customEnd?: string
+): { startDate: string; endDate: string } {
+  const end = new Date();
+  end.setHours(23, 59, 59, 999);
+  const endStr = end.toISOString().slice(0, 10);
+
+  if (filter === 'custom' && customStart && customEnd) {
+    return { startDate: customStart, endDate: customEnd };
+  }
+
+  const start = new Date();
+  if (filter === 'last3') {
+    start.setMonth(start.getMonth() - 3);
+  } else if (filter === 'last6') {
+    start.setMonth(start.getMonth() - 6);
+  } else {
+    start.setFullYear(start.getFullYear() - 1);
+  }
+  start.setHours(0, 0, 0, 0);
+  const startStr = start.toISOString().slice(0, 10);
+  return { startDate: startStr, endDate: endStr };
+}
+
 export function useDashboardData(user: DashboardUser | null) {
   const [model, setModel] = useState<DashboardViewModel>(EMPTY_MODEL);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [dateFilter, setDateFilter] = useState<DashboardDateFilter>('last3');
+  const [customRange, setCustomRange] = useState<{ startDate: string; endDate: string } | null>(null);
+
+  const { startDate, endDate } = getDateRangeForFilter(
+    dateFilter,
+    customRange?.startDate,
+    customRange?.endDate
+  );
 
   useEffect(() => {
     let isCancelled = false;
@@ -161,25 +188,45 @@ export function useDashboardData(user: DashboardUser | null) {
 
       const isGymLevelRole = user.role === 'gym_owner' || user.role === 'admin';
       const paymentsPromise = isGymLevelRole
-        ? api.payments.getGymOwnerAnalytics({ year: new Date().getFullYear() })
-        : api.payments.getBranchManagerAnalytics({ year: new Date().getFullYear() });
+        ? api.payments.getGymOwnerAnalytics({ startDate, endDate })
+        : api.payments.getBranchManagerAnalytics({ startDate, endDate });
       const overduePromise = isGymLevelRole
         ? api.payments.getGymOwnerOverdue()
         : api.payments.getBranchManagerOverdue();
+      const pendingPromise = isGymLevelRole
+        ? api.request('/payments/pending')
+        : user.branchId
+          ? api.payments.getPendingByBranchId(user.branchId)
+          : Promise.resolve({ members: [] });
+      const expensesTotalPromise = api.expenses.getTotal(startDate, endDate).catch(() => ({ total: 0 }));
 
-      const [paymentsRes, weeklyRes, todayRes, overdueRes] = await Promise.allSettled([
+      const [paymentsRes, weeklyRes, todayRes, overdueRes, pendingRes, expensesTotalRes] = await Promise.allSettled([
         paymentsPromise,
         api.request('/attendance/report/weekly'),
         api.attendance.getReport({ period: 'day' }),
         overduePromise,
+        pendingPromise,
+        expensesTotalPromise,
       ]);
 
       if (isCancelled) return;
 
-      const kpis =
+      const paymentsKpis =
         paymentsRes.status === 'fulfilled' && paymentsRes.value
           ? parsePayments(paymentsRes.value)
-          : EMPTY_KPIS;
+          : { ...EMPTY_KPIS, expensesAmount: 0 };
+      const overdueTotal =
+        overdueRes.status === 'fulfilled' && overdueRes.value
+          ? parseOverdueTotal(overdueRes.value)
+          : 0;
+      const trackedExpensesTotal =
+        expensesTotalRes.status === 'fulfilled' && expensesTotalRes.value
+          ? toNumber((expensesTotalRes.value as { total?: number; data?: { total?: number } }).total ?? (expensesTotalRes.value as any).data?.total)
+          : 0;
+      const kpis: KpiSummary = {
+        ...paymentsKpis,
+        expensesAmount: trackedExpensesTotal + overdueTotal,
+      };
       const attendanceBars =
         weeklyRes.status === 'fulfilled' && weeklyRes.value
           ? parseAttendanceWeekly(weeklyRes.value)
@@ -188,19 +235,16 @@ export function useDashboardData(user: DashboardUser | null) {
         todayRes.status === 'fulfilled' && todayRes.value
           ? parseTodayCheckIns(todayRes.value)
           : [];
-      const overdueParsed =
-        overdueRes.status === 'fulfilled' && overdueRes.value
-          ? parseOverdue(overdueRes.value)
-          : { total: 0, members: [] as OverdueItem[] };
+      const pendingMembers =
+        pendingRes.status === 'fulfilled' && pendingRes.value
+          ? parsePendingMembers(pendingRes.value)
+          : [];
 
       const nextModel: DashboardViewModel = {
-        kpis: {
-          ...kpis,
-          overdueAmount: overdueParsed.total,
-        },
+        kpis,
         attendanceBars,
         todayCheckIns,
-        overdueMembers: overdueParsed.members,
+        pendingMembers,
       };
 
       setModel(nextModel);
@@ -229,7 +273,13 @@ export function useDashboardData(user: DashboardUser | null) {
     return () => {
       isCancelled = true;
     };
-  }, [user]);
+  }, [user, startDate, endDate]);
+
+  const setFilter = (filter: DashboardDateFilter, custom?: { startDate: string; endDate: string }) => {
+    setDateFilter(filter);
+    if (custom) setCustomRange(custom);
+    else if (filter !== 'custom') setCustomRange(null);
+  };
 
   const roleFlags = useMemo(
     () => ({
@@ -240,5 +290,5 @@ export function useDashboardData(user: DashboardUser | null) {
     [user?.role]
   );
 
-  return { model, loading, error, roleFlags };
+  return { model, loading, error, roleFlags, dateFilter, setFilter, customRange, setCustomRange };
 }

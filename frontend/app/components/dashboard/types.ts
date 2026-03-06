@@ -8,9 +8,12 @@ export interface DashboardUser {
 }
 
 export interface KpiSummary {
+  /** Revenue = money actually received (paid) for the selected month only */
   revenueThisMonth: number;
+  /** Pending = unpaid/pending payments for the selected month only */
   pendingAmount: number;
-  overdueAmount: number;
+  /** Expenses = overdue amount (replaces Overdue in Financial Overview) */
+  expensesAmount: number;
   totalPayments: number;
   totalMembers: number;
   totalBranches?: number;
@@ -35,9 +38,17 @@ export interface OverdueItem {
   dueDate?: string;
 }
 
+/** Same shape as OverdueItem; used for pending payments card */
+export interface PendingMemberItem {
+  memberName: string;
+  amount: number;
+  membership?: string;
+  dueDate?: string;
+}
+
 export interface DashboardViewModel {
   kpis: KpiSummary;
   attendanceBars: AttendanceBar[];
   todayCheckIns: CheckInItem[];
-  overdueMembers: OverdueItem[];
+  pendingMembers: PendingMemberItem[];
 }

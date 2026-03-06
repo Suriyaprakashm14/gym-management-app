@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import {
+  App,
   Table,
   Tag,
   Space,
@@ -13,10 +14,10 @@ import {
   Modal,
   Form,
   Input,
-  message,
   Popconfirm,
   Tooltip,
   Statistic,
+  Empty,
 } from 'antd';
 import {
   PlusOutlined,
@@ -63,6 +64,7 @@ interface ManagerFormData {
 }
 
 export default function BranchesContent() {
+  const { message } = App.useApp();
   const [branches, setBranches] = useState<Branch[]>([]);
   const [loading, setLoading] = useState(true);
   const [modalVisible, setModalVisible] = useState(false);
@@ -100,11 +102,8 @@ export default function BranchesContent() {
         };
       });
       setBranches(branchesData);
-      if (branchList.length === 0) {
-        message.info('No branches found. Click "Add Branch" to create your first branch.');
-      }
     } catch (err) {
-      message.error('Failed to fetch branches');
+      message.error('Failed to load branches. Please try again.');
       setBranches([]);
     } finally {
       setLoading(false);
@@ -148,14 +147,16 @@ export default function BranchesContent() {
     setModalVisible(true);
   };
 
-  const handleDeleteBranch = async (branchId: string) => {
-    try {
-      await api.branches.delete(branchId);
-      message.success('Branch deleted successfully');
-      fetchBranches();
-    } catch (err) {
-      message.error('Failed to delete branch');
-    }
+  const handleDeleteBranch = (branchId: string) => {
+    api.branches
+      .delete(branchId)
+      .then(() => {
+        message.success('Branch deleted successfully');
+        fetchBranches();
+      })
+      .catch(() => {
+        message.error('Unable to delete branch');
+      });
   };
 
   const handleModalSubmit = async (values: any) => {
@@ -318,7 +319,20 @@ export default function BranchesContent() {
           columns={columns}
           dataSource={branches}
           loading={loading}
-          pagination={{ pageSize: 10, showSizeChanger: true, showTotal: (t, r) => `${r[0]}-${r[1]} of ${t} branches` }}
+          locale={{
+            emptyText: (
+              <Empty
+                image={Empty.PRESENTED_IMAGE_SIMPLE}
+                description={<span>No branches found</span>}
+                style={{ padding: '32px 0' }}
+              >
+                <Text type="secondary" style={{ display: 'block', marginTop: 8 }}>
+                  Add your first branch using the button above.
+                </Text>
+              </Empty>
+            ),
+          }}
+          pagination={branches.length > 0 ? { pageSize: 10, showSizeChanger: true, showTotal: (t, r) => `${r[0]}-${r[1]} of ${t} branches` } : false}
           sticky
           scroll={{ x: 1000, y: 500 }}
         />
