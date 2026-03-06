@@ -36,7 +36,7 @@ interface AnalyticsData {
     totalPayments: number;
     averagePayment: number;
   };
-  /** Expenses = overdue amount (same logic as Dashboard) */
+  /** Tracked expenses from Expenses feature (separate from revenue/pending) */
   expensesAmount?: number;
   monthlyBreakdown: Record<string, { totalPaid: number; paymentCount: number }>;
   branches: Array<{
@@ -97,18 +97,25 @@ const BillingOverview: React.FC = () => {
       }
       
       const params = selectedMonth ? { year: selectedYear, month: selectedMonth } : { year: selectedYear }
-      const response = user?.role === 'gym_owner'
+      const useGymAnalytics = user?.role === 'gym_owner' || (user?.role === 'admin' && user?.gymId)
+      const response = useGymAnalytics
         ? await api.payments.getGymOwnerAnalytics(params)
         : await api.payments.getBranchManagerAnalytics(params)
 
-      // Fetch overdue total for Expenses (same logic as Dashboard)
+      // Expenses = tracked expenses from Expenses feature (separate from revenue/pending)
       let expensesAmount = 0
       try {
-        const overdueRes = user?.role === 'gym_owner'
-          ? await api.payments.getGymOwnerOverdue()
-          : await api.payments.getBranchManagerOverdue()
-        const data = overdueRes as { gymSummary?: { totalOverdueAmount?: number }; summary?: { totalOverdueAmount?: number } }
-        expensesAmount = Number(data?.gymSummary?.totalOverdueAmount) || Number(data?.summary?.totalOverdueAmount) || 0
+        const start = selectedMonth
+          ? new Date(selectedYear, selectedMonth - 1, 1)
+          : new Date(selectedYear, 0, 1)
+        const end = selectedMonth
+          ? new Date(selectedYear, selectedMonth, 0)
+          : new Date(selectedYear, 11, 31)
+        const startDate = start.toISOString().slice(0, 10)
+        const endDate = end.toISOString().slice(0, 10)
+        const expensesRes = await api.expenses.getTotal(startDate, endDate)
+        const data = expensesRes as { total?: number; data?: { total?: number } }
+        expensesAmount = Number(data?.total ?? data?.data?.total) || 0
       } catch {
         expensesAmount = 0
       }
@@ -122,18 +129,14 @@ const BillingOverview: React.FC = () => {
         
         // Use different API based on user role
         let paidResponse
-        if (user?.role === 'gym_owner') {
-          // For gym owners, use gym ID
+        if (user?.role === 'gym_owner' || (user?.role === 'admin' && user?.gymId)) {
           const gymId = user.gymId || user.id
-          console.log(`Fetching payments for gym ID: ${gymId}`)
           paidResponse = await api.payments.getByGymId(gymId)
-        } else if (user?.role === 'branch_manager') {
-          // For branch managers, use branch ID
+        } else if (user?.role === 'manager' || user?.role === 'branch_manager' || (user?.role === 'admin' && user?.branchId)) {
           const branchId = user.branchId || user.id
-          console.log(`Fetching payments for branch ID: ${branchId}`)
           paidResponse = await api.payments.getByBranchId(branchId)
         } else {
-          throw new Error('Invalid user role for payments API')
+          paidResponse = null
         }
         
         console.log('Paid members API response:', paidResponse)
@@ -171,18 +174,13 @@ const BillingOverview: React.FC = () => {
       let pendingResponse = null
       try {
         // Use different API based on user role for pending payments
-        if (user?.role === 'gym_owner') {
-          // For gym owners, use the overdue analytics API
-          console.log('Fetching overdue payments for gym owner')
+        if (user?.role === 'gym_owner' || (user?.role === 'admin' && user?.gymId)) {
           pendingResponse = await api.request('/payments/analytics/overdue/gym-owner')
-        } else if (user?.role === 'branch_manager') {
-          // For branch managers, use branch ID
+        } else if (user?.role === 'manager' || user?.role === 'branch_manager' || (user?.role === 'admin' && user?.branchId)) {
           const branchId = user.branchId || user.id
-          console.log(`Fetching pending payments for branch ID: ${branchId}`)
           pendingResponse = await api.payments.getPendingByBranchId(branchId)
         } else {
-          // Fallback to general pending API
-          pendingResponse = await api.request(`/payments/pending`)
+          pendingResponse = await api.request('/payments/pending')
         }
         
         console.log('Pending payments response:', pendingResponse)
@@ -263,7 +261,7 @@ const BillingOverview: React.FC = () => {
         }
       }
       
-      // Combine analytics data with member data (same money logic as Dashboard: Revenue=received only, Pending=unpaid only, Expenses=overdue)
+      // Combine analytics: Revenue=received only, Pending=unpaid only, Expenses=tracked expenses (separate)
       const combinedData: AnalyticsData = {
         ...response,
         expensesAmount,
@@ -601,7 +599,7 @@ const BillingOverview: React.FC = () => {
             </div>
           </div>
 
-          {/* Financial Overview - same logic as Dashboard: Revenue=received only, Pending=unpaid only, Expenses=overdue */}
+          {/* Financial Overview: Revenue=received, Pending=unpaid, Expenses=tracked expenses (separate) */}
           <div style={{
             display: 'grid',
             gridTemplateColumns: 'repeat(auto-fit, minmax(clamp(200px, 35vw, 240px), 1fr))',

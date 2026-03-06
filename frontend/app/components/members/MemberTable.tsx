@@ -22,6 +22,7 @@ import {
   WarningOutlined,
   CreditCardOutlined,
   EyeOutlined,
+  ClockCircleOutlined,
 } from '@ant-design/icons';
 import type { ColumnsType } from 'antd/es/table';
 import { useAppDispatch, useAppSelector } from '../../redux/hooks';
@@ -34,6 +35,13 @@ import MemberDetailsModal from './MemberDetailsModal';
 const { Text } = Typography;
 
 const EMPTY = '—';
+
+/** Convert stored image (base64 or data URL) to a src for Avatar/img */
+function getAvatarSrc(image: string | undefined | null): string | undefined {
+  if (!image || typeof image !== 'string') return undefined;
+  if (image.startsWith('data:')) return image;
+  return `data:image/jpeg;base64,${image}`;
+}
 
 function formatDateDDMMYY(value: string | undefined | null): string {
   if (value == null || value === '') return EMPTY;
@@ -68,6 +76,7 @@ interface Member {
   hasPaymentCard: boolean;
   isFamilyAccount: boolean;
   status: 'active' | 'inactive';
+  image?: string;
 }
 
 const PAGE_SIZE = 10;
@@ -165,6 +174,7 @@ const MemberTable: React.FC = () => {
         hasPaymentCard: true,
         isFamilyAccount: false,
         status: (m.status as any) === 'inactive' ? 'inactive' : 'active',
+        image: (m as any).image,
       };
     });
   }, [members]);
@@ -175,16 +185,19 @@ const MemberTable: React.FC = () => {
       dataIndex: 'name',
       key: 'name',
       width: 220,
-      render: (text: string, record: Member) => (
+      render: (text: string, record: Member) => {
+        const avatarSrc = getAvatarSrc(record.image);
+        return (
         <Space>
           <Avatar
             size={40}
+            src={avatarSrc}
             style={{
-              backgroundColor: '#1890ff',
+              backgroundColor: avatarSrc ? 'transparent' : '#1890ff',
               verticalAlign: 'middle',
             }}
           >
-            {text && text !== EMPTY ? text.split(' ').map((n) => n[0]).join('') || '?' : '?'}
+            {!avatarSrc && (text && text !== EMPTY ? text.split(' ').map((n) => n[0]).join('') || '?' : '?')}
           </Avatar>
           <div>
             <div
@@ -206,7 +219,8 @@ const MemberTable: React.FC = () => {
             </Tag>
           </div>
         </Space>
-      ),
+      );
+      },
     },
     {
       title: 'Email',
@@ -296,10 +310,29 @@ const MemberTable: React.FC = () => {
             </Space>
           );
         }
-        if (record.billingStatus === 'overdue' || record.billingStatus === 'pending') {
+        if (record.billingStatus === 'overdue') {
           return (
             <Space>
-              <WarningOutlined style={{ color: '#fa8c16', fontSize: 16 }} />
+              <WarningOutlined style={{ color: '#ff4d4f', fontSize: 16 }} />
+              <Space direction="vertical" size={0}>
+                <Text strong style={{ color: '#ff4d4f' }}>
+                  {record.billingAmount && record.billingAmount !== EMPTY
+                    ? record.billingAmount
+                    : 'Overdue'}
+                </Text>
+                {record.billingDate && record.billingDate !== EMPTY && (
+                  <Text type="secondary" style={{ fontSize: 12 }}>
+                    {formatDateDDMMYY(record.billingDate)}
+                  </Text>
+                )}
+              </Space>
+            </Space>
+          );
+        }
+        if (record.billingStatus === 'pending') {
+          return (
+            <Space>
+              <ClockCircleOutlined style={{ color: '#fa8c16', fontSize: 16 }} />
               <Space direction="vertical" size={0}>
                 <Text strong style={{ color: '#fa8c16' }}>
                   {record.billingAmount && record.billingAmount !== EMPTY

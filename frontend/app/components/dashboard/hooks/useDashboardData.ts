@@ -93,22 +93,7 @@ function parsePendingMembers(payload: unknown): PendingMemberItem[] {
   }));
 }
 
-function parseOverdueTotal(payload: unknown): number {
-  const data = payload as
-    | {
-        gymSummary?: { totalOverdueAmount?: number };
-        summary?: { totalOverdueAmount?: number };
-        totalOverdueAmount?: number;
-      }
-    | undefined;
-  return (
-    toNumber(data?.gymSummary?.totalOverdueAmount) ||
-    toNumber(data?.summary?.totalOverdueAmount) ||
-    toNumber(data?.totalOverdueAmount)
-  );
-}
-
-/** Revenue = paid only; Pending = unpaid only; both for the requested period (month). */
+/** Revenue = paid only; Pending = unpaid only; both for the requested period. Expenses = tracked expenses from Expenses feature (separate from revenue/pending). */
 function parsePayments(payload: unknown): Omit<KpiSummary, 'expensesAmount'> {
   const data = payload as
     | {
@@ -131,7 +116,7 @@ function parsePayments(payload: unknown): Omit<KpiSummary, 'expensesAmount'> {
   };
 }
 
-export type DashboardDateFilter = 'last3' | 'last6' | 'last1year' | 'custom';
+export type DashboardDateFilter = 'currentMonth' | 'last3' | 'last6' | 'last1year' | 'custom';
 
 function getDateRangeForFilter(
   filter: DashboardDateFilter,
@@ -147,14 +132,19 @@ function getDateRangeForFilter(
   }
 
   const start = new Date();
-  if (filter === 'last3') {
+  if (filter === 'currentMonth') {
+    start.setDate(1);
+    start.setHours(0, 0, 0, 0);
+  } else if (filter === 'last3') {
     start.setMonth(start.getMonth() - 3);
+    start.setHours(0, 0, 0, 0);
   } else if (filter === 'last6') {
     start.setMonth(start.getMonth() - 6);
+    start.setHours(0, 0, 0, 0);
   } else {
     start.setFullYear(start.getFullYear() - 1);
+    start.setHours(0, 0, 0, 0);
   }
-  start.setHours(0, 0, 0, 0);
   const startStr = start.toISOString().slice(0, 10);
   return { startDate: startStr, endDate: endStr };
 }
@@ -163,7 +153,7 @@ export function useDashboardData(user: DashboardUser | null) {
   const [model, setModel] = useState<DashboardViewModel>(EMPTY_MODEL);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [dateFilter, setDateFilter] = useState<DashboardDateFilter>('last3');
+  const [dateFilter, setDateFilter] = useState<DashboardDateFilter>('currentMonth');
   const [customRange, setCustomRange] = useState<{ startDate: string; endDate: string } | null>(null);
 
   const { startDate, endDate } = getDateRangeForFilter(
@@ -190,9 +180,6 @@ export function useDashboardData(user: DashboardUser | null) {
       const paymentsPromise = isGymLevelRole
         ? api.payments.getGymOwnerAnalytics({ startDate, endDate })
         : api.payments.getBranchManagerAnalytics({ startDate, endDate });
-      const overduePromise = isGymLevelRole
-        ? api.payments.getGymOwnerOverdue()
-        : api.payments.getBranchManagerOverdue();
       const pendingPromise = isGymLevelRole
         ? api.request('/payments/pending')
         : user.branchId
@@ -200,11 +187,10 @@ export function useDashboardData(user: DashboardUser | null) {
           : Promise.resolve({ members: [] });
       const expensesTotalPromise = api.expenses.getTotal(startDate, endDate).catch(() => ({ total: 0 }));
 
-      const [paymentsRes, weeklyRes, todayRes, overdueRes, pendingRes, expensesTotalRes] = await Promise.allSettled([
+      const [paymentsRes, weeklyRes, todayRes, pendingRes, expensesTotalRes] = await Promise.allSettled([
         paymentsPromise,
         api.request('/attendance/report/weekly'),
         api.attendance.getReport({ period: 'day' }),
-        overduePromise,
         pendingPromise,
         expensesTotalPromise,
       ]);
@@ -215,17 +201,13 @@ export function useDashboardData(user: DashboardUser | null) {
         paymentsRes.status === 'fulfilled' && paymentsRes.value
           ? parsePayments(paymentsRes.value)
           : { ...EMPTY_KPIS, expensesAmount: 0 };
-      const overdueTotal =
-        overdueRes.status === 'fulfilled' && overdueRes.value
-          ? parseOverdueTotal(overdueRes.value)
-          : 0;
       const trackedExpensesTotal =
         expensesTotalRes.status === 'fulfilled' && expensesTotalRes.value
           ? toNumber((expensesTotalRes.value as { total?: number; data?: { total?: number } }).total ?? (expensesTotalRes.value as any).data?.total)
           : 0;
       const kpis: KpiSummary = {
         ...paymentsKpis,
-        expensesAmount: trackedExpensesTotal + overdueTotal,
+        expensesAmount: trackedExpensesTotal,
       };
       const attendanceBars =
         weeklyRes.status === 'fulfilled' && weeklyRes.value
@@ -251,8 +233,7 @@ export function useDashboardData(user: DashboardUser | null) {
       if (
         paymentsRes.status === 'rejected' &&
         weeklyRes.status === 'rejected' &&
-        todayRes.status === 'rejected' &&
-        overdueRes.status === 'rejected'
+        todayRes.status === 'rejected'
       ) {
         setError('Failed to load dashboard data');
       }

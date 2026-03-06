@@ -46,6 +46,7 @@ const contentWrapperStyle: React.CSSProperties = {
 };
 
 const FILTER_LABELS: Record<DashboardDateFilter, string> = {
+  currentMonth: "Current Month",
   last3: "Last 3 Months",
   last6: "Last 6 Months",
   last1year: "Last 1 Year",
@@ -58,7 +59,7 @@ export default function DashboardContent() {
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [customRangePicker, setCustomRangePicker] = useState<[dayjs.Dayjs, dayjs.Dayjs] | null>(null);
 
-  const handlePreset = (key: Extract<DashboardDateFilter, "last3" | "last6" | "last1year">) => {
+  const handlePreset = (key: Extract<DashboardDateFilter, "currentMonth" | "last3" | "last6" | "last1year">) => {
     setCustomRangePicker(null);
     setFilter(key);
     setDropdownOpen(false);
@@ -94,7 +95,7 @@ export default function DashboardContent() {
       >
         Date range
       </div>
-      {(["last3", "last6", "last1year"] as const).map((key) => (
+      {(["currentMonth", "last3", "last6", "last1year"] as const).map((key) => (
         <div
           key={key}
           role="button"

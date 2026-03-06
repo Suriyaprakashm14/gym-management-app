@@ -17,7 +17,7 @@ export default function AddMemberModal({ open, onClose }: AddMemberModalProps) {
       onCancel={onClose}
       footer={null}
       width={720}
-      destroyOnHidden
+      destroyOnHidden={false}
       styles={{
         body: {
           maxHeight: '75vh',

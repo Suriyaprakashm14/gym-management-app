@@ -269,17 +269,22 @@ export default function AddMemberForm({ onSuccess, onCancel }: AddMemberFormProp
           ))}
         </Select>
       </Form.Item>
-      <Form.Item label="Profile Image">
+      <Form.Item label="Profile photo" tooltip="Optional. Shown in members list and details.">
         <Upload
           fileList={fileList}
           onChange={({ fileList: newFileList }) => setFileList(newFileList)}
           beforeUpload={() => false}
-          multiple={false}
+          accept="image/*"
+          listType="picture-card"
+          maxCount={1}
         >
-          <Button icon={<UploadOutlined />}>Upload Image</Button>
+          <div>
+            <UploadOutlined />
+            <div style={{ marginTop: 8 }}>Upload</div>
+          </div>
         </Upload>
       </Form.Item>
-      <Divider>Personal Details</Divider>
+      <Divider>Personal details</Divider>
       <Row gutter={16}>
         <Col span={12}>
           <Form.Item

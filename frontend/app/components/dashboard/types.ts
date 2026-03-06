@@ -12,7 +12,7 @@ export interface KpiSummary {
   revenueThisMonth: number;
   /** Pending = unpaid/pending payments for the selected month only */
   pendingAmount: number;
-  /** Expenses = overdue amount (replaces Overdue in Financial Overview) */
+  /** Tracked expenses from Expenses feature (separate from revenue/pending) */
   expensesAmount: number;
   totalPayments: number;
   totalMembers: number;

@@ -26,6 +26,7 @@ const branchRoutes = require('./routes/branchRoutes');
 const membershipPriceRoutes = require('./routes/membershipPriceRoutes');
 const paymentRoutes = require('./routes/paymentRoutes');
 const expenseRoutes = require('./routes/expenseRoutes');
+const expenseCategoryRoutes = require('./routes/expenseCategoryRoutes');
 
 const port = process.env.PORT || 3000;
 const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://localhost:27017/';
@@ -105,6 +106,7 @@ app.use('/api/attendance', attendanceRoutes);
 app.use('/api/fingerprints', fingerprintRoutes);
 app.use('/api/members-personal-details', detailsRoutes);
 app.use('/api/expenses', expenseRoutes);
+app.use('/api/expense-categories', expenseCategoryRoutes);
 
 // Legacy API routes (for backward compatibility)
 app.use('/api/legacy/auth', authRoutes);

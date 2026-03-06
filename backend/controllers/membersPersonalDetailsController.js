@@ -2,6 +2,7 @@ const Details = require('../models/membersPersonalDetails');
 const MembershipPrice = require('../models/membershipPrice');
 const Member = require('../models/member');
 const Attendance = require('../models/attendance');
+const Payment = require('../models/payment');
 
 
 exports.create = async (req, res) => {
@@ -100,12 +101,13 @@ exports.create = async (req, res) => {
     }
 
     const totalAmountForQuantity = priceDoc ? totalAmount * quantity : totalAmount;
+    const initialPaidAmount = Number(req.body.paidAmount) || 0;
 
     const details = new Details({
       ...req.body,
       branchId: member.branchId,
       totalAmount: totalAmountForQuantity,
-      paidAmount: req.body.paidAmount || 0,
+      paidAmount: initialPaidAmount,
       last_visit: lastAttendance ? lastAttendance.attendanceDate : null,
       age: calculatedAge,
       membership_start_date: membershipStartDate,
@@ -115,6 +117,25 @@ exports.create = async (req, res) => {
     });
 
     await details.save();
+
+    // Every income is revenue: create a Payment record for initial payment so it shows in dashboard/revenue
+    if (initialPaidAmount > 0 && member.branchId && membership) {
+      try {
+        const payment = new Payment({
+          memberId: String(memberId),
+          branchId: String(member.branchId),
+          name: `${member.firstName || ''} ${member.lastName || ''}`.trim() || 'Member',
+          detailsId: String(details._id),
+          membership: membership.trim(),
+          totalAmount: priceDoc ? priceDoc.price : totalAmount,
+          paidAmount: initialPaidAmount,
+        });
+        await payment.save();
+      } catch (paymentErr) {
+        console.error('Failed to create initial payment record for revenue:', paymentErr);
+        // Don't fail the whole request; details are already saved
+      }
+    }
 
     if (priceDoc && membershipStartDate && membershipEndDate) {
       await Member.findByIdAndUpdate(memberId, {

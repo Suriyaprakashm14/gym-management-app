@@ -127,13 +127,16 @@ const EditMemberModal: React.FC<EditMemberModalProps> = ({
       status: member.status ?? 'active',
     });
 
-    // Set file list if member has an image
+    // Set file list if member has an image (preview needs data URL for base64)
     if (member.image) {
+      const src = typeof member.image === 'string' && member.image.startsWith('data:')
+        ? member.image
+        : `data:image/jpeg;base64,${member.image}`;
       setFileList([{
         uid: '-1',
         name: 'current-image.jpg',
         status: 'done',
-        url: member.image,
+        url: src,
       }]);
     } else {
       setFileList([]);
@@ -143,7 +146,14 @@ const EditMemberModal: React.FC<EditMemberModalProps> = ({
   const handleSubmit = async (values: MemberFormData) => {
     setLoading(true);
     try {
-      // Update member basic details (JSON payload; image updates are ignored for now)
+      const newImageFile = fileList.length > 0 && fileList[0].originFileObj ? fileList[0].originFileObj : null;
+      if (newImageFile) {
+        const formData = new FormData();
+        formData.append('image', newImageFile);
+        const updatedMember = await api.members.updateProfileImage(member.id, formData);
+        await dispatch(updateMember({ id: member.id, data: updatedMember as any })).unwrap();
+      }
+
       const memberData: any = {
         firstName: values.firstName,
         lastName: values.lastName,
@@ -226,7 +236,7 @@ const EditMemberModal: React.FC<EditMemberModalProps> = ({
       onCancel={handleCancel}
       footer={null}
       width={1000}
-      destroyOnHidden
+      destroyOnHidden={false}
       style={{ top: 24 }}
       styles={{
         body: {
@@ -359,13 +369,19 @@ const EditMemberModal: React.FC<EditMemberModalProps> = ({
             </Select>
           </Form.Item>
 
-          <Form.Item label="Profile Image">
-            <Upload {...uploadProps}>
-              <Button icon={<UploadOutlined />}>Upload New Image</Button>
+          <Form.Item
+            label="Profile photo"
+            tooltip="Shown in members list and details. Upload a new image to replace."
+          >
+            <Upload {...uploadProps} accept="image/*" listType="picture-card" maxCount={1}>
+              <div>
+                <UploadOutlined />
+                <div style={{ marginTop: 8 }}>Upload</div>
+              </div>
             </Upload>
           </Form.Item>
 
-          <Divider>Personal Details</Divider>
+          <Divider>Personal details</Divider>
 
           <Row gutter={16}>
             <Col span={12}>

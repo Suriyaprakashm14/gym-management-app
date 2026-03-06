@@ -258,6 +258,13 @@ export const api = {
               body: JSON.stringify(memberData),
             });
           },
+
+    updateProfileImage: (id: string, formData: FormData) =>
+      api.request(`/members/${id}/profile-image`, {
+        method: 'PATCH',
+        body: formData,
+        headers: {},
+      }),
     
     delete: (id: string) =>
       api.request(`/members/${id}`, {
@@ -328,6 +335,17 @@ export const api = {
       api.request(`/expenses/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
     delete: (id: string) =>
       api.request(`/expenses/${id}`, { method: 'DELETE' }),
+  },
+
+  // Expense categories (master data, like membership types)
+  expenseCategories: {
+    list: () => api.request('/expense-categories'),
+    create: (data: { name: string }) =>
+      api.request('/expense-categories', { method: 'POST', body: JSON.stringify(data) }),
+    update: (id: string, data: { name?: string; isActive?: boolean }) =>
+      api.request(`/expense-categories/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+    delete: (id: string) =>
+      api.request(`/expense-categories/${id}`, { method: 'DELETE' }),
   },
 
   // Branches endpoints

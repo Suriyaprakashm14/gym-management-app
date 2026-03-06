@@ -9,7 +9,6 @@ import {
   UserOutlined,
   LogoutOutlined,
   BankOutlined,
-  DollarOutlined,
 } from '@ant-design/icons';
 import { useAuth } from '../../contexts/AuthContext';
 import { api } from '../../utils/api';
@@ -76,7 +75,7 @@ const Sidebar: React.FC<SidebarProps> = ({ collapsed, onCollapse }) => {
 
   const expensesMenuItem = {
     key: '/expenses',
-    icon: <DollarOutlined />,
+    icon: <span style={{ fontWeight: 600, fontSize: '1em' }}>₹</span>,
     label: <Link href="/expenses" prefetch>Expenses</Link>,
   };
 

@@ -179,12 +179,9 @@ exports.getMemberPaymentSummary = async (req, res) => {
 // Branch Manager Analytics - Branch Revenue and Pending Payments
 exports.getGymOwnerAnalytics = async (req, res) => {
   try {
-    // Only gym_owner and manager are supported here. Including admin without
-    // a dedicated code path leaves key collections (e.g. payments) undefined
-    // and leads to runtime errors when calling .reduce().
-    const allowedRoles = ['gym_owner', 'manager'];
+    const allowedRoles = ['gym_owner', 'manager', 'admin'];
     if (!allowedRoles.includes(req.user.role)) {
-      return res.status(403).json({ error: "Access denied. Only gym_owner and manager can view analytics." });
+      return res.status(403).json({ error: "Access denied. Only gym_owner, manager, and admin can view analytics." });
     }
 
     const { year, month, startDate: startQuery, endDate: endQuery } = req.query;
@@ -209,9 +206,10 @@ exports.getGymOwnerAnalytics = async (req, res) => {
       endDate = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
     }
 
+    const isGymLevel = req.user.role === 'gym_owner' || (req.user.role === 'admin' && req.user.gymId);
     let branches, branchIds, members, memberIds, personalDetails, payments;
 
-    if (req.user.role === 'gym_owner') {
+    if (isGymLevel && req.user.gymId) {
       // Gym Owner: Get all branches for this gym
       const Branch = require('../models/branch');
       branches = await Branch.find({ gymId: req.user.gymId });
@@ -224,18 +222,21 @@ exports.getGymOwnerAnalytics = async (req, res) => {
       });
 
       // Get all members with personal details to calculate pending amounts
-      members = await Member.find({ 
+      members = await Member.find({
         gymId: req.user.gymId,
         role: 'member'
       });
-      
+
       memberIds = members.map(member => member._id);
       personalDetails = await Details.find({ memberId: { $in: memberIds } });
 
-    } else if (req.user.role === 'manager') {
-      // Branch Manager: Get only their branch
+    } else if (req.user.role === 'manager' || req.user.role === 'admin') {
+      if (!req.user.branchId) {
+        return res.status(400).json({ error: 'branchId required for manager/admin when gymId is not set.' });
+      }
       const Branch = require('../models/branch');
       const branch = await Branch.findById(req.user.branchId);
+      if (!branch) return res.status(404).json({ error: 'Branch not found' });
       branches = [branch];
       branchIds = [req.user.branchId];
 
@@ -294,18 +295,16 @@ exports.getGymOwnerAnalytics = async (req, res) => {
       monthlyBreakdown: monthlyData
     };
 
-    if (req.user.role === 'gym_owner') {
-      // Gym Owner: Show all branches
+    if (isGymLevel && branches && branches.length > 0) {
       response.branches = branches.map(branch => ({
         branchId: branch._id,
         branchName: branch.name,
         totalPaid: payments
-          .filter(p => p.branchId === branch._id.toString())
+          .filter(p => p.branchId.toString() === branch._id.toString())
           .reduce((sum, p) => sum + p.paidAmount, 0),
-        paymentCount: payments.filter(p => p.branchId === branch._id.toString()).length
+        paymentCount: payments.filter(p => p.branchId.toString() === branch._id.toString()).length
       }));
-    } else if (req.user.role === 'manager') {
-      // Branch Manager: Show only their branch
+    } else if (req.user.role === 'manager' || req.user.role === 'admin') {
       response.branch = {
         branchId: branches[0]._id,
         branchName: branches[0].name,

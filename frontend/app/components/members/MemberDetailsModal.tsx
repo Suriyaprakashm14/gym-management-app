@@ -34,6 +34,12 @@ import { useAppSelector } from '../../redux/hooks';
 
 const { Title, Text } = Typography;
 
+function getAvatarSrc(image: string | undefined | null): string | undefined {
+  if (!image || typeof image !== 'string') return undefined;
+  if (image.startsWith('data:')) return image;
+  return `data:image/jpeg;base64,${image}`;
+}
+
 interface EmergencyContact {
   name: string;
   phone: string;
@@ -74,6 +80,8 @@ interface MemberDetails {
   billingStatus: string;
   status: string;
   personalDetails?: MemberPersonalDetails;
+  /** Profile image (base64 or data URL) */
+  image?: string;
 }
 
 interface MemberDetailsModalProps {
@@ -204,12 +212,13 @@ const MemberDetailsModal: React.FC<MemberDetailsModalProps> = ({
           <Card style={{ marginBottom: 16 }}>
             <Row gutter={16} align="middle">
               <Col>
-                <Avatar 
-                  size={80} 
-                  style={{ backgroundColor: '#1890ff' }}
-                  icon={<UserOutlined />}
+                <Avatar
+                  size={80}
+                  src={getAvatarSrc(memberDetails.image)}
+                  style={{ backgroundColor: memberDetails.image ? 'transparent' : '#1890ff' }}
+                  icon={!memberDetails.image ? <UserOutlined /> : undefined}
                 >
-                  {memberDetails.name?.split(' ').map(n => n[0]).join('') || 'M'}
+                  {!memberDetails.image && (memberDetails.name?.split(' ').map(n => n[0]).join('') || 'M')}
                 </Avatar>
               </Col>
               <Col flex={1}>

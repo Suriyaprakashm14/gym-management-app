@@ -23,6 +23,9 @@ router.put('/:id', authMiddleware, memberController.update);
 // Patch method for partial updates
 router.patch('/:id', authMiddleware, memberController.patch);
 
+// Update profile image only (multipart)
+router.patch('/:id/profile-image', authMiddleware, memberController.uploadMiddleware, memberController.updateProfileImage);
+
 // Only gym owner can delete members (branch managers and admin cannot delete)
 router.delete('/:id', authMiddleware, memberController.remove);
 

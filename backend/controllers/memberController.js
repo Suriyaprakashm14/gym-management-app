@@ -330,7 +330,15 @@ exports.getAll = async (req, res) => {
         }
       }
       const payment = paymentByMemberId[m._id];
-      if (payment) {
+      const totalAmount = details && (details.totalAmount != null) ? Number(details.totalAmount) : 0;
+      const paidAmount = details && (details.paidAmount != null) ? Number(details.paidAmount) : 0;
+      const pendingBalance = Math.max(0, totalAmount - paidAmount);
+
+      if (pendingBalance > 0) {
+        m.billingAmount = String(pendingBalance);
+        m.billingDate = payment && payment.paidAt ? (payment.paidAt instanceof Date ? payment.paidAt.toISOString() : payment.paidAt) : '';
+        m.billingStatus = 'pending';
+      } else if (payment) {
         m.billingAmount = payment.paidAmount != null ? String(payment.paidAmount) : '';
         m.billingDate = payment.paidAt ? (payment.paidAt instanceof Date ? payment.paidAt.toISOString() : payment.paidAt) : '';
         m.billingStatus = 'paid';
@@ -447,6 +455,35 @@ exports.patch = async (req, res) => {
     }
 
     const updated = await Member.findByIdAndUpdate(req.params.id, { $set: updateData }, { new: true, runValidators: true });
+    res.json(updated);
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+};
+
+exports.updateProfileImage = async (req, res) => {
+  try {
+    const allowedRoles = ['gym_owner', 'manager'];
+    if (!allowedRoles.includes(req.user.role)) {
+      return res.status(403).json({ error: "Access denied." });
+    }
+    const member = await Member.findById(req.params.id);
+    if (!member) return res.status(404).json({ error: 'Member not found' });
+    if (req.user.role === 'manager' && member.branchId.toString() !== req.user.branchId.toString()) {
+      return res.status(403).json({ error: 'Access denied: Not authorized for this member' });
+    }
+    if (req.user.role === 'gym_owner' && member.gymId !== req.user.gymId) {
+      return res.status(403).json({ error: 'Access denied: Not authorized for this member' });
+    }
+    if (!req.file || !req.file.buffer) {
+      return res.status(400).json({ error: 'No image file provided' });
+    }
+    const imageBase64 = req.file.buffer.toString('base64');
+    const updated = await Member.findByIdAndUpdate(
+      req.params.id,
+      { image: imageBase64 },
+      { new: true }
+    ).lean();
     res.json(updated);
   } catch (err) {
     res.status(400).json({ error: err.message });

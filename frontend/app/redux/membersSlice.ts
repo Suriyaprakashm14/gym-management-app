@@ -17,6 +17,8 @@ export interface Member {
   billingStatus?: string;
   billingAmount?: string;
   billingDate?: string;
+  /** Profile image (base64 or data URL) */
+  image?: string;
 }
 
 interface MembersState {
@@ -68,6 +70,7 @@ export function normalizeMember(m: any, overlay?: Partial<Member>): Member {
     billingStatus: overlay?.billingStatus ?? m?.billingStatus ?? '',
     billingAmount: overlay?.billingAmount ?? m?.billingAmount ?? '',
     billingDate: overlay?.billingDate ?? m?.billingDate ?? '',
+    image: overlay?.image ?? m?.image ?? '',
   };
 }
 
