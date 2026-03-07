@@ -213,7 +213,7 @@ export const api = {
         body: JSON.stringify(credentials),
       }),
 
-    signup: (data: { gymName: string; firstName: string; lastName: string; email: string; password: string }) =>
+    signup: (data: { gymName: string; firstName: string; lastName: string; email: string; password: string; gymIcon?: string }) =>
       api.request('/auth/signup', {
         method: 'POST',
         body: JSON.stringify(data),
@@ -275,6 +275,16 @@ export const api = {
     delete: (id: string) =>
       api.request(`/members/${id}`, {
         method: 'DELETE',
+      }),
+
+    renew: (memberId: string, data: { membership: string; planQuantity?: number; paidAmount?: number }) =>
+      api.request(`/members/${memberId}/renew`, {
+        method: 'POST',
+        body: JSON.stringify({
+          membership: data.membership,
+          planQuantity: data.planQuantity ?? 1,
+          paidAmount: data.paidAmount ?? 0,
+        }),
       }),
   },
 

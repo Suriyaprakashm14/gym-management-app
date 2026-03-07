@@ -107,45 +107,52 @@ function parsePayments(payload: unknown): Omit<KpiSummary, 'expensesAmount'> {
       }
     | undefined;
 
+  const summary = data?.summary;
   return {
-    revenueThisMonth: toNumber(data?.summary?.totalPaidAmount),
-    pendingAmount: toNumber(data?.summary?.totalPendingAmount),
-    totalPayments: toNumber(data?.summary?.totalPayments),
-    totalMembers: toNumber(data?.summary?.totalMembers),
+    revenueThisMonth: toNumber(summary?.totalPaidAmount),
+    pendingAmount: toNumber(summary?.totalPendingAmount ?? summary?.totalPending),
+    totalPayments: toNumber(summary?.totalPayments),
+    totalMembers: toNumber(summary?.totalMembers),
     totalBranches: Array.isArray(data?.branches) ? data?.branches.length : 0,
   };
 }
 
 export type DashboardDateFilter = 'currentMonth' | 'last3' | 'last6' | 'last1year' | 'custom';
 
+/** Same date-range logic as Revenue page: full month for current month, ranges for others. */
 function getDateRangeForFilter(
   filter: DashboardDateFilter,
   customStart?: string,
   customEnd?: string
 ): { startDate: string; endDate: string } {
-  const end = new Date();
-  end.setHours(23, 59, 59, 999);
-  const endStr = end.toISOString().slice(0, 10);
-
   if (filter === 'custom' && customStart && customEnd) {
     return { startDate: customStart, endDate: customEnd };
   }
 
-  const start = new Date();
+  const now = new Date();
+  let start = new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0, 0);
+  let end: Date;
+
   if (filter === 'currentMonth') {
-    start.setDate(1);
-    start.setHours(0, 0, 0, 0);
+    // Full current month (1st to last day), same as Revenue page
+    end = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
   } else if (filter === 'last3') {
-    start.setMonth(start.getMonth() - 3);
-    start.setHours(0, 0, 0, 0);
+    start = new Date(now.getFullYear(), now.getMonth() - 3, now.getDate(), 0, 0, 0, 0);
+    end = new Date(now);
+    end.setHours(23, 59, 59, 999);
   } else if (filter === 'last6') {
-    start.setMonth(start.getMonth() - 6);
-    start.setHours(0, 0, 0, 0);
+    start = new Date(now.getFullYear(), now.getMonth() - 6, now.getDate(), 0, 0, 0, 0);
+    end = new Date(now);
+    end.setHours(23, 59, 59, 999);
   } else {
-    start.setFullYear(start.getFullYear() - 1);
-    start.setHours(0, 0, 0, 0);
+    // last1year
+    start = new Date(now.getFullYear() - 1, now.getMonth(), now.getDate(), 0, 0, 0, 0);
+    end = new Date(now);
+    end.setHours(23, 59, 59, 999);
   }
+
   const startStr = start.toISOString().slice(0, 10);
+  const endStr = end.toISOString().slice(0, 10);
   return { startDate: startStr, endDate: endStr };
 }
 

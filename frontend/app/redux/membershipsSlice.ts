@@ -10,6 +10,7 @@ export interface MembershipPrice {
   currency?: string;
   isActive?: boolean;
   type?: string; // canonical backend type (e.g., monthly)
+  activeCount?: number; // number of members with active subscription on this plan
 }
 
 interface MembershipPricesState {
@@ -81,6 +82,7 @@ const membershipsSlice = createSlice({
           currency: p.currency || 'INR',
           isActive: p.isActive,
           type: p.type,
+          activeCount: p.activeCount,
         }));
       }
     );

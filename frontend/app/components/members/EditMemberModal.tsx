@@ -235,25 +235,26 @@ const EditMemberModal: React.FC<EditMemberModalProps> = ({
       open={visible}
       onCancel={handleCancel}
       footer={null}
-      width={1000}
+      width={720}
       destroyOnHidden={false}
-      style={{ top: 24 }}
+      style={{ top: 20 }}
       styles={{
         body: {
-          maxHeight: '75vh',
+          maxHeight: 'calc(100vh - 140px)',
           overflowY: 'auto',
           overflowX: 'hidden',
-          padding: '16px 0',
+          padding: '12px 0',
         },
         content: {
           overflow: 'hidden',
         },
       }}
     >
-      <Card style={{ margin: 0 }}>
+      <Card size="small" style={{ margin: 0 }}>
         <Form
           form={form}
           layout="vertical"
+          size="small"
           onFinish={handleSubmit}
           initialValues={{
             gender: 'male',

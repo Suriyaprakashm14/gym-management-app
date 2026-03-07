@@ -22,6 +22,8 @@ import type { ColumnsType } from 'antd/es/table';
 import { api } from '../../utils/api';
 import dayjs from 'dayjs';
 
+const ADD_CATEGORY_VALUE = '__add_category__';
+
 const { Title, Text } = Typography;
 
 interface ExpenseRecord {
@@ -118,10 +120,11 @@ export default function ExpensesContent() {
     try {
       const values = await form.validateFields();
       const categoryVal = Array.isArray(values.category) ? values.category[0] : values.category;
+      const categoryFinal = (categoryVal && categoryVal !== ADD_CATEGORY_VALUE && String(categoryVal).trim()) || undefined;
       const payload = {
         amount: values.amount,
         date: values.date ? values.date.toISOString?.() ?? values.date : new Date().toISOString(),
-        category: (categoryVal && String(categoryVal).trim()) || undefined,
+        category: categoryFinal,
         description: values.description || undefined,
       };
       if (editingId) {
@@ -150,6 +153,10 @@ export default function ExpensesContent() {
   };
 
   const categoryOptions = categories.map((c) => ({ label: c.name, value: c.name }));
+  const categoryOptionsWithAdd =
+    categories.length === 0 && !categoriesLoading
+      ? [{ label: 'Add a Category', value: ADD_CATEGORY_VALUE }]
+      : categoryOptions;
 
   const columns: ColumnsType<ExpenseRecord> = [
     { title: 'Amount', dataIndex: 'amount', key: 'amount', width: 120, render: (v: number) => `₹ ${Number(v).toLocaleString('en-IN')}` },
@@ -179,7 +186,7 @@ export default function ExpensesContent() {
           <Text type="secondary">Track and manage gym expenses by category</Text>
         </div>
         <Space>
-          <Button icon={<SettingOutlined />} onClick={() => { setCategoriesModalOpen(true); fetchCategories(); }}>
+          <Button icon={<SettingOutlined />} onClick={() => setCategoriesModalOpen(true)}>
             Manage categories
           </Button>
           <Button type="primary" icon={<PlusOutlined />} onClick={handleAdd}>
@@ -187,7 +194,7 @@ export default function ExpensesContent() {
           </Button>
         </Space>
       </div>
-      <Card bordered={false} style={{ boxShadow: '0 1px 2px rgba(0,0,0,0.04)' }}>
+      <Card variant="borderless" style={{ boxShadow: '0 1px 2px rgba(0,0,0,0.04)' }}>
         <Table
           columns={columns}
           dataSource={list}
@@ -234,14 +241,18 @@ export default function ExpensesContent() {
           <Form.Item name="category" label="Category">
             <Select
               allowClear
-              placeholder="Select or type category"
-              options={categoryOptions}
+              placeholder={categories.length === 0 && !categoriesLoading ? 'Add a Category' : 'Select category'}
+              options={categoryOptionsWithAdd}
               showSearch
               optionFilterProp="label"
               loading={categoriesLoading}
-              notFoundContent={null}
-              mode="tags"
-              maxTagCount={1}
+              notFoundContent={categories.length === 0 && !categoriesLoading ? 'No categories. Use "Manage categories" or add below.' : null}
+              onChange={(val) => {
+                if (val === ADD_CATEGORY_VALUE) {
+                  form.setFieldValue('category', undefined);
+                  setCategoriesModalOpen(true);
+                }
+              }}
             />
           </Form.Item>
           <Form.Item name="description" label="Notes (optional)">

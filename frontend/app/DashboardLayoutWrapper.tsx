@@ -3,7 +3,7 @@
 import { usePathname } from 'next/navigation';
 import DashboardShell from './_dashboard/DashboardShell';
 
-const DASHBOARD_PATHS = ['/dashboard', '/members', '/branches', '/billing', '/revenue', '/expenses'];
+const DASHBOARD_PATHS = ['/dashboard', '/members', '/branches', '/billing', '/revenue', '/expenses', '/staffs'];
 
 function isDashboardPath(pathname: string) {
   return DASHBOARD_PATHS.some((p) => pathname === p || pathname.startsWith(p + '/'));

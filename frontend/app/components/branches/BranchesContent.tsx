@@ -26,7 +26,6 @@ import {
   HomeOutlined,
   TeamOutlined,
   PhoneOutlined,
-  MailOutlined,
   EnvironmentOutlined,
   UserAddOutlined,
 } from '@ant-design/icons';
@@ -36,14 +35,19 @@ import { useAuth } from '../../contexts/AuthContext';
 
 const { Title, Text } = Typography;
 
+interface BranchManager {
+  id: string;
+  name: string;
+  email?: string;
+}
+
 interface Branch {
   key: string;
   _id: string;
   name: string;
   address: { street?: string; city?: string; state?: string; zipCode?: string; country?: string };
-  contactInfo?: { phone?: string; email?: string };
-  managerName?: string | null;
-  managerStatus?: 'Assigned' | 'Not Assigned';
+  contactInfo?: { phone?: string };
+  managers?: BranchManager[];
   memberCount?: number;
   isActive: boolean;
 }
@@ -51,7 +55,7 @@ interface Branch {
 interface BranchFormData {
   name: string;
   address: { street: string; city: string; state: string; zipCode: string; country: string };
-  contactInfo: { phone: string; email: string };
+  contactInfo: { phone: string };
 }
 
 interface ManagerFormData {
@@ -88,17 +92,18 @@ export default function BranchesContent() {
         ? response
         : (response as any)?.data?.branches ?? (response as any)?.branches ?? [];
       const branchesData = (branchList as any[]).map((b: any) => {
-        const branchManager = b.branchManager || null;
-        const managerFullName = branchManager
-          ? `${branchManager.firstName || ''} ${branchManager.lastName || ''}`.trim() ||
-            branchManager.name ||
-            null
-          : b.managerName ?? null;
+        const managers = b.branchManagers ?? (b.branchManager ? [b.branchManager] : []);
+        const managerList = Array.isArray(managers)
+          ? managers.map((m: any) => ({
+              id: m.id ?? m._id,
+              name: m.name ?? (((`${m.firstName || ''} ${m.lastName || ''}`.trim()) || m.email) || 'Manager'),
+              email: m.email,
+            }))
+          : [];
         return {
           key: b._id,
           ...b,
-          managerName: managerFullName,
-          managerStatus: managerFullName ? 'Assigned' : 'Not Assigned',
+          managers: managerList,
         };
       });
       setBranches(branchesData);
@@ -142,7 +147,6 @@ export default function BranchesContent() {
       'address.zipCode': addr.zipCode ?? '',
       'address.country': addr.country ?? '',
       'contactInfo.phone': contact.phone ?? '',
-      'contactInfo.email': contact.email ?? '',
     });
     setModalVisible(true);
   };
@@ -173,7 +177,7 @@ export default function BranchesContent() {
         zipCode: values['address.zipCode'],
         country: values['address.country'],
       },
-      contactInfo: { phone: values['contactInfo.phone'], email: values['contactInfo.email'] },
+      contactInfo: { phone: values['contactInfo.phone'] },
     };
     try {
       if (editingBranch) {
@@ -256,22 +260,34 @@ export default function BranchesContent() {
     {
       title: 'Contact',
       key: 'contact',
-      width: 200,
+      width: 160,
       render: (_: unknown, record: Branch) => (
-        <Space direction="vertical" size={0}>
-          <Space size={4}><PhoneOutlined style={{ color: '#8c8c8c' }} /><Text style={{ fontSize: 13 }}>{record.contactInfo?.phone}</Text></Space>
-          <Space size={4}><MailOutlined style={{ color: '#8c8c8c' }} /><Text style={{ fontSize: 13 }}>{record.contactInfo?.email}</Text></Space>
+        <Space size={4}>
+          <PhoneOutlined style={{ color: '#8c8c8c' }} />
+          <Text style={{ fontSize: 13 }}>{record.contactInfo?.phone || '—'}</Text>
         </Space>
       ),
     },
     {
       title: 'Manager',
-      dataIndex: 'managerName',
       key: 'manager',
-      width: 150,
-      render: (managerName: string) => (
-        <Space size={4}><TeamOutlined style={{ color: '#8c8c8c' }} /><Text style={{ fontSize: 13 }}>{managerName || 'Not Assigned'}</Text></Space>
-      ),
+      width: 200,
+      render: (_: unknown, record: Branch) => {
+        const managers = record.managers ?? [];
+        if (managers.length === 0) {
+          return (
+            <Space size={4}><TeamOutlined style={{ color: '#8c8c8c' }} /><Text style={{ fontSize: 13 }} type="secondary">Not Assigned</Text></Space>
+          );
+        }
+        return (
+          <Space size={4} wrap>
+            <TeamOutlined style={{ color: '#8c8c8c' }} />
+            {managers.map((m) => (
+              <Tag key={m.id}>{m.name}</Tag>
+            ))}
+          </Space>
+        );
+      },
     },
     // Status column removed per requirements
     { title: 'Members', dataIndex: 'memberCount', key: 'memberCount', width: 100, render: (c: number) => <Text strong>{c || 0}</Text> },
@@ -351,10 +367,7 @@ export default function BranchesContent() {
             <Col span={8}><Form.Item name="address.country" label="Country" rules={[{ required: true }]}><Input placeholder="Country" /></Form.Item></Col>
           </Row>
           <Title level={5}>Contact</Title>
-          <Row gutter={16}>
-            <Col span={12}><Form.Item name="contactInfo.phone" label="Phone" rules={[{ required: true }]}><Input placeholder="Phone" /></Form.Item></Col>
-            <Col span={12}><Form.Item name="contactInfo.email" label="Email" rules={[{ required: true }, { type: 'email' }]}><Input placeholder="Email" /></Form.Item></Col>
-          </Row>
+          <Form.Item name="contactInfo.phone" label="Phone" rules={[{ required: true, message: 'Please enter phone' }]}><Input placeholder="Phone" /></Form.Item>
         </Form>
       </Modal>
       <Modal title={`Create Manager for ${selectedBranch?.name || 'Branch'}`} open={managerModalVisible} onCancel={() => { setManagerModalVisible(false); managerForm.resetFields(); }} onOk={() => managerForm.submit()} okText="Create Manager" cancelText="Cancel" width={500}>

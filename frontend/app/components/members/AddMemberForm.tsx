@@ -25,8 +25,9 @@ import {
 } from '@ant-design/icons';
 import { useAuth } from '../../contexts/AuthContext';
 import { api } from '../../utils/api';
-import { useAppDispatch } from '../../redux/hooks';
+import { useAppDispatch, useAppSelector } from '../../redux/hooks';
 import { addMember, fetchMembers, normalizeMember } from '../../redux/membersSlice';
+import { fetchMembershipPrices } from '../../redux/membershipsSlice';
 
 const { Option } = Select;
 const { Text } = Typography;
@@ -38,11 +39,12 @@ interface Branch {
 }
 
 interface AddMemberFormProps {
+  visible?: boolean;
   onSuccess?: () => void;
   onCancel?: () => void;
 }
 
-export default function AddMemberForm({ onSuccess, onCancel }: AddMemberFormProps) {
+export default function AddMemberForm({ visible = true, onSuccess, onCancel }: AddMemberFormProps) {
   const { message } = App.useApp();
   const [form] = Form.useForm();
   const [loading, setLoading] = useState(false);
@@ -53,31 +55,68 @@ export default function AddMemberForm({ onSuccess, onCancel }: AddMemberFormProp
   const [membershipTypesLoading, setMembershipTypesLoading] = useState(false);
   const { user } = useAuth();
   const dispatch = useAppDispatch();
+  const reduxPlans = useAppSelector((s) => s.membershipPrices.items);
 
-  useEffect(() => {
-    const fetchMembershipTypes = async () => {
-      setMembershipTypesLoading(true);
-      try {
-        const response = await api.membershipPrices.getAll();
-        const listSource: any =
-          Array.isArray(response)
-            ? response
-            : Array.isArray((response as any)?.data)
-              ? (response as any).data
-              : Array.isArray((response as any)?.items)
-                ? (response as any).items
-                : [];
-        const list: any[] = Array.isArray(listSource) ? listSource : [];
-        // Only show active plans for new users; inactive plans remain valid for existing members until expiry
-        setMembershipTypes(list.filter((m: any) => m.isActive !== false));
-      } catch {
-        message.error('Failed to fetch membership types');
-      } finally {
-        setMembershipTypesLoading(false);
-      }
-    };
-    fetchMembershipTypes();
+  const normalizePlans = React.useCallback((list: any[]) => {
+    return list
+      .filter((m: any) => m.isActive !== false)
+      .map((m: any) => ({
+        id: m.id ?? m._id,
+        _id: m._id ?? m.id,
+        type: typeof m.type === 'string' ? m.type.trim() : (m.name || String(m._id || m.id || '')),
+        name: m.name ?? m.type,
+        price: m.price,
+        duration: m.duration,
+        isActive: m.isActive,
+      }));
   }, []);
+
+  // Use Redux plans immediately so dropdown renders promptly (MembersLayout prefetches)
+  const plansFromRedux = React.useMemo(
+    () => (Array.isArray(reduxPlans) && reduxPlans.length > 0 ? normalizePlans(reduxPlans) : []),
+    [reduxPlans, normalizePlans]
+  );
+
+  const fetchMembershipTypes = React.useCallback(async () => {
+    setMembershipTypesLoading(true);
+    try {
+      const response = await api.membershipPrices.getAll();
+      const listSource: any =
+        Array.isArray(response)
+          ? response
+          : Array.isArray((response as any)?.data)
+            ? (response as any).data
+            : Array.isArray((response as any)?.items)
+              ? (response as any).items
+              : [];
+      const list: any[] = Array.isArray(listSource) ? listSource : [];
+      setMembershipTypes(normalizePlans(list));
+    } catch {
+      message.error('Failed to fetch membership types');
+      setMembershipTypes([]);
+    } finally {
+      setMembershipTypesLoading(false);
+    }
+  }, [message, normalizePlans]);
+
+  // Use Redux plans immediately so dropdown renders promptly
+  useEffect(() => {
+    if (plansFromRedux.length > 0) setMembershipTypes(plansFromRedux);
+  }, [plansFromRedux]);
+
+  // Fetch once on mount if Redux is empty (e.g. navigated straight to add-member page)
+  useEffect(() => {
+    if (plansFromRedux.length === 0) fetchMembershipTypes();
+  }, [fetchMembershipTypes, plansFromRedux.length]);
+
+  const prevVisibleRef = React.useRef(false);
+  useEffect(() => {
+    if (visible && !prevVisibleRef.current) {
+      dispatch(fetchMembershipPrices());
+      fetchMembershipTypes();
+    }
+    prevVisibleRef.current = visible;
+  }, [visible, dispatch, fetchMembershipTypes]);
 
   useEffect(() => {
     const fetchBranches = async () => {
@@ -131,7 +170,7 @@ export default function AddMemberForm({ onSuccess, onCancel }: AddMemberFormProp
       formData.append('firstName', values.firstName);
       formData.append('lastName', values.lastName);
       formData.append('email', values.email);
-      formData.append('role', values.role);
+      formData.append('role', values.role ?? 'member');
       formData.append('branchId', values.branchId);
       if (values.dateOfBirth) {
         const d = values.dateOfBirth instanceof Date ? values.dateOfBirth : new Date(values.dateOfBirth);
@@ -167,6 +206,12 @@ export default function AddMemberForm({ onSuccess, onCancel }: AddMemberFormProp
           membership: values.membership ? String(values.membership).trim() : '',
           planQuantity: values.planQuantity ?? 1,
           paidAmount: values.paidAmount ? String(values.paidAmount) : '0',
+          membershipStartDate: values.membershipStartDate
+            ? (values.membershipStartDate instanceof Date
+                ? values.membershipStartDate
+                : new Date(values.membershipStartDate)
+              ).toISOString()
+            : undefined,
         });
       } catch (detailsErr: any) {
         message.warning(
@@ -227,7 +272,7 @@ export default function AddMemberForm({ onSuccess, onCancel }: AddMemberFormProp
         </Col>
       </Row>
       <Row gutter={16}>
-        <Col span={12}>
+        <Col span={24}>
           <Form.Item
             label="Email"
             name="email"
@@ -237,18 +282,6 @@ export default function AddMemberForm({ onSuccess, onCancel }: AddMemberFormProp
             ]}
           >
             <Input placeholder="Enter email address" />
-          </Form.Item>
-        </Col>
-        <Col span={12}>
-          <Form.Item
-            label="Role"
-            name="role"
-            rules={[{ required: true, message: 'Please select role' }]}
-          >
-            <Select placeholder="Select role">
-              <Option value="trainer">Trainer</Option>
-              <Option value="member">Member</Option>
-            </Select>
           </Form.Item>
         </Col>
       </Row>
@@ -346,17 +379,23 @@ export default function AddMemberForm({ onSuccess, onCancel }: AddMemberFormProp
               rules={[{ required: true, message: 'Please select a plan' }]}
             >
               <Select
-                placeholder="Select plan"
+                placeholder={
+                  membershipTypesLoading
+                    ? 'Loading plans...'
+                    : membershipTypes.length === 0
+                      ? 'No active plans found'
+                      : 'Select plan'
+                }
                 loading={membershipTypesLoading}
                 showSearch
                 optionFilterProp="children"
-              >
-                {membershipTypes.map((m) => (
-                  <Option key={m.id || m._id} value={m.type}>
-                    {m.type} – ₹{m.price} ({m.duration} days)
-                  </Option>
-                ))}
-              </Select>
+                notFoundContent={!membershipTypesLoading && membershipTypes.length === 0 ? 'No active membership plans. Add plans in Memberships first.' : null}
+                options={membershipTypes.map((m: any) => ({
+                  key: m.id ?? m._id,
+                  value: m.type,
+                  label: `${m.type} – ₹${Number(m.price) ?? 0} (${Number(m.duration) ?? 0} days)`,
+                }))}
+              />
             </Form.Item>
           </Col>
           <Col span={10}>
@@ -378,6 +417,14 @@ export default function AddMemberForm({ onSuccess, onCancel }: AddMemberFormProp
             </Form.Item>
           </Col>
         </Row>
+        <Form.Item
+          label="Start date"
+          name="membershipStartDate"
+          tooltip="Membership period starts from this date. Used for calculations and renewal."
+          initialValue={undefined}
+        >
+          <DatePicker style={{ width: '100%' }} />
+        </Form.Item>
         <Form.Item
           noStyle
           shouldUpdate={(prev, curr) =>

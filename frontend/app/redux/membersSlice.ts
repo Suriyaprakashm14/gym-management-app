@@ -35,6 +35,15 @@ const initialState: MembersState = {
   error: null,
 };
 
+/** Compute status from membership end date vs now (fallback when backend does not send computedStatus). */
+function computedStatusFromDates(endDate: string | Date | null | undefined): string {
+  if (endDate == null) return 'active';
+  const d = typeof endDate === 'string' ? new Date(endDate) : endDate;
+  const t = d instanceof Date ? d.getTime() : NaN;
+  if (Number.isNaN(t)) return 'inactive';
+  return t < Date.now() ? 'expired' : 'active';
+}
+
 /** Normalize raw API member (and optional overlay) to store Member shape. */
 export function normalizeMember(m: any, overlay?: Partial<Member>): Member {
   const id = overlay?.id ?? m?.id ?? m?._id;
@@ -48,6 +57,11 @@ export function normalizeMember(m: any, overlay?: Partial<Member>): Member {
         ? endDate
         : (endDate as Date)?.toISOString?.() ?? String(endDate)
       : '';
+  const statusFromBackend = m?.computedStatus;
+  const statusFromDates = computedStatusFromDates(endDate);
+  const status =
+    overlay?.status ??
+    (statusFromBackend != null && statusFromBackend !== '' ? statusFromBackend : statusFromDates);
   return {
     id: id != null ? String(id) : '',
     firstName: overlay?.firstName ?? m?.firstName ?? '',
@@ -60,10 +74,7 @@ export function normalizeMember(m: any, overlay?: Partial<Member>): Member {
     phone: overlay?.phone ?? m?.profile?.phone ?? m?.phone ?? '',
     age: overlay?.age ?? m?.profile?.age ?? m?.age,
     dob: overlay?.dob ?? m?.profile?.dateOfBirth ?? m?.dateOfBirth ?? '',
-    status:
-      overlay?.status ??
-      m?.status ??
-      (m?.membership?.isActive ? 'active' : 'inactive'),
+    status,
     membership: overlay?.membership ?? membershipType ?? '',
     expires: overlay?.expires ?? expires ?? '',
     lastVisit: overlay?.lastVisit ?? m?.lastVisit ?? m?.lastVisitDate ?? '',

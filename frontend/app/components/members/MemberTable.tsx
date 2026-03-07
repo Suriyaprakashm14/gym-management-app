@@ -12,6 +12,11 @@ import {
   Popconfirm,
   App,
   Empty,
+  Modal,
+  Form,
+  Select,
+  InputNumber,
+  DatePicker,
 } from 'antd';
 import {
   EditOutlined,
@@ -23,10 +28,12 @@ import {
   CreditCardOutlined,
   EyeOutlined,
   ClockCircleOutlined,
+  SyncOutlined,
 } from '@ant-design/icons';
 import type { ColumnsType } from 'antd/es/table';
 import { useAppDispatch, useAppSelector } from '../../redux/hooks';
 import { fetchMembers, Member as StoreMember } from '../../redux/membersSlice';
+import { fetchMembershipPrices } from '../../redux/membershipsSlice';
 import { useMemberFilter } from '../../contexts/MemberFilterContext';
 import { api } from '../../utils/api';
 import EditMemberModal from './EditMemberModal';
@@ -88,10 +95,16 @@ const MemberTable: React.FC = () => {
   const [detailsModalVisible, setDetailsModalVisible] = useState(false);
   const [selectedMember, setSelectedMember] = useState<any>(null);
   const [selectedMemberId, setSelectedMemberId] = useState<string | null>(null);
+  const [renewModalVisible, setRenewModalVisible] = useState(false);
+  const [renewMember, setRenewMember] = useState<Member | null>(null);
+  const [renewLoading, setRenewLoading] = useState(false);
+  const [membershipTypes, setMembershipTypes] = useState<Array<{ id: string; type: string; price: number; duration: number }>>([]);
+  const [renewForm] = Form.useForm();
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(PAGE_SIZE);
   const dispatch = useAppDispatch();
   const { members, total, loading, error: membersError } = useAppSelector((s) => s.members);
+  const reduxPlans = useAppSelector((s) => s.membershipPrices.items);
   const { filter } = useMemberFilter();
 
   const loadPage = useCallback(
@@ -125,6 +138,76 @@ const MemberTable: React.FC = () => {
       setEditModalVisible(true);
     } else {
       message.warning('Member data not available. Please refresh and try again.');
+    }
+  };
+
+  // When Renew modal opens: show Redux plans immediately (prompt render), then refresh from API
+  useEffect(() => {
+    if (!renewModalVisible) return;
+    const normalize = (list: any[]) =>
+      list
+        .filter((m: any) => m.isActive !== false)
+        .map((m: any) => ({
+          id: m.id ?? m._id,
+          _id: m._id ?? m.id,
+          type: typeof m.type === 'string' ? m.type.trim() : (m.name || String(m._id || m.id || '')),
+          name: m.name ?? m.type,
+          price: m.price,
+          duration: m.duration,
+        }));
+    if (Array.isArray(reduxPlans) && reduxPlans.length > 0) {
+      setMembershipTypes(normalize(reduxPlans));
+    }
+    const fetchPlans = async () => {
+      try {
+        const response = await api.membershipPrices.getAll();
+        const listSource: any =
+          Array.isArray(response)
+            ? response
+            : Array.isArray((response as any)?.data)
+              ? (response as any).data
+              : Array.isArray((response as any)?.items)
+                ? (response as any).items
+                : [];
+        const list: any[] = Array.isArray(listSource) ? listSource : [];
+        setMembershipTypes(normalize(list));
+      } catch {
+        message.error('Failed to load membership plans');
+      }
+    };
+    fetchPlans();
+  }, [renewModalVisible, message, reduxPlans]);
+
+  const handleOpenRenew = (record: Member) => {
+    setRenewMember(record);
+    renewForm.setFieldsValue({ membership: undefined, planQuantity: 1, paidAmount: 0 });
+    setRenewModalVisible(true);
+  };
+
+  const handleRenewModalClose = () => {
+    setRenewModalVisible(false);
+    setRenewMember(null);
+    renewForm.resetFields();
+  };
+
+  const handleRenewSubmit = async () => {
+    if (!renewMember) return;
+    const values = await renewForm.validateFields().catch(() => null);
+    if (!values) return;
+    setRenewLoading(true);
+    try {
+      await api.members.renew(renewMember.key, {
+        membership: values.membership,
+        planQuantity: values.planQuantity ?? 1,
+        paidAmount: values.paidAmount ?? 0,
+      });
+      message.success('Member renewed successfully');
+      handleRenewModalClose();
+      dispatch(fetchMembers({ page, limit: pageSize, status: filter }));
+    } catch (err: any) {
+      message.error(err?.message || 'Failed to renew member');
+    } finally {
+      setRenewLoading(false);
     }
   };
 
@@ -367,6 +450,15 @@ const MemberTable: React.FC = () => {
               onClick={() => handleRowClick(record)}
             />
           </Tooltip>
+          {record.status === 'inactive' && (
+            <Tooltip title="Renew">
+              <Button
+                type="text"
+                icon={<SyncOutlined style={{ color: '#52c41a' }} />}
+                onClick={() => handleOpenRenew(record)}
+              />
+            </Tooltip>
+          )}
           <Tooltip title="Edit">
             <Button
               type="text"
@@ -445,6 +537,47 @@ const MemberTable: React.FC = () => {
         onClose={handleDetailsModalClose}
         memberId={selectedMemberId}
       />
+
+      <Modal
+        title="Renew membership"
+        open={renewModalVisible}
+        onCancel={handleRenewModalClose}
+        onOk={handleRenewSubmit}
+        confirmLoading={renewLoading}
+        okText="Renew"
+        destroyOnHidden
+
+      >
+        {renewMember && (
+          <p style={{ marginBottom: 16 }}>
+            Renew membership for <strong>{renewMember.name}</strong>.
+          </p>
+        )}
+        <Form form={renewForm} layout="vertical" initialValues={{ planQuantity: 1, paidAmount: 0 }}>
+          <Form.Item
+            name="membership"
+            label="Plan"
+            rules={[{ required: true, message: 'Select a plan' }]}
+          >
+            <Select
+              placeholder="Select plan"
+              options={membershipTypes.map((p: any) => ({
+                value: p.type,
+                label: `${p.type || p.name}${p.price != null ? ` — ₹${p.price}` : ''}`,
+              }))}
+            />
+          </Form.Item>
+          <Form.Item name="planQuantity" label="Quantity" rules={[{ required: true }]}>
+            <InputNumber min={1} style={{ width: '100%' }} />
+          </Form.Item>
+          <Form.Item name="membershipStartDate" label="Start date" tooltip="Membership period starts from this date. Leave empty for today.">
+            <DatePicker style={{ width: '100%' }} />
+          </Form.Item>
+          <Form.Item name="paidAmount" label="Amount paid (₹)">
+            <InputNumber min={0} step={100} style={{ width: '100%' }} />
+          </Form.Item>
+        </Form>
+      </Modal>
     </>
   );
 };

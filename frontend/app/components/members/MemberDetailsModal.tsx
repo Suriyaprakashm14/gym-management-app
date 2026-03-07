@@ -59,6 +59,10 @@ interface MemberPersonalDetails {
   emergencyContacts?: EmergencyContact[];
   dateOfBirth?: string;
   membership?: string;
+  membership_start_date?: string | Date;
+  membership_end_date?: string | Date;
+  planQuantity?: number;
+  subscriptionPeriods?: { startDate: string | Date; endDate: string | Date }[];
   totalAmount?: number;
   paidAmount?: number;
 }
@@ -102,15 +106,6 @@ const MemberDetailsModal: React.FC<MemberDetailsModalProps> = ({
   // Get member data from Redux store
   const { members } = useAppSelector((state) => state.members);
   const memberDetails = members.find((m: any) => m.id === memberId);
-  
-  // Debug logging
-  useEffect(() => {
-    if (visible && memberId) {
-      console.log('Looking for member with ID:', memberId);
-      console.log('Available members:', members.map(m => ({ id: m.id, name: m.name })));
-      console.log('Found member:', memberDetails);
-    }
-  }, [visible, memberId, members, memberDetails]);
 
   useEffect(() => {
     if (visible && memberId) {
@@ -271,18 +266,44 @@ const MemberDetailsModal: React.FC<MemberDetailsModalProps> = ({
                 {personalDetails?.membership || memberDetails.membership || 'N/A'}
               </Descriptions.Item>
               <Descriptions.Item label="Total Amount (₹)">
-                ₹{personalDetails?.totalAmount || 0}
+                ₹{personalDetails?.totalAmount ?? 0}
+              </Descriptions.Item>
+              <Descriptions.Item label="Start Date">
+                {personalDetails?.membership_start_date
+                  ? new Date(personalDetails.membership_start_date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
+                  : 'N/A'}
+              </Descriptions.Item>
+              <Descriptions.Item
+                label={
+                  (personalDetails?.planQuantity ?? 1) > 1 && Array.isArray(personalDetails?.subscriptionPeriods) && personalDetails.subscriptionPeriods.length > 0
+                    ? (() => {
+                        const endDate = personalDetails?.membership_end_date || memberDetails.expires;
+                        if (!endDate) return 'End Date';
+                        const endStr = new Date(endDate as string).toISOString().slice(0, 10);
+                        const idx = personalDetails!.subscriptionPeriods!.findIndex(
+                          (p) => new Date(p.endDate).toISOString().slice(0, 10) === endStr
+                        );
+                        const periodNum = idx >= 0 ? idx + 1 : 1;
+                        const total = personalDetails!.planQuantity ?? personalDetails!.subscriptionPeriods!.length;
+                        return `End Date (Period ${periodNum} of ${total})`;
+                      })()
+                    : 'End Date'
+                }
+              >
+                {(personalDetails?.membership_end_date || memberDetails.expires)
+                  ? new Date((personalDetails?.membership_end_date || memberDetails.expires) as string).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
+                  : 'N/A'}
               </Descriptions.Item>
               <Descriptions.Item label="Paid Amount (₹)">
-                ₹{personalDetails?.paidAmount || 0}
+                ₹{personalDetails?.paidAmount ?? 0}
               </Descriptions.Item>
               <Descriptions.Item label="Outstanding Amount (₹)">
                 <Text 
                   style={{ 
-                    color: (personalDetails?.totalAmount || 0) - (personalDetails?.paidAmount || 0) > 0 ? '#ff4d4f' : '#52c41a' 
+                    color: ((personalDetails?.totalAmount ?? 0) - (personalDetails?.paidAmount ?? 0)) > 0 ? '#ff4d4f' : '#52c41a' 
                   }}
                 >
-                  ₹{(personalDetails?.totalAmount || 0) - (personalDetails?.paidAmount || 0)}
+                  ₹{((personalDetails?.totalAmount ?? 0) - (personalDetails?.paidAmount ?? 0))}
                 </Text>
               </Descriptions.Item>
             </Descriptions>

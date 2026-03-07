@@ -9,6 +9,7 @@ import {
   UserOutlined,
   LogoutOutlined,
   BankOutlined,
+  TeamOutlined,
 } from '@ant-design/icons';
 import { useAuth } from '../../contexts/AuthContext';
 import { api } from '../../utils/api';
@@ -79,6 +80,12 @@ const Sidebar: React.FC<SidebarProps> = ({ collapsed, onCollapse }) => {
     label: <Link href="/expenses" prefetch>Expenses</Link>,
   };
 
+  const staffsMenuItem = {
+    key: '/staffs',
+    icon: <TeamOutlined />,
+    label: <Link href="/staffs" prefetch>Staffs</Link>,
+  };
+
   const logoutMenuItem = {
     key: 'logout',
     icon: <LogoutOutlined />,
@@ -91,6 +98,7 @@ const Sidebar: React.FC<SidebarProps> = ({ collapsed, onCollapse }) => {
     billingMenuItem,
     pendingBillingMenuItem,
     expensesMenuItem,
+    staffsMenuItem,
     logoutMenuItem,
   ];
 
@@ -139,16 +147,32 @@ const Sidebar: React.FC<SidebarProps> = ({ collapsed, onCollapse }) => {
       }}
     >
       <div style={{ 
-        height: 50, 
+        minHeight: 50, 
         margin: 16, 
         color: 'white', 
         fontWeight: 'bold', 
-        textAlign: 'center',
         display: 'flex',
         alignItems: 'center',
-        justifyContent: 'center'
+        justifyContent: collapsed ? 'center' : 'flex-start',
+        gap: 10,
+        padding: collapsed ? 0 : '0 4px'
       }}>
-        {!collapsed ? 'Small Circle' : 'SC'}
+        {currentUser.gymLogo ? (
+          <img
+            src={currentUser.gymLogo}
+            alt=""
+            style={{ width: collapsed ? 32 : 36, height: collapsed ? 32 : 36, borderRadius: 8, objectFit: 'contain', flexShrink: 0 }}
+          />
+        ) : (
+          <div style={{ width: collapsed ? 32 : 36, height: collapsed ? 32 : 36, borderRadius: 8, background: 'rgba(255,255,255,0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, fontSize: collapsed ? 14 : 18 }}>
+            {collapsed ? 'G' : 'Gym'}
+          </div>
+        )}
+        {!collapsed && (
+          <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            {currentUser.gymName || 'GymPro'}
+          </span>
+        )}
       </div>
       
       <div style={{ 
