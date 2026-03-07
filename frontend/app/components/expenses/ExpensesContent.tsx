@@ -249,8 +249,9 @@ export default function ExpensesContent() {
               notFoundContent={categories.length === 0 && !categoriesLoading ? 'No categories. Use "Manage categories" or add below.' : null}
               onChange={(val) => {
                 if (val === ADD_CATEGORY_VALUE) {
-                  form.setFieldValue('category', undefined);
                   setCategoriesModalOpen(true);
+                  // Defer clear to avoid circular reference (Ant Design Form + Select)
+                  setTimeout(() => form.setFieldValue('category', undefined), 0);
                 }
               }}
             />
@@ -264,7 +265,10 @@ export default function ExpensesContent() {
       <ManageCategoriesModal
         open={categoriesModalOpen}
         onClose={() => setCategoriesModalOpen(false)}
-        onSaved={() => { fetchCategories(); }}
+        onSaved={() => {
+          fetchCategories();
+          form.setFieldValue('category', undefined);
+        }}
         categories={categories}
         setCategories={setCategories}
         message={message}

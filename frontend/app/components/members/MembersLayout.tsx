@@ -99,16 +99,15 @@ function MembersLayoutInner({
         </Title>
       </Header>
 
-      {/* Single sticky strip: tabs + action bar */}
+      {/* Single sticky strip: tabs + action bar — flush under header */}
       <div
         style={{
           background: '#fff',
           borderBottom: '1px solid #e8e8e8',
           boxShadow: '0 1px 2px rgba(0,0,0,0.04)',
           position: 'sticky',
-          top: 80,
+          top: 64,
           zIndex: 998,
-          marginTop: 16,
         }}
       >
         <div style={{ padding: '0 24px' }}>
