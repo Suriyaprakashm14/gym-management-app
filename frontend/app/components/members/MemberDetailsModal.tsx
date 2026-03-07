@@ -137,6 +137,7 @@ const MemberDetailsModal: React.FC<MemberDetailsModalProps> = ({
       case 'active':
         return 'success';
       case 'inactive':
+      case 'long term inactive':
         return 'default';
       default:
         return 'processing';

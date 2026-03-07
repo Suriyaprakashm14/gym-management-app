@@ -367,6 +367,7 @@ const EditMemberModal: React.FC<EditMemberModalProps> = ({
             <Select placeholder="Select status">
               <Option value="active">Active</Option>
               <Option value="inactive">Inactive</Option>
+              <Option value="long term inactive">Long term inactive</Option>
             </Select>
           </Form.Item>
 

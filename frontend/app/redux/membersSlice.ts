@@ -35,16 +35,7 @@ const initialState: MembersState = {
   error: null,
 };
 
-/** Compute status from membership end date vs now (fallback when backend does not send computedStatus). */
-function computedStatusFromDates(endDate: string | Date | null | undefined): string {
-  if (endDate == null) return 'active';
-  const d = typeof endDate === 'string' ? new Date(endDate) : endDate;
-  const t = d instanceof Date ? d.getTime() : NaN;
-  if (Number.isNaN(t)) return 'inactive';
-  return t < Date.now() ? 'expired' : 'active';
-}
-
-/** Normalize raw API member (and optional overlay) to store Member shape. */
+/** Normalize raw API member (and optional overlay) to store Member shape. Status comes from backend only. */
 export function normalizeMember(m: any, overlay?: Partial<Member>): Member {
   const id = overlay?.id ?? m?.id ?? m?._id;
   const membershipObj = m?.membership ?? null;
@@ -57,11 +48,7 @@ export function normalizeMember(m: any, overlay?: Partial<Member>): Member {
         ? endDate
         : (endDate as Date)?.toISOString?.() ?? String(endDate)
       : '';
-  const statusFromBackend = m?.computedStatus;
-  const statusFromDates = computedStatusFromDates(endDate);
-  const status =
-    overlay?.status ??
-    (statusFromBackend != null && statusFromBackend !== '' ? statusFromBackend : statusFromDates);
+  const status = overlay?.status ?? (m?.status != null && m?.status !== '' ? m.status : 'active');
   return {
     id: id != null ? String(id) : '',
     firstName: overlay?.firstName ?? m?.firstName ?? '',

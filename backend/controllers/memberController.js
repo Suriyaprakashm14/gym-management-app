@@ -247,7 +247,7 @@ exports.getAll = async (req, res) => {
       }
     }
 
-    // Status filter: activeUsers | inactiveUsers | longTimeInactiveUsers (90-day threshold); backward compat: recentlyExpired -> inactiveUsers, archivedUsers -> longTimeInactiveUsers
+    // Status filter: activeUsers | inactiveUsers | longTimeInactiveUsers (status stored in DB)
     let statusFilter = req.query.status || 'activeUsers';
     if (statusFilter === 'recentlyExpired') statusFilter = 'inactiveUsers';
     if (statusFilter === 'archivedUsers') statusFilter = 'longTimeInactiveUsers';
@@ -256,31 +256,23 @@ exports.getAll = async (req, res) => {
     const ninetyDaysAgo = new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000);
 
     if (statusFilter === 'activeUsers') {
+      filter.status = { $nin: ['inactive', 'long term inactive'] };
       filter.$or = [
         { 'membership.endDate': null },
         { 'membership.endDate': { $gt: now } },
       ];
-      filter.status = { $nin: ['inactive'] };
     } else if (statusFilter === 'inactiveUsers') {
-      // Expired 1–90 days ago OR manually set inactive, but exclude long-time inactive (endDate < 90 days ago).
-      // So: (recently expired OR status inactive) AND (endDate is null or >= ninetyDaysAgo).
-      filter.$and = [
-        {
-          $or: [
-            { 'membership.endDate': { $gte: ninetyDaysAgo, $lte: now } },
-            { status: 'inactive' },
-          ],
-        },
-        {
-          $or: [
-            { 'membership.endDate': null },
-            { 'membership.endDate': { $gte: ninetyDaysAgo } },
-          ],
-        },
+      // Recently expired (1–90 days) or already status 'inactive'
+      filter.$or = [
+        { status: 'inactive' },
+        { 'membership.endDate': { $gte: ninetyDaysAgo, $lte: now } },
       ];
     } else if (statusFilter === 'longTimeInactiveUsers') {
-      // Expired more than 90 days ago (by date). Manually inactive members move here once endDate is past 90 days.
-      filter['membership.endDate'] = { $lt: ninetyDaysAgo };
+      // Expired >90 days ago or already status 'long term inactive'
+      filter.$or = [
+        { status: 'long term inactive' },
+        { 'membership.endDate': { $lt: ninetyDaysAgo } },
+      ];
     }
 
     const page = Math.max(1, parseInt(req.query.page, 10) || 1);
@@ -340,10 +332,35 @@ exports.getAll = async (req, res) => {
               m.membership.startDate = nextStart;
               m.membership.endDate = nextEnd;
               m.membership.isActive = true;
+              m.status = 'active';
               details = { ...details, membership_start_date: nextStart, membership_end_date: nextEnd };
+            } else {
+              // End date expired and no next period: set status from end date (inactive vs long term inactive)
+              const effectiveEnd = details.membership_end_date ? new Date(details.membership_end_date) : (m.membership?.endDate ? new Date(m.membership.endDate) : null);
+              const newStatus = effectiveEnd && effectiveEnd < ninetyDaysAgo ? 'long term inactive' : 'inactive';
+              if (String(m.status) !== 'inactive' && String(m.status) !== 'long term inactive') {
+                await Member.findByIdAndUpdate(m._id, {
+                  'membership.isActive': false,
+                  status: newStatus
+                });
+                m.status = newStatus;
+                if (m.membership) m.membership.isActive = false;
+              }
             }
           }
         }
+      }
+      // For every member: if effective end date (from details or member) has expired, set status in DB and on object
+      const effectiveEndRaw = details?.membership_end_date ?? m.membership?.endDate;
+      const effectiveEnd = effectiveEndRaw ? new Date(effectiveEndRaw) : null;
+      if (effectiveEnd && effectiveEnd < now && String(m.status) !== 'inactive' && String(m.status) !== 'long term inactive') {
+        const newStatus = effectiveEnd < ninetyDaysAgo ? 'long term inactive' : 'inactive';
+        await Member.findByIdAndUpdate(m._id, {
+          'membership.isActive': false,
+          status: newStatus
+        });
+        m.status = newStatus;
+        if (m.membership) m.membership.isActive = false;
       }
       const payment = paymentByMemberId[m._id];
       const totalAmount = details && (details.totalAmount != null) ? Number(details.totalAmount) : 0;
@@ -363,22 +380,6 @@ exports.getAll = async (req, res) => {
         m.billingDate = '';
         m.billingStatus = 'pending';
       }
-
-      // Computed status from membership dates (overrides DB status for display)
-      if (String(m.status) === 'inactive') {
-        m.computedStatus = 'inactive';
-      } else if (details) {
-        const endDate = details.membership_end_date ? new Date(details.membership_end_date) : null;
-        if (endDate && endDate < now) {
-          m.computedStatus = 'expired';
-        } else if (details.membership || endDate || details.membership_start_date) {
-          m.computedStatus = 'active';
-        } else {
-          m.computedStatus = 'inactive';
-        }
-      } else {
-        m.computedStatus = m.status || 'inactive';
-      }
     }
 
     res.json({ list: members, total });
@@ -395,7 +396,7 @@ exports.getOne = async (req, res) => {
       return res.status(403).json({ error: "Access denied. Only gym_owner or manager can view members. Admin cannot access gym internal activities." });
     }
 
-    const member = await Member.findById(req.params.id);
+    let member = await Member.findById(req.params.id);
     if (!member) return res.status(404).json({ error: 'Member not found' });
 
     // Check access permissions
@@ -405,6 +406,39 @@ exports.getOne = async (req, res) => {
 
     if (req.user.role === 'gym_owner' && member.gymId !== req.user.gymId) {
       return res.status(403).json({ error: 'Access denied: Not authorized for this member' });
+    }
+
+    const now = new Date();
+    const ninetyDaysAgo = new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000);
+    const details = await Details.findOne({ memberId: member._id }).lean();
+    const effectiveEndRaw = details?.membership_end_date ?? member.membership?.endDate;
+    const effectiveEnd = effectiveEndRaw ? new Date(effectiveEndRaw) : null;
+    if (effectiveEnd && effectiveEnd < now) {
+      const nextPeriod = details?.subscriptionPeriods?.length
+        ? details.subscriptionPeriods.find((p) => p.endDate && new Date(p.endDate) > now)
+        : null;
+      if (nextPeriod) {
+        const nextStart = new Date(nextPeriod.startDate);
+        const nextEnd = new Date(nextPeriod.endDate);
+        await Details.findOneAndUpdate(
+          { memberId: member._id },
+          { membership_start_date: nextStart, membership_end_date: nextEnd }
+        );
+        await Member.findByIdAndUpdate(member._id, {
+          'membership.startDate': nextStart,
+          'membership.endDate': nextEnd,
+          'membership.isActive': true,
+          status: 'active'
+        });
+        member = await Member.findById(req.params.id);
+      } else {
+        const newStatus = effectiveEnd < ninetyDaysAgo ? 'long term inactive' : 'inactive';
+        await Member.findByIdAndUpdate(member._id, {
+          'membership.isActive': false,
+          status: newStatus
+        });
+        member = await Member.findById(req.params.id);
+      }
     }
 
     res.json(member);

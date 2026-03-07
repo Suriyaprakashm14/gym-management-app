@@ -82,7 +82,7 @@ interface Member {
   billingStatus: 'paid' | 'overdue' | 'pending';
   hasPaymentCard: boolean;
   isFamilyAccount: boolean;
-  status: 'active' | 'inactive';
+  status: 'active' | 'inactive' | 'long term inactive';
   image?: string;
 }
 
@@ -256,7 +256,7 @@ const MemberTable: React.FC = () => {
         billingStatus: ((m.billingStatus as string) || 'pending') as 'paid' | 'overdue' | 'pending',
         hasPaymentCard: true,
         isFamilyAccount: false,
-        status: (m.status as any) === 'inactive' ? 'inactive' : 'active',
+        status: ((m.status as string) === 'inactive' || (m.status as string) === 'long term inactive' ? (m.status as string) : 'active') as Member['status'],
         image: (m as any).image,
       };
     });
@@ -292,10 +292,10 @@ const MemberTable: React.FC = () => {
               {text}
             </div>
             <Tag
-              color={record.status === 'inactive' ? 'default' : 'success'}
+              color={record.status === 'inactive' || record.status === 'long term inactive' ? 'default' : 'success'}
               style={{
                 marginTop: 4,
-                ...(record.status === 'inactive' ? { color: '#8c8c8c', borderColor: '#d9d9d9' } : {}),
+                ...(record.status === 'inactive' || record.status === 'long term inactive' ? { color: '#8c8c8c', borderColor: '#d9d9d9' } : {}),
               }}
             >
               {record.status.toUpperCase()}
@@ -450,7 +450,7 @@ const MemberTable: React.FC = () => {
               onClick={() => handleRowClick(record)}
             />
           </Tooltip>
-          {record.status === 'inactive' && (
+          {(record.status === 'inactive' || record.status === 'long term inactive') && (
             <Tooltip title="Renew">
               <Button
                 type="text"

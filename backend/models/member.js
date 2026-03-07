@@ -88,10 +88,10 @@ const memberSchema = new mongoose.Schema({
     enum: ['member', 'trainer'],
     default: 'member'
   },
-  // Member status
+  // Member status (inactive = expired ≤90 days; long term inactive = expired >90 days)
   status: {
     type: String,
-    enum: ['active', 'inactive', 'suspended', 'expired'],
+    enum: ['active', 'inactive', 'long term inactive', 'suspended', 'expired'],
     default: 'active'
   },
   isActive: {
@@ -191,11 +191,13 @@ memberSchema.statics.checkAndUpdateExpiredMemberships = async function() {
 
     const expiredMembers = await this.find({
       _id: { $in: toMarkInactive },
-      status: { $ne: 'inactive' }
+      status: { $nin: ['inactive', 'long term inactive'] }
     });
 
+    const ninetyDaysAgo = new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000);
     for (const member of expiredMembers) {
-      member.status = 'inactive';
+      const endDate = member.membership?.endDate ? new Date(member.membership.endDate) : null;
+      member.status = endDate && endDate < ninetyDaysAgo ? 'long term inactive' : 'inactive';
       member.membership.isActive = false;
       await member.save();
     }
