@@ -88,8 +88,19 @@ exports.create = async (req, res) => {
     let membershipEndDate = null;
     const subscriptionPeriods = [];
     if (membership && priceDoc) {
-      let periodStart = new Date();
-      periodStart.setHours(0, 0, 0, 0);
+      let periodStart = null;
+      if (req.body.membershipStartDate) {
+        periodStart = new Date(req.body.membershipStartDate);
+        if (!Number.isNaN(periodStart.getTime())) {
+          periodStart.setHours(0, 0, 0, 0);
+        } else {
+          periodStart = new Date();
+          periodStart.setHours(0, 0, 0, 0);
+        }
+      } else {
+        periodStart = new Date();
+        periodStart.setHours(0, 0, 0, 0);
+      }
       for (let i = 0; i < quantity; i++) {
         const periodEnd = new Date(periodStart);
         periodEnd.setDate(periodEnd.getDate() + durationDays);

@@ -174,6 +174,15 @@ exports.getMemberPaymentSummary = async (req, res) => {
   }
 };
 
+// Helper: membership period [memberStart, memberEnd] overlaps [rangeStart, rangeEnd]
+function membershipPeriodOverlaps(memberStart, memberEnd, rangeStart, rangeEnd) {
+  const start = memberStart ? new Date(memberStart).getTime() : null;
+  const end = memberEnd ? new Date(memberEnd).getTime() : null;
+  const rStart = rangeStart.getTime();
+  const rEnd = rangeEnd.getTime();
+  return (start == null || start <= rEnd) && (end == null || end >= rStart);
+}
+
 // Gym Owner Analytics - Total Revenue and Pending Payments for All Branches
 // Branch Manager Analytics - Branch Revenue and Pending Payments
 exports.getGymOwnerAnalytics = async (req, res) => {
@@ -255,9 +264,12 @@ exports.getGymOwnerAnalytics = async (req, res) => {
       personalDetails = await Details.find({ memberId: { $in: memberIds } });
     }
 
-    // Calculate totals
+    // Calculate totals: pending only for details whose membership period overlaps [startDate, endDate]
     const totalPaidAmount = payments.reduce((sum, payment) => sum + payment.paidAmount, 0);
-    const totalPendingAmount = personalDetails.reduce((sum, detail) => {
+    const detailsInRange = personalDetails.filter(d =>
+      membershipPeriodOverlaps(d.membership_start_date, d.membership_end_date, startDate, endDate)
+    );
+    const totalPendingAmount = detailsInRange.reduce((sum, detail) => {
       const pending = Math.max(0, detail.totalAmount - detail.paidAmount);
       return sum + pending;
     }, 0);
@@ -375,9 +387,12 @@ exports.getBranchManagerAnalytics = async (req, res) => {
     const memberIds = members.map(member => member._id);
     const personalDetails = await Details.find({ memberId: { $in: memberIds } });
 
-    // Calculate totals
+    // Pending only for details whose membership period overlaps [startDate, endDate]
+    const detailsInRange = personalDetails.filter(d =>
+      membershipPeriodOverlaps(d.membership_start_date, d.membership_end_date, startDate, endDate)
+    );
     const totalPaidAmount = payments.reduce((sum, payment) => sum + payment.paidAmount, 0);
-    const totalPendingAmount = personalDetails.reduce((sum, detail) => {
+    const totalPendingAmount = detailsInRange.reduce((sum, detail) => {
       const pending = Math.max(0, detail.totalAmount - detail.paidAmount);
       return sum + pending;
     }, 0);
@@ -404,6 +419,17 @@ exports.getBranchManagerAnalytics = async (req, res) => {
       return res.status(404).json({ error: 'Branch not found for analytics.' });
     }
 
+    // Pending members list: only those whose membership period overlaps the selected range
+    const topMembers = personalDetails
+      .filter(d => membershipPeriodOverlaps(d.membership_start_date, d.membership_end_date, startDate, endDate))
+      .map(detail => ({
+        memberId: detail.memberId,
+        totalPaid: detail.paidAmount,
+        pendingAmount: Math.max(0, detail.totalAmount - detail.paidAmount),
+        membership: detail.membership
+      }))
+      .sort((a, b) => b.totalPaid - a.totalPaid);
+
     res.json({
       branch: {
         branchId: branch._id,
@@ -424,15 +450,7 @@ exports.getBranchManagerAnalytics = async (req, res) => {
         averagePayment: payments.length > 0 ? totalPaidAmount / payments.length : 0
       },
       monthlyBreakdown: monthlyData,
-      topMembers: personalDetails
-        .map(detail => ({
-          memberId: detail.memberId,
-          totalPaid: detail.paidAmount,
-          pendingAmount: Math.max(0, detail.totalAmount - detail.paidAmount),
-          membership: detail.membership
-        }))
-        .sort((a, b) => b.totalPaid - a.totalPaid)
-        .slice(0, 10)
+      topMembers: topMembers.slice(0, 10)
     });
   } catch (err) {
     res.status(500).json({ error: err.message });

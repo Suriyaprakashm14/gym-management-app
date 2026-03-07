@@ -1,6 +1,7 @@
 const Member = require('../models/member');
 const Details = require('../models/membersPersonalDetails');
 const Payment = require('../models/payment');
+const MembershipPrice = require('../models/membershipPrice');
 const axios = require('axios');
 const FormData = require('form-data');
 const multer = require('multer');
@@ -246,11 +247,13 @@ exports.getAll = async (req, res) => {
       }
     }
 
-    // Status filter: activeUsers | recentlyExpired | archivedUsers
-    const statusFilter = req.query.status || 'activeUsers';
+    // Status filter: activeUsers | inactiveUsers | longTimeInactiveUsers (90-day threshold); backward compat: recentlyExpired -> inactiveUsers, archivedUsers -> longTimeInactiveUsers
+    let statusFilter = req.query.status || 'activeUsers';
+    if (statusFilter === 'recentlyExpired') statusFilter = 'inactiveUsers';
+    if (statusFilter === 'archivedUsers') statusFilter = 'longTimeInactiveUsers';
+
     const now = new Date();
-    const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
-    const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+    const ninetyDaysAgo = new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000);
 
     if (statusFilter === 'activeUsers') {
       filter.$or = [
@@ -258,13 +261,26 @@ exports.getAll = async (req, res) => {
         { 'membership.endDate': { $gt: now } },
       ];
       filter.status = { $nin: ['inactive'] };
-    } else if (statusFilter === 'recentlyExpired') {
-      filter['membership.endDate'] = { $gte: sevenDaysAgo, $lte: now };
-    } else if (statusFilter === 'archivedUsers') {
-      filter.$or = [
-        { 'membership.endDate': { $lt: sevenDaysAgo } },
-        { status: 'inactive' },
+    } else if (statusFilter === 'inactiveUsers') {
+      // Expired 1–90 days ago OR manually set inactive, but exclude long-time inactive (endDate < 90 days ago).
+      // So: (recently expired OR status inactive) AND (endDate is null or >= ninetyDaysAgo).
+      filter.$and = [
+        {
+          $or: [
+            { 'membership.endDate': { $gte: ninetyDaysAgo, $lte: now } },
+            { status: 'inactive' },
+          ],
+        },
+        {
+          $or: [
+            { 'membership.endDate': null },
+            { 'membership.endDate': { $gte: ninetyDaysAgo } },
+          ],
+        },
       ];
+    } else if (statusFilter === 'longTimeInactiveUsers') {
+      // Expired more than 90 days ago (by date). Manually inactive members move here once endDate is past 90 days.
+      filter['membership.endDate'] = { $lt: ninetyDaysAgo };
     }
 
     const page = Math.max(1, parseInt(req.query.page, 10) || 1);
@@ -346,6 +362,22 @@ exports.getAll = async (req, res) => {
         m.billingAmount = '';
         m.billingDate = '';
         m.billingStatus = 'pending';
+      }
+
+      // Computed status from membership dates (overrides DB status for display)
+      if (String(m.status) === 'inactive') {
+        m.computedStatus = 'inactive';
+      } else if (details) {
+        const endDate = details.membership_end_date ? new Date(details.membership_end_date) : null;
+        if (endDate && endDate < now) {
+          m.computedStatus = 'expired';
+        } else if (details.membership || endDate || details.membership_start_date) {
+          m.computedStatus = 'active';
+        } else {
+          m.computedStatus = 'inactive';
+        }
+      } else {
+        m.computedStatus = m.status || 'inactive';
       }
     }
 
@@ -510,6 +542,138 @@ exports.remove = async (req, res) => {
     res.json({ message: 'Member deleted' });
   } catch (err) {
     res.status(400).json({ error: err.message });
+  }
+};
+
+// Renew membership for a member (expired or active): new plan/period, payment, update Details + Member
+exports.renew = async (req, res) => {
+  try {
+    const allowedRoles = ['gym_owner', 'manager'];
+    if (!allowedRoles.includes(req.user.role)) {
+      return res.status(403).json({ error: 'Access denied. Only gym_owner or manager can renew memberships.' });
+    }
+
+    const memberId = req.params.id;
+    const { membership, planQuantity, paidAmount, membershipStartDate: startDateBody } = req.body;
+
+    const membershipTrimmed = membership ? String(membership).trim() : '';
+    if (!membershipTrimmed) {
+      return res.status(400).json({ error: 'Membership type is required' });
+    }
+
+    const member = await Member.findById(memberId);
+    if (!member) return res.status(404).json({ error: 'Member not found' });
+
+    if (req.user.role === 'manager' && member.branchId.toString() !== req.user.branchId.toString()) {
+      return res.status(403).json({ error: 'Access denied: Not authorized for this member' });
+    }
+    if (req.user.role === 'gym_owner' && member.gymId !== req.user.gymId) {
+      return res.status(403).json({ error: 'Access denied: Not authorized for this member' });
+    }
+
+    const typeRegex = new RegExp(`^\\s*${membershipTrimmed.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*$`, 'i');
+    let priceDoc = member.gymId
+      ? await MembershipPrice.findOne({ type: { $regex: typeRegex }, gymId: member.gymId, isActive: { $ne: false } })
+      : null;
+    if (!priceDoc) priceDoc = await MembershipPrice.findOne({ type: { $regex: typeRegex } });
+    if (!priceDoc) {
+      return res.status(400).json({ error: `Membership type '${membershipTrimmed}' not found` });
+    }
+
+    const quantity = Math.max(1, parseInt(planQuantity, 10) || 1);
+    const durationDays = priceDoc.duration || 30;
+    let periodStart;
+    if (startDateBody) {
+      periodStart = new Date(startDateBody);
+      if (!Number.isNaN(periodStart.getTime())) {
+        periodStart.setHours(0, 0, 0, 0);
+      } else {
+        periodStart = new Date();
+        periodStart.setHours(0, 0, 0, 0);
+      }
+    } else {
+      periodStart = new Date();
+      periodStart.setHours(0, 0, 0, 0);
+    }
+    const subscriptionPeriods = [];
+    let membershipStartDate = null;
+    let membershipEndDate = null;
+    for (let i = 0; i < quantity; i++) {
+      const periodEnd = new Date(periodStart);
+      periodEnd.setDate(periodEnd.getDate() + durationDays);
+      subscriptionPeriods.push({ startDate: new Date(periodStart), endDate: new Date(periodEnd) });
+      if (i === 0) {
+        membershipStartDate = new Date(periodStart);
+        membershipEndDate = new Date(periodEnd);
+      }
+      periodStart = new Date(periodEnd);
+    }
+
+    const newTotal = priceDoc.price * quantity;
+    const paid = Math.max(0, Number(paidAmount) || 0);
+
+    let details = await Details.findOne({ memberId });
+    if (!details) {
+      details = new Details({
+        memberId,
+        membership: membershipTrimmed,
+        branchId: member.branchId,
+        totalAmount: newTotal,
+        paidAmount: paid,
+        membership_start_date: membershipStartDate,
+        membership_end_date: membershipEndDate,
+        planQuantity: quantity,
+        subscriptionPeriods,
+      });
+      await details.save();
+    } else {
+      details.membership = membershipTrimmed;
+      details.membership_start_date = membershipStartDate;
+      details.membership_end_date = membershipEndDate;
+      details.subscriptionPeriods = subscriptionPeriods;
+      details.planQuantity = quantity;
+      details.totalAmount = (details.totalAmount || 0) + newTotal;
+      details.paidAmount = (details.paidAmount || 0) + paid;
+      await details.save();
+    }
+
+    if (paid > 0 && member.branchId) {
+      try {
+        const payment = new Payment({
+          memberId: String(memberId),
+          branchId: String(member.branchId),
+          name: `${member.firstName || ''} ${member.lastName || ''}`.trim() || 'Member',
+          detailsId: String(details._id),
+          membership: membershipTrimmed,
+          totalAmount: newTotal,
+          paidAmount: paid,
+        });
+        await payment.save();
+      } catch (paymentErr) {
+        console.error('Failed to create renewal payment record:', paymentErr);
+      }
+    }
+
+    await Member.findByIdAndUpdate(memberId, {
+      'membership.type': membershipTrimmed,
+      'membership.startDate': membershipStartDate,
+      'membership.endDate': membershipEndDate,
+      'membership.isActive': true,
+      status: 'active',
+    });
+
+    res.status(200).json({
+      success: true,
+      message: 'Membership renewed successfully',
+      data: {
+        membership: membershipTrimmed,
+        membershipEndDate,
+        paidAmount: paid,
+      },
+    });
+  } catch (err) {
+    console.error('Renew error:', err);
+    res.status(400).json({ error: err.message || 'Failed to renew membership' });
   }
 };
 

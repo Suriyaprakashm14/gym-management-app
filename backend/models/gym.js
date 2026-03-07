@@ -3,11 +3,13 @@ const { v4: uuidv4 } = require('uuid');
 
 const gymSchema = new mongoose.Schema({
   _id: { type: String, default: uuidv4 },
-  name: { 
-    type: String, 
+  name: {
+    type: String,
     required: true,
     trim: true
   },
+  /** Gym icon/logo (data URL or base64) uploaded during signup; used in navbar branding */
+  logoUrl: { type: String, default: null },
   description: {
     type: String,
     trim: true

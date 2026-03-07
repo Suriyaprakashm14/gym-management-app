@@ -69,8 +69,20 @@ exports.getAll = async (req, res) => {
     }
 
     // Gym owners and managers see only their gym's prices (filter applied)
-    const prices = await MembershipPrice.find(filter);
-    res.json(prices);
+    const prices = await MembershipPrice.find(filter).lean();
+    const now = new Date();
+    const pricesWithCount = await Promise.all(
+      prices.map(async (p) => {
+        const gymMemberIds = await Member.find({ gymId: p.gymId }).distinct('_id');
+        const activeCount = await Details.countDocuments({
+          memberId: { $in: gymMemberIds.map((id) => id.toString()) },
+          membership: p.type,
+          membership_end_date: { $gt: now },
+        });
+        return { ...p, activeCount };
+      })
+    );
+    res.json(pricesWithCount);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -139,6 +151,14 @@ exports.remove = async (req, res) => {
     // Check access permissions - gym owners can only delete their own gym's prices
     if (req.user.role === 'gym_owner' && price.gymId !== req.user.gymId) {
       return res.status(403).json({ error: 'Access denied: Not authorized to delete this membership price' });
+    }
+
+    // Allow delete only when plan is inactive
+    if (price.isActive !== false) {
+      return res.status(400).json({
+        error: 'Cannot delete an active plan. Make it inactive first.',
+        message: 'Cannot delete an active plan. Make it inactive first.',
+      });
     }
 
     // Block delete if any active users are assigned to this plan (subscription not yet expired)

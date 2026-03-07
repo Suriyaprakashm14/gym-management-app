@@ -123,7 +123,7 @@ exports.login = async (req, res) => {
     let user = await User.findOne({ 
       email: normalizedEmail,
       isActive: true 
-    }).populate('gymId', 'name status isFrozen').populate('branchId', 'name status');
+    }).populate('gymId', 'name status isFrozen logoUrl').populate('branchId', 'name status');
 
     let isLegacyUser = false;
     
@@ -282,6 +282,7 @@ exports.login = async (req, res) => {
         role: isPrivilegedUser ? 'admin' : user.role,
         gymId: user.gymId?._id,
         gymName: user.gymId?.name,
+        gymLogo: user.gymId?.logoUrl || null,
         branchId: user.branchId?._id,
         branchName: user.branchId?.name,
         permissions: user.permissions || [],
@@ -931,7 +932,7 @@ exports.createFirstAdmin = async (req, res) => {
 // Public gym owner signup: creates Gym + User (gym_owner). No branch; owner adds branches via Branches page.
 exports.signup = async (req, res) => {
   try {
-    const { gymName, firstName, lastName, email, password } = req.body;
+    const { gymName, firstName, lastName, email, password, gymIcon } = req.body;
 
     if (!gymName || !firstName || !lastName || !email || !password) {
       return res.status(400).json({
@@ -968,7 +969,8 @@ exports.signup = async (req, res) => {
       name: trimmedGymName,
       status: 'active',
       isFrozen: false,
-      createdBy: 'system'
+      createdBy: 'system',
+      ...(gymIcon && typeof gymIcon === 'string' && gymIcon.length > 0 ? { logoUrl: gymIcon } : {})
     });
     await gym.save();
 
@@ -1251,7 +1253,7 @@ exports.getProfile = async (req, res) => {
 
     // First try to find user in the new RBAC system
     let user = await User.findById(req.user.id)
-      .populate('gymId', 'name status isFrozen')
+      .populate('gymId', 'name status isFrozen logoUrl')
       .populate('branchId', 'name status')
       .select('-password');
 

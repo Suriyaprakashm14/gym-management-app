@@ -148,8 +148,9 @@ const checkExpiredMemberships = async () => {
 // Run immediately on startup
 checkExpiredMemberships();
 
-// Schedule to run daily at midnight
-setInterval(checkExpiredMemberships, 24 * 60 * 60 * 1000); // 24 hours in milliseconds
+// Schedule to run every hour so multi-period members advance promptly after each period ends
+const ONE_HOUR_MS = 60 * 60 * 1000;
+setInterval(checkExpiredMemberships, ONE_HOUR_MS);
 
 // 404 and error handling should be last in middleware chain
 app.use(notFoundHandler);
@@ -157,5 +158,5 @@ app.use(errorHandler);
 
 app.listen(port, () => {
   console.log(`App listening at http://localhost:${port}`);
-  console.log('Daily membership expiry check scheduled');
+  console.log('Membership expiry check scheduled (hourly)');
 });

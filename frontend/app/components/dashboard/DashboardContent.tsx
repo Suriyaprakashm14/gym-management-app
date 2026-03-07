@@ -122,7 +122,7 @@ export default function DashboardContent() {
           allowClear={false}
           style={{ width: "100%" }}
           placement="bottomLeft"
-          popupClassName="dashboard-range-picker-dropdown"
+          classNames={{ popup: { root: 'dashboard-range-picker-dropdown' } }}
           styles={{ popup: { root: { zIndex: 2147483647 } } }}
         />
       </div>

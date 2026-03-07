@@ -131,29 +131,27 @@ exports.getBranchesByGym = async (req, res) => {
 
     const total = await Branch.countDocuments(query);
 
-    // Get branch managers and member counts for each branch
+    // Get branch managers (multiple) and member counts for each branch
     const branchesWithDetails = await Promise.all(
       branches.map(async (branch) => {
-        // Find branch manager (user with role 'manager' for this branch)
-        const branchManager = await User.findOne({ 
-          branchId: branch._id, 
-          role: 'manager', 
-          isActive: true 
-        }).select('firstName lastName email');
+        const branchManagers = await User.find({
+          branchId: branch._id,
+          role: 'manager',
+          isActive: true
+        }).select('firstName lastName email').lean();
 
-        // Count total members in this branch
-        const memberCount = await Member.countDocuments({ 
-          branchId: branch._id, 
-          isActive: true 
+        const memberCount = await Member.countDocuments({
+          branchId: branch._id,
+          isActive: true
         });
 
         return {
           ...branch.toObject(),
-          branchManager: branchManager ? {
-            id: branchManager._id,
-            name: `${branchManager.firstName} ${branchManager.lastName}`,
-            email: branchManager.email
-          } : null,
+          branchManagers: branchManagers.map((m) => ({
+            id: m._id,
+            name: `${m.firstName || ''} ${m.lastName || ''}`.trim() || m.email || 'Manager',
+            email: m.email
+          })),
           memberCount
         };
       })
@@ -211,26 +209,23 @@ exports.getBranchById = async (req, res) => {
       });
     }
 
-    // Get additional statistics and branch manager
-    const [userCount, memberCount, branchManager] = await Promise.all([
+    const [userCount, memberCount, branchManagersList] = await Promise.all([
       User.countDocuments({ branchId, isActive: true }),
       Member.countDocuments({ branchId, isActive: true }),
-      User.findOne({ 
-        branchId, 
-        role: 'manager', 
-        isActive: true 
-      }).select('firstName lastName email')
+      User.find({ branchId, role: 'manager', isActive: true }).select('firstName lastName email').lean()
     ]);
+
+    const branchManagers = branchManagersList.map((m) => ({
+      id: m._id,
+      name: `${m.firstName || ''} ${m.lastName || ''}`.trim() || m.email || 'Manager',
+      email: m.email
+    }));
 
     res.json({
       success: true,
       data: {
         ...branch.toObject(),
-        branchManager: branchManager ? {
-          id: branchManager._id,
-          name: `${branchManager.firstName} ${branchManager.lastName}`,
-          email: branchManager.email
-        } : null,
+        branchManagers,
         statistics: {
           userCount,
           memberCount

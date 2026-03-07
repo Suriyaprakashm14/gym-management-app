@@ -147,47 +147,64 @@ memberSchema.virtual('isMembershipActive').get(function() {
   return true;
 });
 
-// Static method to check and update expired memberships
+// Static method to check and update expired memberships.
+// If Details has subscriptionPeriods with a next period (endDate > now), advance to it; otherwise mark Member inactive.
 memberSchema.statics.checkAndUpdateExpiredMemberships = async function() {
   try {
-    const today = new Date();
-    today.setHours(0, 0, 0, 0); // Start of day
-    
-    // Import Details model
+    const now = new Date();
+    const today = new Date(now);
+    today.setHours(0, 0, 0, 0);
+
     const Details = require('./membersPersonalDetails');
-    
-    // Find personal details with expired memberships
+
     const expiredPersonalDetails = await Details.find({
       membership_end_date: { $lt: today },
       membership: { $exists: true, $ne: null }
     });
-    
-    console.log(`Found ${expiredPersonalDetails.length} personal details with expired memberships`);
-    
-    // Get member IDs from expired personal details
-    const expiredMemberIds = expiredPersonalDetails.map(detail => detail.memberId);
-    
-    // Find and update expired members
+
+    let advancedCount = 0;
+    const toMarkInactive = [];
+
+    for (const detail of expiredPersonalDetails) {
+      const nextPeriod = Array.isArray(detail.subscriptionPeriods) && detail.subscriptionPeriods.length > 0
+        ? detail.subscriptionPeriods.find((p) => p.endDate && new Date(p.endDate) > now)
+        : null;
+
+      if (nextPeriod) {
+        const nextStart = new Date(nextPeriod.startDate);
+        const nextEnd = new Date(nextPeriod.endDate);
+        await Details.findOneAndUpdate(
+          { memberId: detail.memberId },
+          { membership_start_date: nextStart, membership_end_date: nextEnd }
+        );
+        await this.findByIdAndUpdate(detail.memberId, {
+          'membership.startDate': nextStart,
+          'membership.endDate': nextEnd,
+          'membership.isActive': true,
+          status: 'active'
+        });
+        advancedCount++;
+      } else {
+        toMarkInactive.push(detail.memberId);
+      }
+    }
+
     const expiredMembers = await this.find({
-      _id: { $in: expiredMemberIds },
+      _id: { $in: toMarkInactive },
       status: { $ne: 'inactive' }
     });
-    
-    console.log(`Found ${expiredMembers.length} members to update to inactive status`);
-    
-    // Update expired members to inactive status
-    const updatePromises = expiredMembers.map(async (member) => {
+
+    for (const member of expiredMembers) {
       member.status = 'inactive';
       member.membership.isActive = false;
-      return member.save();
-    });
-    
-    await Promise.all(updatePromises);
-    
+      await member.save();
+    }
+
     return {
       success: true,
       expiredCount: expiredMembers.length,
-      message: `Updated ${expiredMembers.length} members to inactive status`
+      advancedCount,
+      message: `Advanced ${advancedCount} to next period; marked ${expiredMembers.length} members inactive`
     };
   } catch (error) {
     console.error('Error checking expired memberships:', error);

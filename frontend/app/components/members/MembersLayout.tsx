@@ -108,6 +108,7 @@ function MembersLayoutInner({
           position: 'sticky',
           top: 80,
           zIndex: 998,
+          marginTop: 16,
         }}
       >
         <div style={{ padding: '0 24px' }}>
