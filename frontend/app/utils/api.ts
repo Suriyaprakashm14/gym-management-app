@@ -213,6 +213,12 @@ export const api = {
         body: JSON.stringify(credentials),
       }),
 
+    signup: (data: { gymName: string; firstName: string; lastName: string; email: string; password: string }) =>
+      api.request('/auth/signup', {
+        method: 'POST',
+        body: JSON.stringify(data),
+      }),
+
     createManager: (managerData: any) =>
       api.request('/auth/create-manager', {
         method: 'POST',

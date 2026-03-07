@@ -928,6 +928,82 @@ exports.createFirstAdmin = async (req, res) => {
   }
 };
 
+// Public gym owner signup: creates Gym + User (gym_owner). No branch; owner adds branches via Branches page.
+exports.signup = async (req, res) => {
+  try {
+    const { gymName, firstName, lastName, email, password } = req.body;
+
+    if (!gymName || !firstName || !lastName || !email || !password) {
+      return res.status(400).json({
+        error: 'Missing required fields',
+        message: 'gymName, firstName, lastName, email, and password are required'
+      });
+    }
+
+    const trimmedGymName = String(gymName).trim();
+    if (!trimmedGymName) {
+      return res.status(400).json({
+        error: 'Invalid gym name',
+        message: 'Gym name is required'
+      });
+    }
+
+    if (String(password).length < 6) {
+      return res.status(400).json({
+        error: 'Invalid password',
+        message: 'Password must be at least 6 characters'
+      });
+    }
+
+    const normalizedEmail = String(email).toLowerCase().trim();
+    const existingUser = await User.findOne({ email: normalizedEmail });
+    if (existingUser) {
+      return res.status(400).json({
+        error: 'Email already exists',
+        message: 'A user with this email already exists'
+      });
+    }
+
+    const gym = new Gym({
+      name: trimmedGymName,
+      status: 'active',
+      isFrozen: false,
+      createdBy: 'system'
+    });
+    await gym.save();
+
+    const gymOwner = new User({
+      firstName: String(firstName).trim(),
+      lastName: String(lastName).trim(),
+      email: normalizedEmail,
+      password: String(password),
+      role: 'gym_owner',
+      gymId: gym._id,
+      status: 'active',
+      isActive: true,
+      createdBy: 'system'
+    });
+    await gymOwner.save();
+
+    res.status(201).json({
+      success: true,
+      message: 'Account created successfully. Please log in.',
+      data: {
+        id: gymOwner._id,
+        email: gymOwner.email,
+        gymId: gym._id,
+        gymName: gym.name
+      }
+    });
+  } catch (error) {
+    console.error('Signup error:', error);
+    res.status(500).json({
+      error: 'Server error during signup',
+      message: error.message || 'An unexpected error occurred. Please try again.'
+    });
+  }
+};
+
 // Create admin user (super admin only)
 exports.createAdmin = async (req, res) => {
   try {

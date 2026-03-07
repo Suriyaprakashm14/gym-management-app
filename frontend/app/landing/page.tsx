@@ -13,6 +13,7 @@ import {
   MapPin,
   Info,
   LogIn,
+  UserPlus,
 } from 'lucide-react';
 
 export default function LandingPage() {
@@ -90,6 +91,25 @@ export default function LandingPage() {
               <Clock style={{ width: 'clamp(0.75rem, 2vw, 1rem)', height: 'clamp(0.75rem, 2vw, 1rem)' }} />
               <span>24/7 Management Access</span>
             </div>
+            <Link
+              href="/signup"
+              style={{
+                border: '1px solid rgba(148, 163, 184, 0.5)',
+                color: 'white',
+                fontSize: 'clamp(0.8rem, 2vw, 0.95rem)',
+                fontWeight: 600,
+                padding: 'clamp(0.4rem, 1.5vw, 0.6rem) clamp(0.75rem, 3vw, 1.5rem)',
+                borderRadius: 'clamp(0.25rem, 1vw, 0.5rem)',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 'clamp(0.25rem, 1vw, 0.5rem)',
+                textDecoration: 'none',
+                whiteSpace: 'nowrap',
+              }}
+            >
+              <UserPlus style={{ width: 'clamp(0.75rem, 2vw, 1rem)', height: 'clamp(0.75rem, 2vw, 1rem)' }} />
+              Sign up
+            </Link>
             <Link
               href="/login"
               style={{

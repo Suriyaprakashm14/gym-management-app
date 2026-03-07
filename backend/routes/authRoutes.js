@@ -8,6 +8,7 @@ const { ok, fail } = require('../utils/apiResponse');
 
 // Authentication
 router.post('/login', authController.login);
+router.post('/signup', authController.signup);
 router.post('/create-first-admin', authController.createFirstAdmin);
 
 // Forgot Password Routes
