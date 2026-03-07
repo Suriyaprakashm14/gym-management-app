@@ -26,11 +26,10 @@ exports.create = async (req, res) => {
     const details = await Details.findOne({ memberId });
     if (!details) return res.status(404).json({ error: 'Member personal details not found' });
 
-    const { membership } = details;
+    const membership = details.membership ? String(details.membership).trim() : '';
     if (!membership) return res.status(400).json({ error: 'Membership type not set in personal details' });
 
-    const typeTrimmed = membership.trim();
-    const typeRegex = new RegExp(`^${typeTrimmed.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i');
+    const typeRegex = new RegExp(`^\\s*${membership.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*$`, 'i');
     let priceDoc = member.gymId
       ? await MembershipPrice.findOne({ type: { $regex: typeRegex }, gymId: member.gymId })
       : null;

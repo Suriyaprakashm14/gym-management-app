@@ -12,9 +12,11 @@ exports.create = async (req, res) => {
     let priceDoc = null;
 
     if (membership) {
-      const typeTrimmed = membership.trim();
-      const typeNormalized = typeTrimmed.toLowerCase();
-      const typeRegex = new RegExp(`^${typeTrimmed.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i');
+      const typeTrimmed = String(membership).trim();
+      if (!typeTrimmed) {
+        return res.status(400).json({ error: "Membership type is required" });
+      }
+      const typeRegex = new RegExp(`^\\s*${typeTrimmed.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*$`, 'i');
       const memberForPrice = await Member.findById(memberId).select('gymId').lean();
       const gymId = memberForPrice?.gymId || null;
       priceDoc = await MembershipPrice.findOne(
@@ -26,7 +28,7 @@ exports.create = async (req, res) => {
       if (priceDoc) {
         totalAmount = priceDoc.price;
       } else {
-        return res.status(400).json({ error: `Membership type '${membership}' not found` });
+        return res.status(400).json({ error: `Membership type '${typeTrimmed}' not found` });
       }
     } else {
       return res.status(400).json({ error: "Membership type is required" });
@@ -103,8 +105,10 @@ exports.create = async (req, res) => {
     const totalAmountForQuantity = priceDoc ? totalAmount * quantity : totalAmount;
     const initialPaidAmount = Number(req.body.paidAmount) || 0;
 
+    const membershipToSave = membership ? String(membership).trim() : req.body.membership;
     const details = new Details({
       ...req.body,
+      membership: membershipToSave,
       branchId: member.branchId,
       totalAmount: totalAmountForQuantity,
       paidAmount: initialPaidAmount,
@@ -119,14 +123,14 @@ exports.create = async (req, res) => {
     await details.save();
 
     // Every income is revenue: create a Payment record for initial payment so it shows in dashboard/revenue
-    if (initialPaidAmount > 0 && member.branchId && membership) {
+    if (initialPaidAmount > 0 && member.branchId && membershipToSave) {
       try {
         const payment = new Payment({
           memberId: String(memberId),
           branchId: String(member.branchId),
           name: `${member.firstName || ''} ${member.lastName || ''}`.trim() || 'Member',
           detailsId: String(details._id),
-          membership: membership.trim(),
+          membership: membershipToSave,
           totalAmount: priceDoc ? priceDoc.price : totalAmount,
           paidAmount: initialPaidAmount,
         });
@@ -139,7 +143,7 @@ exports.create = async (req, res) => {
 
     if (priceDoc && membershipStartDate && membershipEndDate) {
       await Member.findByIdAndUpdate(memberId, {
-        'membership.type': membership,
+        'membership.type': membershipToSave,
         'membership.startDate': membershipStartDate,
         'membership.endDate': membershipEndDate,
         'membership.isActive': true,
@@ -156,35 +160,13 @@ exports.create = async (req, res) => {
 async function findMembershipPriceByType(type, gymId = null) {
   const typeTrimmed = (type || '').trim();
   if (!typeTrimmed) return null;
-  const typeRegex = new RegExp(`^${typeTrimmed.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i');
+  const typeRegex = new RegExp(`^\\s*${typeTrimmed.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*$`, 'i');
   let doc = gymId
     ? await MembershipPrice.findOne({ type: { $regex: typeRegex }, gymId })
     : null;
   if (!doc) doc = await MembershipPrice.findOne({ type: { $regex: typeRegex } });
   return doc;
 }
-
-exports.update = async (req, res) => {
-  try {
-    // Only update totalAmount if membership is updated in request
-    if (req.body.membership) {
-      const priceDoc = await findMembershipPriceByType(req.body.membership);
-      if (priceDoc) {
-        req.body.totalAmount = priceDoc.price;
-      } else {
-        return res.status(400).json({ error: `Membership type '${req.body.membership}' not found` });
-      }
-    }
-
-    const details = await Details.findByIdAndUpdate(req.params.id, req.body, { new: true });
-    if (!details) return res.status(404).json({ error: 'Details not found' });
-    res.json(details);
-  } catch (err) {
-    res.status(400).json({ error: err.message });
-  }
-};
-
-
 
 // Get all personal details
 exports.getAll = async (req, res) => {
@@ -284,8 +266,10 @@ exports.update = async (req, res) => {
     }
     
     // Calculate membership dates if membership is being updated
-    if (membership) {
-      const priceDoc = await findMembershipPriceByType(membership);
+    if (membership != null && String(membership).trim() !== '') {
+      const membershipTrimmed = String(membership).trim();
+      req.body.membership = membershipTrimmed;
+      const priceDoc = await findMembershipPriceByType(membershipTrimmed);
       if (priceDoc) {
         req.body.totalAmount = priceDoc.price;
 
@@ -297,7 +281,7 @@ exports.update = async (req, res) => {
         req.body.membership_start_date = membershipStartDate;
         req.body.membership_end_date = membershipEndDate;
       } else {
-        return res.status(400).json({ error: `Membership type '${membership}' not found` });
+        return res.status(400).json({ error: `Membership type '${membershipTrimmed}' not found` });
       }
     }
     const details = await Details.findByIdAndUpdate(req.params.id, req.body, { new: true });
@@ -348,10 +332,12 @@ exports.updateByMemberId = async (req, res) => {
     }
     
     // Calculate membership dates if membership is being updated
-    if (membership) {
+    if (membership != null && String(membership).trim() !== '') {
+      const membershipTrimmed = String(membership).trim();
+      req.body.membership = membershipTrimmed;
       const memberForGym = await Member.findById(memberId).select('gymId').lean();
       const gymId = memberForGym?.gymId || null;
-      const priceDoc = await findMembershipPriceByType(membership, gymId);
+      const priceDoc = await findMembershipPriceByType(membershipTrimmed, gymId);
       if (priceDoc) {
         req.body.totalAmount = priceDoc.price;
 
@@ -363,7 +349,7 @@ exports.updateByMemberId = async (req, res) => {
         req.body.membership_start_date = membershipStartDate;
         req.body.membership_end_date = membershipEndDate;
       } else {
-        return res.status(400).json({ error: `Membership type '${membership}' not found` });
+        return res.status(400).json({ error: `Membership type '${membershipTrimmed}' not found` });
       }
     }
 

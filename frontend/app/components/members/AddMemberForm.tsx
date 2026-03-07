@@ -164,7 +164,7 @@ export default function AddMemberForm({ onSuccess, onCancel }: AddMemberFormProp
           dateOfBirth: values.dateOfBirth
             ? new Date(values.dateOfBirth).toISOString().split('T')[0]
             : '',
-          membership: values.membership,
+          membership: values.membership ? String(values.membership).trim() : '',
           planQuantity: values.planQuantity ?? 1,
           paidAmount: values.paidAmount ? String(values.paidAmount) : '0',
         });
