@@ -11,7 +11,6 @@ import {
   Card,
   Row,
   Col,
-  App,
   Upload,
   Space,
   Typography,
@@ -246,7 +245,7 @@ const EditMemberModal: React.FC<EditMemberModalProps> = ({
       onCancel={handleCancel}
       footer={null}
       width={1000}
-      destroyOnClose
+      destroyOnHidden
       styles={{
         body: {
           maxHeight: 'none',

@@ -22,7 +22,6 @@ import {
   WarningOutlined,
   CreditCardOutlined,
   EyeOutlined,
-  EyeOutlined,
 } from '@ant-design/icons';
 import type { ColumnsType } from 'antd/es/table';
 import { useAppDispatch, useAppSelector } from '../../redux/hooks';
@@ -160,7 +159,7 @@ const MemberTable: React.FC = () => {
         membership: m.membership ?? EMPTY,
         expiryInfo: m.expires ?? EMPTY,
         lastVisit: m.lastVisit ?? EMPTY,
-        billingAmount: m.billingAmount ?? EMPTY,
+        billingAmount: m.billingAmount != null ? String(m.billingAmount) : EMPTY,
         billingDate: m.billingDate ?? EMPTY,
         billingStatus: ((m.billingStatus as string) || 'pending') as 'paid' | 'overdue' | 'pending',
         hasPaymentCard: true,

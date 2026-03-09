@@ -27,7 +27,6 @@ const Sidebar: React.FC<SidebarProps> = ({ collapsed, onCollapse }) => {
   const pathname = usePathname();
   const { user, logout } = useAuth();
   const [logoutLoading, setLogoutLoading] = useState(false);
-  const { message } = App.useApp();
   
   // Use actual user data or fallback to mock for demo
   const currentUser = user || {
