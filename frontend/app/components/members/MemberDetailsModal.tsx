@@ -224,10 +224,10 @@ const MemberDetailsModal: React.FC<MemberDetailsModalProps> = ({
                   {memberDetails.name || `${memberDetails.firstName || ''} ${memberDetails.lastName || ''}`.trim()}
                 </Title>
                 <Space>
-                  <Tag color={getStatusColor(memberDetails.status)}>
+                  <Tag color={getStatusColor(memberDetails.status ?? '')}>
                     {memberDetails.status?.toUpperCase()}
                   </Tag>
-                  <Tag color={getBillingStatusColor(memberDetails.billingStatus)}>
+                  <Tag color={getBillingStatusColor(memberDetails.billingStatus ?? '')}>
                     {memberDetails.billingStatus?.toUpperCase()}
                   </Tag>
                 </Space>
@@ -278,16 +278,18 @@ const MemberDetailsModal: React.FC<MemberDetailsModalProps> = ({
               </Descriptions.Item>
               <Descriptions.Item
                 label={
-                  (personalDetails?.planQuantity ?? 1) > 1 && Array.isArray(personalDetails?.subscriptionPeriods) && personalDetails.subscriptionPeriods.length > 0
+                  (personalDetails?.planQuantity ?? 1) > 1 && Array.isArray(personalDetails?.subscriptionPeriods) && (personalDetails?.subscriptionPeriods?.length ?? 0) > 0
                     ? (() => {
                         const endDate = personalDetails?.membership_end_date || memberDetails.expires;
                         if (!endDate) return 'End Date';
+                        const periods = personalDetails?.subscriptionPeriods;
+                        if (!periods?.length) return 'End Date';
                         const endStr = new Date(endDate as string).toISOString().slice(0, 10);
-                        const idx = personalDetails!.subscriptionPeriods!.findIndex(
+                        const idx = periods.findIndex(
                           (p) => new Date(p.endDate).toISOString().slice(0, 10) === endStr
                         );
                         const periodNum = idx >= 0 ? idx + 1 : 1;
-                        const total = personalDetails!.planQuantity ?? personalDetails!.subscriptionPeriods!.length;
+                        const total = personalDetails?.planQuantity ?? periods.length;
                         return `End Date (Period ${periodNum} of ${total})`;
                       })()
                     : 'End Date'
