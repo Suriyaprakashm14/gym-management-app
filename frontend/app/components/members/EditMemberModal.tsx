@@ -30,6 +30,7 @@ import {
 import { useAppDispatch } from '../../redux/hooks';
 import { updateMember } from '../../redux/membersSlice';
 import { api } from '../../utils/api';
+import { emailRule, emailPatternRule, mobileRequiredRule, mobilePatternRule, dobValidator } from '../../utils/validation';
 
 const { Option } = Select;
 const { Title, Text } = Typography;
@@ -294,10 +295,7 @@ const EditMemberModal: React.FC<EditMemberModalProps> = ({
               <Form.Item
                 label="Email"
                 name="email"
-                rules={[
-                  { required: true, message: 'Please enter email' },
-                  { type: 'email', message: 'Please enter a valid email' }
-                ]}
+                rules={[emailRule, emailPatternRule()]}
               >
                 <Input
                   prefix={<MailOutlined />}
@@ -309,7 +307,7 @@ const EditMemberModal: React.FC<EditMemberModalProps> = ({
               <Form.Item
                 label="Phone"
                 name="phone"
-                rules={[{ required: true, message: 'Please enter phone number' }]}
+                rules={[mobileRequiredRule, mobilePatternRule()]}
               >
                 <Input
                   prefix={<PhoneOutlined />}
@@ -390,6 +388,7 @@ const EditMemberModal: React.FC<EditMemberModalProps> = ({
               <Form.Item
                 label="Date of Birth"
                 name="dateOfBirth"
+                rules={[{ validator: dobValidator() }]}
               >
                 <Input
                   type="date"
@@ -401,6 +400,7 @@ const EditMemberModal: React.FC<EditMemberModalProps> = ({
               <Form.Item
                 label="Phone Number"
                 name="phoneNumber"
+                rules={[mobilePatternRule()]}
               >
                 <Input
                   prefix={<PhoneOutlined />}

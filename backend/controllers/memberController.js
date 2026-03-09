@@ -8,6 +8,32 @@ const multer = require('multer');
 
 const LUXAND_TOKEN = process.env.LUXAND_TOKEN;
 
+/**
+ * Find the subscription period that applies at `now` from subscriptionPeriods.
+ * Active only when now is within [periodStart, periodEnd]. Inactive when before first period starts or after last period ends.
+ * @param {Array<{ startDate: Date, endDate: Date }>} subscriptionPeriods
+ * @param {Date} now
+ * @returns {{ periodStart: Date, periodEnd: Date, isActive: boolean } | null} isActive true when now is inside the period
+ */
+function getCurrentPeriodForDate(subscriptionPeriods, now) {
+  if (!Array.isArray(subscriptionPeriods) || subscriptionPeriods.length === 0) return null;
+  const sorted = [...subscriptionPeriods]
+    .filter((p) => p && (p.startDate != null || p.endDate != null))
+    .map((p) => ({
+      start: new Date(p.startDate),
+      end: p.endDate ? new Date(p.endDate) : null
+    }))
+    .filter((p) => p.end != null)
+    .sort((a, b) => a.start.getTime() - b.start.getTime());
+  if (sorted.length === 0) return null;
+  for (const p of sorted) {
+    if (now >= p.start && now <= p.end) return { periodStart: p.start, periodEnd: p.end, isActive: true };
+    if (now < p.start) return { periodStart: p.start, periodEnd: p.end, isActive: false }; // not yet started
+  }
+  const last = sorted[sorted.length - 1];
+  return { periodStart: last.start, periodEnd: last.end, isActive: false }; // past all periods
+}
+
 // Multer setup for in-memory file storage
 const upload = multer({ storage: multer.memoryStorage() });
 exports.uploadMiddleware = upload.single('image');
@@ -309,51 +335,62 @@ exports.getAll = async (req, res) => {
         if (details.phoneNumber) m.profile.phone = details.phoneNumber;
         if (!m.membership) m.membership = {};
         if (details.membership) m.membership.type = details.membership;
-        if (Array.isArray(details.subscriptionPeriods) && details.subscriptionPeriods.length > 0) {
-          const currentEnd = details.membership_end_date ? new Date(details.membership_end_date) : null;
-          if (currentEnd && currentEnd < now) {
-            const nextPeriod = details.subscriptionPeriods.find(
-              (p) => p.endDate && new Date(p.endDate) > now
-            );
-            if (nextPeriod) {
-              const nextStart = new Date(nextPeriod.startDate);
-              const nextEnd = new Date(nextPeriod.endDate);
-              await Details.findOneAndUpdate(
-                { memberId: m._id },
-                { membership_start_date: nextStart, membership_end_date: nextEnd }
-              );
-              await Member.findByIdAndUpdate(m._id, {
-                'membership.startDate': nextStart,
-                'membership.endDate': nextEnd,
-                'membership.isActive': true,
-                status: 'active'
-              });
-              if (!m.membership) m.membership = {};
-              m.membership.startDate = nextStart;
-              m.membership.endDate = nextEnd;
-              m.membership.isActive = true;
-              m.status = 'active';
-              details = { ...details, membership_start_date: nextStart, membership_end_date: nextEnd };
+
+        const periodInfo = Array.isArray(details.subscriptionPeriods) && details.subscriptionPeriods.length > 0
+          ? getCurrentPeriodForDate(details.subscriptionPeriods, now)
+          : null;
+
+        if (periodInfo) {
+          // Active only when now is within [periodStart, periodEnd]. Inactive before first period starts or after last period ends.
+          m.membership.startDate = periodInfo.periodStart;
+          m.membership.endDate = periodInfo.periodEnd;
+          m.membership.isActive = periodInfo.isActive;
+          const suspended = String(m.status) === 'suspended';
+          if (periodInfo.isActive) {
+            m.status = suspended ? 'suspended' : 'active';
+          } else {
+            if (now > periodInfo.periodEnd) {
+              m.status = periodInfo.periodEnd < ninetyDaysAgo ? 'long term inactive' : 'inactive';
             } else {
-              // End date expired and no next period: set status from end date (inactive vs long term inactive)
-              const effectiveEnd = details.membership_end_date ? new Date(details.membership_end_date) : (m.membership?.endDate ? new Date(m.membership.endDate) : null);
-              const newStatus = effectiveEnd && effectiveEnd < ninetyDaysAgo ? 'long term inactive' : 'inactive';
-              if (String(m.status) !== 'inactive' && String(m.status) !== 'long term inactive') {
-                await Member.findByIdAndUpdate(m._id, {
-                  'membership.isActive': false,
-                  status: newStatus
-                });
-                m.status = newStatus;
-                if (m.membership) m.membership.isActive = false;
-              }
+              m.status = 'inactive'; // not yet started (now < periodStart)
             }
           }
+          await Details.findOneAndUpdate(
+            { memberId: m._id },
+            { membership_start_date: periodInfo.periodStart, membership_end_date: periodInfo.periodEnd }
+          );
+          await Member.findByIdAndUpdate(m._id, {
+            'membership.type': details.membership || m.membership?.type,
+            'membership.startDate': periodInfo.periodStart,
+            'membership.endDate': periodInfo.periodEnd,
+            'membership.isActive': m.membership.isActive,
+            status: m.status
+          });
+        } else {
+          // No subscription periods: use membership_start_date / membership_end_date as before
+          if (details.membership_start_date != null) m.membership.startDate = details.membership_start_date;
+          if (details.membership_end_date != null) m.membership.endDate = details.membership_end_date;
+          const effectiveEndRaw = details.membership_end_date ?? m.membership?.endDate;
+          const effectiveEnd = effectiveEndRaw ? new Date(effectiveEndRaw) : null;
+          const isExpired = effectiveEnd && effectiveEnd < now;
+          const newStatus = isExpired
+            ? (effectiveEnd < ninetyDaysAgo ? 'long term inactive' : 'inactive')
+            : (String(m.status) === 'suspended' ? 'suspended' : 'active');
+          m.membership.isActive = !isExpired;
+          m.status = newStatus;
+          await Member.findByIdAndUpdate(m._id, {
+            'membership.type': details.membership || m.membership?.type,
+            'membership.startDate': details.membership_start_date ?? m.membership?.startDate,
+            'membership.endDate': details.membership_end_date ?? m.membership?.endDate,
+            'membership.isActive': !isExpired,
+            status: newStatus
+          });
         }
       }
-      // For every member: if effective end date (from details or member) has expired, set status in DB and on object
+      // When no details: if effective end date has expired, set status in DB and on object
       const effectiveEndRaw = details?.membership_end_date ?? m.membership?.endDate;
       const effectiveEnd = effectiveEndRaw ? new Date(effectiveEndRaw) : null;
-      if (effectiveEnd && effectiveEnd < now && String(m.status) !== 'inactive' && String(m.status) !== 'long term inactive') {
+      if (!details && effectiveEnd && effectiveEnd < now && String(m.status) !== 'inactive' && String(m.status) !== 'long term inactive') {
         const newStatus = effectiveEnd < ninetyDaysAgo ? 'long term inactive' : 'inactive';
         await Member.findByIdAndUpdate(m._id, {
           'membership.isActive': false,
@@ -411,33 +448,54 @@ exports.getOne = async (req, res) => {
     const now = new Date();
     const ninetyDaysAgo = new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000);
     const details = await Details.findOne({ memberId: member._id }).lean();
-    const effectiveEndRaw = details?.membership_end_date ?? member.membership?.endDate;
-    const effectiveEnd = effectiveEndRaw ? new Date(effectiveEndRaw) : null;
-    if (effectiveEnd && effectiveEnd < now) {
-      const nextPeriod = details?.subscriptionPeriods?.length
-        ? details.subscriptionPeriods.find((p) => p.endDate && new Date(p.endDate) > now)
+    if (details) {
+      if (!member.membership) member.membership = {};
+      if (details.membership) member.membership.type = details.membership;
+
+      const periodInfo = Array.isArray(details.subscriptionPeriods) && details.subscriptionPeriods.length > 0
+        ? getCurrentPeriodForDate(details.subscriptionPeriods, now)
         : null;
-      if (nextPeriod) {
-        const nextStart = new Date(nextPeriod.startDate);
-        const nextEnd = new Date(nextPeriod.endDate);
+
+      if (periodInfo) {
+        member.membership.startDate = periodInfo.periodStart;
+        member.membership.endDate = periodInfo.periodEnd;
+        member.membership.isActive = periodInfo.isActive;
+        if (periodInfo.isActive) {
+          member.status = String(member.status) === 'suspended' ? 'suspended' : 'active';
+        } else {
+          member.status = now > periodInfo.periodEnd
+            ? (periodInfo.periodEnd < ninetyDaysAgo ? 'long term inactive' : 'inactive')
+            : 'inactive';
+        }
         await Details.findOneAndUpdate(
           { memberId: member._id },
-          { membership_start_date: nextStart, membership_end_date: nextEnd }
+          { membership_start_date: periodInfo.periodStart, membership_end_date: periodInfo.periodEnd }
         );
         await Member.findByIdAndUpdate(member._id, {
-          'membership.startDate': nextStart,
-          'membership.endDate': nextEnd,
-          'membership.isActive': true,
-          status: 'active'
+          'membership.type': details.membership || member.membership?.type,
+          'membership.startDate': periodInfo.periodStart,
+          'membership.endDate': periodInfo.periodEnd,
+          'membership.isActive': member.membership.isActive,
+          status: member.status
         });
-        member = await Member.findById(req.params.id);
       } else {
-        const newStatus = effectiveEnd < ninetyDaysAgo ? 'long term inactive' : 'inactive';
+        if (details.membership_start_date != null) member.membership.startDate = details.membership_start_date;
+        if (details.membership_end_date != null) member.membership.endDate = details.membership_end_date;
+        const effectiveEndRaw = details.membership_end_date ?? member.membership?.endDate;
+        const effectiveEnd = effectiveEndRaw ? new Date(effectiveEndRaw) : null;
+        const isExpired = effectiveEnd && effectiveEnd < now;
+        const newStatus = isExpired
+          ? (effectiveEnd < ninetyDaysAgo ? 'long term inactive' : 'inactive')
+          : (String(member.status) === 'suspended' ? 'suspended' : 'active');
+        member.membership.isActive = !isExpired;
+        member.status = newStatus;
         await Member.findByIdAndUpdate(member._id, {
-          'membership.isActive': false,
+          'membership.type': details.membership || member.membership?.type,
+          'membership.startDate': details.membership_start_date ?? member.membership?.startDate,
+          'membership.endDate': details.membership_end_date ?? member.membership?.endDate,
+          'membership.isActive': !isExpired,
           status: newStatus
         });
-        member = await Member.findById(req.params.id);
       }
     }
 

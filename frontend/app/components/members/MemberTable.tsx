@@ -573,7 +573,29 @@ const MemberTable: React.FC = () => {
           <Form.Item name="membershipStartDate" label="Start date" tooltip="Membership period starts from this date. Leave empty for today.">
             <DatePicker style={{ width: '100%' }} />
           </Form.Item>
-          <Form.Item name="paidAmount" label="Amount paid (₹)">
+          <Form.Item
+            name="paidAmount"
+            label="Amount paid (₹)"
+            dependencies={['membership', 'planQuantity']}
+            rules={[
+              { type: 'number', min: 0, message: 'Amount must be ≥ 0' },
+              () => ({
+                validator(_: unknown, value: number | string) {
+                  if (value == null || value === '' || !membershipTypes.length) return Promise.resolve();
+                  const planType = renewForm.getFieldValue('membership');
+                  const qty = renewForm.getFieldValue('planQuantity') ?? 1;
+                  if (!planType) return Promise.resolve();
+                  const plan = membershipTypes.find((p: any) => p.type === planType);
+                  if (!plan || typeof plan.price !== 'number') return Promise.resolve();
+                  const maxAmount = plan.price * qty;
+                  if (Number(value) > maxAmount) {
+                    return Promise.reject(new Error(`Cannot pay more than expected (₹${maxAmount.toLocaleString('en-IN')})`));
+                  }
+                  return Promise.resolve();
+                },
+              }),
+            ]}
+          >
             <InputNumber min={0} step={100} style={{ width: '100%' }} />
           </Form.Item>
         </Form>

@@ -25,6 +25,7 @@ import {
 } from '@ant-design/icons';
 import { useAuth } from '../../contexts/AuthContext';
 import { api } from '../../utils/api';
+import { emailRule, emailPatternRule, mobileRequiredRule, mobilePatternRule, dobValidator } from '../../utils/validation';
 import { useAppDispatch, useAppSelector } from '../../redux/hooks';
 import { addMember, fetchMembers, normalizeMember } from '../../redux/membersSlice';
 import { fetchMembershipPrices } from '../../redux/membershipsSlice';
@@ -276,10 +277,7 @@ export default function AddMemberForm({ visible = true, onSuccess, onCancel }: A
           <Form.Item
             label="Email"
             name="email"
-            rules={[
-              { required: true, message: 'Please enter email' },
-              { type: 'email', message: 'Please enter a valid email' },
-            ]}
+            rules={[emailRule, emailPatternRule()]}
           >
             <Input placeholder="Enter email address" />
           </Form.Item>
@@ -323,7 +321,7 @@ export default function AddMemberForm({ visible = true, onSuccess, onCancel }: A
           <Form.Item
             label="Phone Number"
             name="phoneNumber"
-            rules={[{ required: true, message: 'Please enter phone number' }]}
+            rules={[mobileRequiredRule, mobilePatternRule()]}
           >
             <Input prefix={<PhoneOutlined />} placeholder="Enter phone number" />
           </Form.Item>
@@ -342,7 +340,11 @@ export default function AddMemberForm({ visible = true, onSuccess, onCancel }: A
           </Form.Item>
         </Col>
       </Row>
-      <Form.Item label="Date of Birth" name="dateOfBirth">
+      <Form.Item
+        label="Date of Birth"
+        name="dateOfBirth"
+        rules={[{ validator: dobValidator() }]}
+      >
         <DatePicker style={{ width: '100%' }} placeholder="Select date of birth" />
       </Form.Item>
       <Form.Item label="Street Address" name="streetAddress">
@@ -513,7 +515,7 @@ export default function AddMemberForm({ visible = true, onSuccess, onCancel }: A
                     <Form.Item
                       {...rest}
                       name={[name, 'phone']}
-                      rules={[{ required: true, message: 'Missing phone number' }]}
+                      rules={[{ required: true, message: 'Missing phone number' }, mobilePatternRule('Valid 10-digit number (e.g. 9876543210)')]}
                     >
                       <Input placeholder="Phone number" />
                     </Form.Item>
