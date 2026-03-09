@@ -26,10 +26,14 @@ exports.create = async (req, res) => {
     const details = await Details.findOne({ memberId });
     if (!details) return res.status(404).json({ error: 'Member personal details not found' });
 
-    const { membership } = details;
+    const membership = details.membership ? String(details.membership).trim() : '';
     if (!membership) return res.status(400).json({ error: 'Membership type not set in personal details' });
 
-    const priceDoc = await MembershipPrice.findOne({ type: membership.trim().toLowerCase() });
+    const typeRegex = new RegExp(`^\\s*${membership.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*$`, 'i');
+    let priceDoc = member.gymId
+      ? await MembershipPrice.findOne({ type: { $regex: typeRegex }, gymId: member.gymId })
+      : null;
+    if (!priceDoc) priceDoc = await MembershipPrice.findOne({ type: { $regex: typeRegex } });
     if (!priceDoc) return res.status(400).json({ error: `Membership type '${membership}' not found in price table` });
 
     const totalAmount = priceDoc.price;
@@ -42,7 +46,7 @@ exports.create = async (req, res) => {
     if (paidAmount > remaining) {
       return res.status(400).json({
         error: 'Payment exceeds remaining due amount',
-        message: `Maximum payable amount is ${remaining}`,
+        message: `Maximum payable amount is ₹${remaining}`,
       });
     }
 
@@ -170,39 +174,50 @@ exports.getMemberPaymentSummary = async (req, res) => {
   }
 };
 
+// Helper: membership period [memberStart, memberEnd] overlaps [rangeStart, rangeEnd]
+function membershipPeriodOverlaps(memberStart, memberEnd, rangeStart, rangeEnd) {
+  const start = memberStart ? new Date(memberStart).getTime() : null;
+  const end = memberEnd ? new Date(memberEnd).getTime() : null;
+  const rStart = rangeStart.getTime();
+  const rEnd = rangeEnd.getTime();
+  return (start == null || start <= rEnd) && (end == null || end >= rStart);
+}
+
 // Gym Owner Analytics - Total Revenue and Pending Payments for All Branches
 // Branch Manager Analytics - Branch Revenue and Pending Payments
 exports.getGymOwnerAnalytics = async (req, res) => {
   try {
-    // Only gym_owner and manager are supported here. Including admin without
-    // a dedicated code path leaves key collections (e.g. payments) undefined
-    // and leads to runtime errors when calling .reduce().
     const allowedRoles = ['gym_owner', 'manager'];
     if (!allowedRoles.includes(req.user.role)) {
-      return res.status(403).json({ error: "Access denied. Only gym_owner and manager can view analytics." });
+      return res.status(403).json({ error: "Access denied. Only gym_owner or manager can view analytics." });
     }
 
-    const { year, month } = req.query;
+    const { year, month, startDate: startQuery, endDate: endQuery } = req.query;
     let startDate, endDate;
 
-    if (year && month) {
-      // Specific month
+    if (startQuery && endQuery) {
+      startDate = new Date(startQuery);
+      endDate = new Date(endQuery);
+      if (Number.isNaN(startDate.getTime()) || Number.isNaN(endDate.getTime())) {
+        return res.status(400).json({ error: 'Invalid startDate or endDate' });
+      }
+      endDate.setHours(23, 59, 59, 999);
+    } else if (year && month) {
       startDate = new Date(year, month - 1, 1);
       endDate = new Date(year, month, 0, 23, 59, 59, 999);
     } else if (year) {
-      // Entire year
       startDate = new Date(year, 0, 1);
       endDate = new Date(year, 11, 31, 23, 59, 59, 999);
     } else {
-      // Current month
       const now = new Date();
       startDate = new Date(now.getFullYear(), now.getMonth(), 1);
       endDate = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
     }
 
+    const isGymLevel = req.user.role === 'gym_owner';
     let branches, branchIds, members, memberIds, personalDetails, payments;
 
-    if (req.user.role === 'gym_owner') {
+    if (isGymLevel && req.user.gymId) {
       // Gym Owner: Get all branches for this gym
       const Branch = require('../models/branch');
       branches = await Branch.find({ gymId: req.user.gymId });
@@ -215,18 +230,21 @@ exports.getGymOwnerAnalytics = async (req, res) => {
       });
 
       // Get all members with personal details to calculate pending amounts
-      members = await Member.find({ 
+      members = await Member.find({
         gymId: req.user.gymId,
         role: 'member'
       });
-      
+
       memberIds = members.map(member => member._id);
       personalDetails = await Details.find({ memberId: { $in: memberIds } });
 
     } else if (req.user.role === 'manager') {
-      // Branch Manager: Get only their branch
+      if (!req.user.branchId) {
+        return res.status(400).json({ error: 'branchId required for manager when gymId is not set.' });
+      }
       const Branch = require('../models/branch');
       const branch = await Branch.findById(req.user.branchId);
+      if (!branch) return res.status(404).json({ error: 'Branch not found' });
       branches = [branch];
       branchIds = [req.user.branchId];
 
@@ -246,9 +264,12 @@ exports.getGymOwnerAnalytics = async (req, res) => {
       personalDetails = await Details.find({ memberId: { $in: memberIds } });
     }
 
-    // Calculate totals
+    // Calculate totals: pending only for details whose membership period overlaps [startDate, endDate]
     const totalPaidAmount = payments.reduce((sum, payment) => sum + payment.paidAmount, 0);
-    const totalPendingAmount = personalDetails.reduce((sum, detail) => {
+    const detailsInRange = personalDetails.filter(d =>
+      membershipPeriodOverlaps(d.membership_start_date, d.membership_end_date, startDate, endDate)
+    );
+    const totalPendingAmount = detailsInRange.reduce((sum, detail) => {
       const pending = Math.max(0, detail.totalAmount - detail.paidAmount);
       return sum + pending;
     }, 0);
@@ -285,18 +306,16 @@ exports.getGymOwnerAnalytics = async (req, res) => {
       monthlyBreakdown: monthlyData
     };
 
-    if (req.user.role === 'gym_owner') {
-      // Gym Owner: Show all branches
+    if (isGymLevel && branches && branches.length > 0) {
       response.branches = branches.map(branch => ({
         branchId: branch._id,
         branchName: branch.name,
         totalPaid: payments
-          .filter(p => p.branchId === branch._id.toString())
+          .filter(p => p.branchId.toString() === branch._id.toString())
           .reduce((sum, p) => sum + p.paidAmount, 0),
-        paymentCount: payments.filter(p => p.branchId === branch._id.toString()).length
+        paymentCount: payments.filter(p => p.branchId.toString() === branch._id.toString()).length
       }));
     } else if (req.user.role === 'manager') {
-      // Branch Manager: Show only their branch
       response.branch = {
         branchId: branches[0]._id,
         branchName: branches[0].name,
@@ -315,35 +334,39 @@ exports.getGymOwnerAnalytics = async (req, res) => {
 // Branch Manager Analytics - Branch Revenue and Pending Payments
 exports.getBranchManagerAnalytics = async (req, res) => {
   try {
-    const allowedRoles = ['manager', 'admin'];
+    const allowedRoles = ['manager', 'staff'];
     if (!allowedRoles.includes(req.user.role)) {
-      return res.status(403).json({ error: "Access denied. Only manager or admin can view branch analytics." });
+      return res.status(403).json({ error: "Access denied. Only manager or staff can view branch analytics." });
     }
 
     const targetBranchId =
-      req.user.role === 'admin'
+      false
         ? (req.query.branchId || req.user.branchId)
         : req.user.branchId;
 
     if (!targetBranchId) {
       return res.status(400).json({
-        error: 'branchId is required for admin branch analytics.'
+        error: 'branchId is required for branch analytics.'
       });
     }
 
-    const { year, month } = req.query;
+    const { year, month, startDate: startQuery, endDate: endQuery } = req.query;
     let startDate, endDate;
 
-    if (year && month) {
-      // Specific month
+    if (startQuery && endQuery) {
+      startDate = new Date(startQuery);
+      endDate = new Date(endQuery);
+      if (Number.isNaN(startDate.getTime()) || Number.isNaN(endDate.getTime())) {
+        return res.status(400).json({ error: 'Invalid startDate or endDate' });
+      }
+      endDate.setHours(23, 59, 59, 999);
+    } else if (year && month) {
       startDate = new Date(year, month - 1, 1);
       endDate = new Date(year, month, 0, 23, 59, 59, 999);
     } else if (year) {
-      // Entire year
       startDate = new Date(year, 0, 1);
       endDate = new Date(year, 11, 31, 23, 59, 59, 999);
     } else {
-      // Current month
       const now = new Date();
       startDate = new Date(now.getFullYear(), now.getMonth(), 1);
       endDate = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
@@ -364,9 +387,12 @@ exports.getBranchManagerAnalytics = async (req, res) => {
     const memberIds = members.map(member => member._id);
     const personalDetails = await Details.find({ memberId: { $in: memberIds } });
 
-    // Calculate totals
+    // Pending only for details whose membership period overlaps [startDate, endDate]
+    const detailsInRange = personalDetails.filter(d =>
+      membershipPeriodOverlaps(d.membership_start_date, d.membership_end_date, startDate, endDate)
+    );
     const totalPaidAmount = payments.reduce((sum, payment) => sum + payment.paidAmount, 0);
-    const totalPendingAmount = personalDetails.reduce((sum, detail) => {
+    const totalPendingAmount = detailsInRange.reduce((sum, detail) => {
       const pending = Math.max(0, detail.totalAmount - detail.paidAmount);
       return sum + pending;
     }, 0);
@@ -393,6 +419,17 @@ exports.getBranchManagerAnalytics = async (req, res) => {
       return res.status(404).json({ error: 'Branch not found for analytics.' });
     }
 
+    // Pending members list: only those whose membership period overlaps the selected range
+    const topMembers = personalDetails
+      .filter(d => membershipPeriodOverlaps(d.membership_start_date, d.membership_end_date, startDate, endDate))
+      .map(detail => ({
+        memberId: detail.memberId,
+        totalPaid: detail.paidAmount,
+        pendingAmount: Math.max(0, detail.totalAmount - detail.paidAmount),
+        membership: detail.membership
+      }))
+      .sort((a, b) => b.totalPaid - a.totalPaid);
+
     res.json({
       branch: {
         branchId: branch._id,
@@ -413,15 +450,7 @@ exports.getBranchManagerAnalytics = async (req, res) => {
         averagePayment: payments.length > 0 ? totalPaidAmount / payments.length : 0
       },
       monthlyBreakdown: monthlyData,
-      topMembers: personalDetails
-        .map(detail => ({
-          memberId: detail.memberId,
-          totalPaid: detail.paidAmount,
-          pendingAmount: Math.max(0, detail.totalAmount - detail.paidAmount),
-          membership: detail.membership
-        }))
-        .sort((a, b) => b.totalPaid - a.totalPaid)
-        .slice(0, 10)
+      topMembers: topMembers.slice(0, 10)
     });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -431,7 +460,7 @@ exports.getBranchManagerAnalytics = async (req, res) => {
 // Gym Owner Overdue Analytics - All Branches
 exports.getGymOwnerOverdueAnalytics = async (req, res) => {
   try {
-    const allowedRoles = ['gym_owner', 'admin'];
+    const allowedRoles = ['gym_owner'];
     if (!allowedRoles.includes(req.user.role)) {
       return res.status(403).json({ error: "Access denied. Only gym_owner can view gym overdue analytics." });
     }
@@ -523,19 +552,19 @@ exports.getGymOwnerOverdueAnalytics = async (req, res) => {
 // Branch Manager Overdue Analytics - Own Branch Only
 exports.getBranchManagerOverdueAnalytics = async (req, res) => {
   try {
-    const allowedRoles = ['manager', 'admin'];
+    const allowedRoles = ['manager', 'staff'];
     if (!allowedRoles.includes(req.user.role)) {
-      return res.status(403).json({ error: "Access denied. Only manager or admin can view branch overdue analytics." });
+      return res.status(403).json({ error: "Access denied. Only manager or staff can view branch overdue analytics." });
     }
 
     const targetBranchId =
-      req.user.role === 'admin'
+      false
         ? (req.query.branchId || req.user.branchId)
         : req.user.branchId;
 
     if (!targetBranchId) {
       return res.status(400).json({
-        error: 'branchId is required for admin branch overdue analytics.'
+        error: 'branchId is required for branch overdue analytics.'
       });
     }
 
@@ -664,7 +693,7 @@ exports.getMembersWithPendingPayments = async (req, res) => {
         const branchIds = branches.map(branch => branch._id);
         memberQuery.branchId = { $in: branchIds };
       }
-    } else if (req.user.role === 'admin') {
+    } else if (false) {
       if (branchId) {
         memberQuery.branchId = branchId;
       }

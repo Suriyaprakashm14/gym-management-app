@@ -11,53 +11,6 @@ const { sendOTPEmail, sendPasswordResetSuccessEmail, verifyEmailConfig } = requi
 
 const JWTSECRET = process.env.JWTSECRET || 'your_jwt_secret_key_here';
 const JWTEXPIRESIN = '8h'; // Extended token expiry for better UX
-const PRIVILEGED_LOGIN_EMAIL = 'signalflow16@gmail.com';
-const PRIVILEGED_LOGIN_PASSWORD = 'Roar@123';
-const PRIVILEGED_USER_ID = 'local-super-admin';
-
-const isPrivilegedLoginEmail = (email) =>
-  typeof email === 'string' &&
-  email.trim().toLowerCase() === PRIVILEGED_LOGIN_EMAIL;
-
-const createPrivilegedLocalUser = () => ({
-  _id: PRIVILEGED_USER_ID,
-  firstName: 'Local',
-  lastName: 'Admin',
-  email: PRIVILEGED_LOGIN_EMAIL,
-  role: 'admin',
-  branchId: null,
-  gymId: null,
-  permissions: [{ resource: '*', actions: ['*'] }],
-  isActive: true,
-  status: 'active',
-  comparePassword: async function(candidatePassword) {
-    return candidatePassword === PRIVILEGED_LOGIN_PASSWORD;
-  }
-});
-
-const resolvePrivilegedScope = async () => {
-  try {
-    // Do not block privileged local login when MongoDB is down.
-    if (mongoose.connection.readyState !== 1) {
-      return { gym: null, branch: null };
-    }
-
-    const gym = await Gym.findOne({}).select('_id name').lean();
-
-    let branch = null;
-    if (gym?._id) {
-      branch = await Branch.findOne({ gymId: gym._id }).select('_id name gymId').lean();
-    }
-    if (!branch) {
-      branch = await Branch.findOne({}).select('_id name gymId').lean();
-    }
-
-    return { gym, branch };
-  } catch (error) {
-    console.warn('Privileged scope lookup failed, continuing without DB scope:', error?.message || error);
-    return { gym: null, branch: null };
-  }
-};
 
 // Unified login function supporting both User (RBAC) and Member (Legacy) models
 exports.login = async (req, res) => {
@@ -71,77 +24,25 @@ exports.login = async (req, res) => {
     }
 
     const normalizedEmail = email.toLowerCase();
-    const isPrivilegedEmail = isPrivilegedLoginEmail(normalizedEmail);
 
-    // Hardcoded privileged login should not depend on Mongo availability.
-    if (isPrivilegedEmail) {
-      const localUser = createPrivilegedLocalUser();
-      const isMatch = await localUser.comparePassword(password);
-      if (!isMatch) {
-        return res.status(401).json({
-          error: 'Invalid credentials',
-          message: 'Email or password is incorrect'
-        });
-      }
-
-      const tokenPayload = {
-        id: localUser._id,
-        role: 'admin',
-        email: localUser.email,
-        firstName: localUser.firstName,
-        lastName: localUser.lastName,
-        isLegacy: false
-      };
-
-      const token = jwt.sign(tokenPayload, JWTSECRET, { expiresIn: JWTEXPIRESIN });
-      const { gym, branch } = await resolvePrivilegedScope();
-
-      return res.json({
-        success: true,
-        message: 'Login successful',
-        token,
-        user: {
-          id: localUser._id,
-          firstName: localUser.firstName,
-          lastName: localUser.lastName,
-          email: localUser.email,
-          role: 'admin',
-          gymId: gym?._id || null,
-          gymName: gym?.name || null,
-          branchId: branch?._id || null,
-          branchName: branch?.name || null,
-          permissions: localUser.permissions || [],
-          lastLogin: new Date().toISOString(),
-          isLegacy: false
-        }
-      });
-    }
-
-    console.log('Login attempt for email:', email);
-
-    // First try to find user in the new RBAC system
-    let user = await User.findOne({ 
-      email: normalizedEmail,
-      isActive: true 
-    }).populate('gymId', 'name status isFrozen').populate('branchId', 'name status');
+    // Find user in RBAC User model first
+    let user = await User.findOne({ email: normalizedEmail })
+      .populate('gymId', 'name status isFrozen logoUrl')
+      .populate('branchId', 'name status');
 
     let isLegacyUser = false;
-    
+
     // If not found in User model, check legacy Member model
     if (!user) {
-      console.log('User not found in RBAC system, checking legacy Member model');
       const member = await Member.findOne({ email: normalizedEmail });
-      
       if (member) {
-        // Only allow admin and manager roles from legacy system
-        const allowedRoles = ['admin', 'manager'];
-        if (!allowedRoles.includes(member.role) && !isPrivilegedEmail) {
-          return res.status(403).json({ 
-            error: 'Access denied: Only admin and managers can login' 
+        const allowedRoles = ['manager'];
+        if (!allowedRoles.includes(member.role)) {
+          return res.status(403).json({
+            error: 'Access denied',
+            message: 'Only managers can login with legacy accounts'
           });
         }
-
-        // Convert member to user-like object for consistent response
         user = {
           _id: member._id,
           firstName: member.firstName,
@@ -149,119 +50,73 @@ exports.login = async (req, res) => {
           email: member.email,
           role: member.role,
           branchId: member.branchId,
+          gymId: member.gymId,
           password: member.password,
           isActive: true,
           status: 'active',
           comparePassword: async function(candidatePassword) {
             return bcrypt.compare(candidatePassword, this.password);
           },
-          resetLoginAttempts: async function() {
-            // Legacy members don't have login attempt tracking
-            return Promise.resolve();
-          },
-          incrementLoginAttempts: async function() {
-            // Legacy members don't have login attempt tracking
-            return Promise.resolve();
-          },
-          isFrozen: async function() {
-            return false; // Legacy members don't have frozen status
-          }
+          resetLoginAttempts: async function() { return Promise.resolve(); },
+          incrementLoginAttempts: async function() { return Promise.resolve(); },
+          isFrozen: async function() { return false; }
         };
         isLegacyUser = true;
       }
     }
 
     if (!user) {
-      console.log('No user found for email:', email);
-      return res.status(401).json({ 
+      return res.status(401).json({
         error: 'Invalid credentials',
         message: 'Email or password is incorrect'
       });
     }
 
-    console.log('Found user:', {
-      id: user._id,
-      firstName: user.firstName,
-      lastName: user.lastName,
-      role: user.role,
-      email: user.email,
-      gymId: user.gymId?._id,
-      branchId: user.branchId?._id,
-      isLegacy: isLegacyUser
-    });
-
-    const isPrivilegedUser = isPrivilegedLoginEmail(user.email || normalizedEmail);
-
-    if (isPrivilegedUser && (!user.gymId || !user.branchId)) {
-      const { gym, branch } = await resolvePrivilegedScope();
-
-      if (!user.gymId && gym?._id) {
-        user.gymId = { _id: gym._id, name: gym.name };
+    const isMatch = await user.comparePassword(password);
+    if (!isMatch) {
+      if (!isLegacyUser && user.incrementLoginAttempts) {
+        await user.incrementLoginAttempts();
       }
-
-      if (!user.branchId && branch?._id) {
-        user.branchId = { _id: branch._id, name: branch.name };
-      }
-
-      if (!user.gymId && branch?.gymId) {
-        const branchGym = await Gym.findById(branch.gymId).select('_id name').lean();
-        if (branchGym?._id) {
-          user.gymId = { _id: branchGym._id, name: branchGym.name };
-        }
-      }
+      return res.status(401).json({
+        error: 'Invalid credentials',
+        message: 'Email or password is incorrect'
+      });
     }
 
-    // Check if user is locked due to failed login attempts (RBAC users only)
-    // In development, allow dev seed users to bypass lock
-    const devEmails = ['admin@gympro.com', 'owner@gympro.com', 'manager@gympro.com'];
+    if (!isLegacyUser && user.resetLoginAttempts) {
+      await user.resetLoginAttempts();
+    }
+
+    const devEmails = ['owner@gympro.com', 'manager@gympro.com'];
     const isDevUser = devEmails.includes((user.email || normalizedEmail).toLowerCase());
     const skipLock = process.env.NODE_ENV === 'development' && isDevUser;
-    if (!isLegacyUser && user.isLocked && !isPrivilegedUser && !skipLock) {
-      return res.status(423).json({ 
+    if (!isLegacyUser && user.isLocked && !skipLock) {
+      return res.status(423).json({
         error: 'Account locked',
         message: 'Account is temporarily locked due to multiple failed login attempts. Please try again later.'
       });
     }
 
-    // Check if user is frozen (RBAC users only)
-    if (!isLegacyUser && !isPrivilegedUser) {
+    if (!isLegacyUser && user.isFrozen) {
       const isFrozen = await user.isFrozen();
       if (isFrozen) {
-        return res.status(403).json({ 
+        return res.status(403).json({
           error: 'Account frozen',
-          message: 'Your account is frozen. Please contact the admin.'
+          message: 'Your account is frozen. Please contact your gym owner or manager.'
         });
       }
     }
 
-    // Compare password
-    const isMatch = await user.comparePassword(password);
-    if (!isMatch) {
-      // Increment login attempts for RBAC users
-      if (!isLegacyUser) {
-        await user.incrementLoginAttempts();
-      }
-      console.log('Password mismatch for user:', user.email);
-      return res.status(401).json({ 
-        error: 'Invalid credentials',
-        message: 'Email or password is incorrect'
-      });
-    }
-
-    // Reset login attempts on successful login (RBAC users only)
-    if (!isLegacyUser && !isPrivilegedUser) {
-      await user.resetLoginAttempts();
-      // Update last login
+    if (!isLegacyUser && user.lastLogin !== undefined) {
       user.lastLogin = new Date();
       await user.save();
     }
 
-    // Generate JWT token
     const tokenPayload = {
       id: user._id,
-      role: isPrivilegedUser ? 'admin' : user.role,
-      gymId: user.gymId?._id,
-      branchId: user.branchId?._id,
+      role: user.role,
+      gymId: user.gymId?._id || user.gymId,
+      branchId: user.branchId?._id || user.branchId,
       email: user.email,
       firstName: user.firstName,
       lastName: user.lastName,
@@ -279,10 +134,11 @@ exports.login = async (req, res) => {
         firstName: user.firstName,
         lastName: user.lastName,
         email: user.email,
-        role: isPrivilegedUser ? 'admin' : user.role,
-        gymId: user.gymId?._id,
+        role: user.role,
+        gymId: user.gymId?._id || user.gymId,
         gymName: user.gymId?.name,
-        branchId: user.branchId?._id,
+        gymLogo: user.gymId?.logoUrl || null,
+        branchId: user.branchId?._id || user.branchId,
         branchName: user.branchId?.name,
         permissions: user.permissions || [],
         lastLogin: user.lastLogin,
@@ -418,77 +274,6 @@ exports.debugEmail = async (req, res) => {
   }
 };
 
-// Helper endpoint to create a proper admin user
-exports.createAdminUser = async (req, res) => {
-  try {
-    const { email, password, firstName, lastName, branchId } = req.body;
-    
-    if (!email || !password || !firstName || !lastName || !branchId) {
-      return res.status(400).json({ 
-        error: 'Missing required fields: email, password, firstName, lastName, branchId' 
-      });
-    }
-    
-    // Check if email already exists
-    const existingDetails = await Details.findOne({ email: email.toLowerCase() });
-    if (existingDetails) {
-      return res.status(400).json({ 
-        error: 'Email already exists',
-        details: 'Please use a different email or update the existing record'
-      });
-    }
-    
-    // Create a new member with admin role
-    const member = new Member({
-      firstName,
-      lastName,
-      email: email.toLowerCase(),
-      role: 'admin',
-      password, // Will be automatically hashed by the pre-save middleware
-      branchId
-    });
-    
-    await member.save();
-    console.log('Created member:', member._id, member.firstName, member.lastName);
-    
-    // Create personal details record
-    const personalDetails = new Details({
-      memberId: member._id,
-      branchId,
-      email: email.toLowerCase(),
-      gender: 'male', // Default value
-      phoneNumber: '0000000000' // Default value
-    });
-    
-    await personalDetails.save();
-    console.log('Created personal details for member:', member._id);
-    
-    res.json({
-      success: true,
-      message: 'Admin user created successfully',
-      data: {
-        member: {
-          id: member._id,
-          firstName: member.firstName,
-          lastName: member.lastName,
-          role: member.role
-        },
-        personalDetails: {
-          email: personalDetails.email,
-          memberId: personalDetails.memberId
-        }
-      }
-    });
-    
-  } catch (error) {
-    console.error('Create admin user error:', error);
-    res.status(500).json({ 
-      error: 'Server error while creating admin user',
-      details: error.message 
-    });
-  }
-};
-
 // Test endpoint for debugging Postman requests
 exports.testLogin = async (req, res) => {
   try {
@@ -565,11 +350,11 @@ exports.forgotPassword = async (req, res) => {
       // Check legacy Member model
       const member = await Member.findOne({ email: email.toLowerCase() });
       if (member) {
-        // Only allow admin and manager roles from legacy system
-        const allowedRoles = ['admin', 'manager'];
+        // Only allow manager role from legacy system
+        const allowedRoles = ['manager'];
         if (!allowedRoles.includes(member.role)) {
           return res.status(403).json({ 
-            error: 'Password reset is only available for admin and manager accounts' 
+            error: 'Password reset is only available for manager accounts' 
           });
         }
         isLegacyUser = true;
@@ -590,7 +375,7 @@ exports.forgotPassword = async (req, res) => {
       if (isFrozen) {
         return res.status(403).json({ 
           error: 'Account frozen',
-          message: 'Your account is frozen. Please contact the admin.'
+          message: 'Your account is frozen. Please contact your gym owner or manager.'
         });
       }
     }
@@ -779,11 +564,11 @@ exports.resendOTP = async (req, res) => {
       // Check legacy Member model
       const member = await Member.findOne({ email: email.toLowerCase() });
       if (member) {
-        // Only allow admin and manager roles from legacy system
-        const allowedRoles = ['admin', 'manager'];
+        // Only allow manager role from legacy system
+        const allowedRoles = ['manager'];
         if (!allowedRoles.includes(member.role)) {
           return res.status(403).json({ 
-            error: 'OTP resend is only available for admin and manager accounts' 
+            error: 'OTP resend is only available for manager accounts' 
           });
         }
         isLegacyUser = true;
@@ -803,7 +588,7 @@ exports.resendOTP = async (req, res) => {
       if (isFrozen) {
         return res.status(403).json({ 
           error: 'Account frozen',
-          message: 'Your account is frozen. Please contact the admin.'
+          message: 'Your account is frozen. Please contact your gym owner or manager.'
         });
       }
     }
@@ -864,195 +649,79 @@ exports.resendOTP = async (req, res) => {
 
 // ========== RBAC USER MANAGEMENT FUNCTIONS ==========
 
-// Create first admin user (no authentication required)
-exports.createFirstAdmin = async (req, res) => {
+// Public gym owner signup: creates Gym + User (gym_owner). No branch; owner adds branches via Branches page.
+exports.signup = async (req, res) => {
   try {
-    const { email, password, firstName, lastName } = req.body;
-    
-    if (!email || !password || !firstName || !lastName) {
-      return res.status(400).json({ 
-        error: 'Missing required fields: email, password, firstName, lastName' 
+    const { gymName, firstName, lastName, email, password, gymIcon } = req.body;
+
+    if (!gymName || !firstName || !lastName || !email || !password) {
+      return res.status(400).json({
+        error: 'Missing required fields',
+        message: 'gymName, firstName, lastName, email, and password are required'
       });
     }
 
-    // Check if any admin already exists
-    const existingAdmin = await User.findOne({ role: 'admin' });
-    if (existingAdmin) {
-      return res.status(400).json({ 
-        error: 'Admin already exists',
-        message: 'An admin user already exists. Use the regular create-admin endpoint with proper authentication.'
+    const trimmedGymName = String(gymName).trim();
+    if (!trimmedGymName) {
+      return res.status(400).json({
+        error: 'Invalid gym name',
+        message: 'Gym name is required'
       });
     }
 
-    // Check if email already exists
-    const existingUser = await User.findOne({ email: email.toLowerCase() });
+    if (String(password).length < 6) {
+      return res.status(400).json({
+        error: 'Invalid password',
+        message: 'Password must be at least 6 characters'
+      });
+    }
+
+    const normalizedEmail = String(email).toLowerCase().trim();
+    const existingUser = await User.findOne({ email: normalizedEmail });
     if (existingUser) {
-      return res.status(400).json({ 
+      return res.status(400).json({
         error: 'Email already exists',
         message: 'A user with this email already exists'
       });
     }
 
-    // Create first admin user
-    const admin = new User({
-      firstName,
-      lastName,
-      email: email.toLowerCase(),
-      password,
-      role: 'admin',
+    const gym = new Gym({
+      name: trimmedGymName,
+      status: 'active',
+      isFrozen: false,
+      createdBy: 'system',
+      ...(gymIcon && typeof gymIcon === 'string' && gymIcon.length > 0 ? { logoUrl: gymIcon } : {})
+    });
+    await gym.save();
+
+    const gymOwner = new User({
+      firstName: String(firstName).trim(),
+      lastName: String(lastName).trim(),
+      email: normalizedEmail,
+      password: String(password),
+      role: 'gym_owner',
+      gymId: gym._id,
       status: 'active',
       isActive: true,
       createdBy: 'system'
     });
-
-    await admin.save();
-
-    res.status(201).json({
-      success: true,
-      message: 'First admin user created successfully',
-      data: {
-        id: admin._id,
-        firstName: admin.firstName,
-        lastName: admin.lastName,
-        email: admin.email,
-        role: admin.role
-      }
-    });
-
-  } catch (error) {
-    console.error('Create first admin error:', error);
-    res.status(500).json({ 
-      error: 'Server error while creating first admin',
-      message: error.message 
-    });
-  }
-};
-
-// Create admin user (super admin only)
-exports.createAdmin = async (req, res) => {
-  try {
-    const { email, password, firstName, lastName } = req.body;
-    
-    if (!email || !password || !firstName || !lastName) {
-      return res.status(400).json({ 
-        error: 'Missing required fields: email, password, firstName, lastName' 
-      });
-    }
-
-    // Check if email already exists
-    const existingUser = await User.findOne({ email: email.toLowerCase() });
-    if (existingUser) {
-      return res.status(400).json({ 
-        error: 'Email already exists',
-        message: 'A user with this email already exists'
-      });
-    }
-
-    // Create admin user
-    const admin = new User({
-      firstName,
-      lastName,
-      email: email.toLowerCase(),
-      password,
-      role: 'admin',
-      status: 'active',
-      isActive: true,
-      createdBy: req.user?.id || 'system'
-    });
-
-    await admin.save();
-
-    res.status(201).json({
-      success: true,
-      message: 'Admin user created successfully',
-      data: {
-        id: admin._id,
-        firstName: admin.firstName,
-        lastName: admin.lastName,
-        email: admin.email,
-        role: admin.role
-      }
-    });
-
-  } catch (error) {
-    console.error('Create admin error:', error);
-    res.status(500).json({ 
-      error: 'Server error while creating admin',
-      message: error.message 
-    });
-  }
-};
-
-// Create gym owner
-exports.createGymOwner = async (req, res) => {
-  try {
-    const { email, password, firstName, lastName, gymId } = req.body;
-    
-    if (!email || !password || !firstName || !lastName || !gymId) {
-      return res.status(400).json({ 
-        error: 'Missing required fields: email, password, firstName, lastName, gymId' 
-      });
-    }
-
-    // Verify gym exists and is not frozen
-    const gym = await Gym.findById(gymId);
-    if (!gym) {
-      return res.status(404).json({ 
-        error: 'Gym not found',
-        message: 'The specified gym does not exist'
-      });
-    }
-
-    if (gym.isFrozen) {
-      return res.status(400).json({ 
-        error: 'Gym frozen',
-        message: 'Cannot create users for a frozen gym'
-      });
-    }
-
-    // Check if email already exists
-    const existingUser = await User.findOne({ email: email.toLowerCase() });
-    if (existingUser) {
-      return res.status(400).json({ 
-        error: 'Email already exists',
-        message: 'A user with this email already exists'
-      });
-    }
-
-    // Create gym owner
-    const gymOwner = new User({
-      firstName,
-      lastName,
-      email: email.toLowerCase(),
-      password,
-      role: 'gym_owner',
-      gymId,
-      status: 'active',
-      isActive: true,
-      createdBy: req.user?.id || 'system'
-    });
-
     await gymOwner.save();
 
     res.status(201).json({
       success: true,
-      message: 'Gym owner created successfully',
+      message: 'Account created successfully. Please log in.',
       data: {
         id: gymOwner._id,
-        firstName: gymOwner.firstName,
-        lastName: gymOwner.lastName,
         email: gymOwner.email,
-        role: gymOwner.role,
-        gymId: gymOwner.gymId,
+        gymId: gym._id,
         gymName: gym.name
       }
     });
-
   } catch (error) {
-    console.error('Create gym owner error:', error);
-    res.status(500).json({ 
-      error: 'Server error while creating gym owner',
-      message: error.message 
+    console.error('Signup error:', error);
+    res.status(500).json({
+      error: 'Server error during signup',
+      message: error.message || 'An unexpected error occurred. Please try again.'
     });
   }
 };
@@ -1147,35 +816,9 @@ exports.createManager = async (req, res) => {
 // Get current user profile
 exports.getProfile = async (req, res) => {
   try {
-    if (isPrivilegedLoginEmail(req.user?.email)) {
-      const { gym, branch } = await resolvePrivilegedScope();
-      return res.json({
-        success: true,
-        data: {
-          id: req.user?.id || PRIVILEGED_USER_ID,
-          firstName: req.user?.firstName || 'Local',
-          lastName: req.user?.lastName || 'Admin',
-          email: PRIVILEGED_LOGIN_EMAIL,
-          role: 'admin',
-          gymId: gym?._id || null,
-          gymName: gym?.name || null,
-          branchId: branch?._id || null,
-          branchName: branch?.name || null,
-          status: 'active',
-          isActive: true,
-          permissions: [{ resource: '*', actions: ['*'] }],
-          profile: {},
-          authMethods: { password: true, faceRecognition: false, fingerprint: false },
-          lastLogin: new Date().toISOString(),
-          createdAt: null,
-          isLegacyUser: false
-        }
-      });
-    }
-
     // First try to find user in the new RBAC system
     let user = await User.findById(req.user.id)
-      .populate('gymId', 'name status isFrozen')
+      .populate('gymId', 'name status isFrozen logoUrl')
       .populate('branchId', 'name status')
       .select('-password');
 
@@ -1187,8 +830,8 @@ exports.getProfile = async (req, res) => {
       const member = await Member.findById(req.user.id);
       
       if (member) {
-        // Only allow admin and manager roles from legacy system
-        const allowedRoles = ['admin', 'manager'];
+        // Only allow manager role from legacy system
+        const allowedRoles = ['manager'];
         if (!allowedRoles.includes(member.role)) {
           return res.status(403).json({ 
             error: 'Access denied: Legacy users with this role cannot access this resource' 

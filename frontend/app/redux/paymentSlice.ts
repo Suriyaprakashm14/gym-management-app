@@ -85,7 +85,7 @@ export const fetchPaymentStats = createAsyncThunk(
       const params = { year: now.getFullYear() };
 
       const analytics =
-        role === 'gym_owner' || role === 'admin'
+        role === 'gym_owner'
           ? await api.payments.getGymOwnerAnalytics(params)
           : await api.payments.getBranchManagerAnalytics(params);
 

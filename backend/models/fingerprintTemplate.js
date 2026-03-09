@@ -8,7 +8,8 @@ const fingerprintTemplateSchema = new mongoose.Schema({
     unique: true
   },
   branchId: {
-    type: mongoose.Schema.Types.ObjectId,
+    // Use string IDs to align with Member.branchId
+    type: String,
     ref: 'Branch',
     required: true
   },

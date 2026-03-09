@@ -12,7 +12,6 @@ import {
 } from 'antd';
 import {
   PlusOutlined,
-  DollarOutlined,
   CalendarOutlined,
 } from '@ant-design/icons';
 import { api } from '../../utils/api';
@@ -109,11 +108,11 @@ const CreateMembershipModal: React.FC<CreateMembershipModalProps> = ({
           rules={[{ required: true, message: 'Please enter price' }]}
         >
           <InputNumber
-            prefix={<DollarOutlined />}
+            prefix={<span style={{ fontWeight: 600 }}>₹</span>}
             placeholder="Enter price"
             style={{ width: '100%' }}
             min={0}
-            formatter={(value) => `₹ ${value}`.replace(/\B(?=(\d{3})+(?!\d))/g, ',')}
+            formatter={(value) => `${value}`.replace(/\B(?=(\d{3})+(?!\d))/g, ',')}
             parser={(value) => (value?.replace(/₹\s?|(,*)/g, '') || '0') as any}
           />
         </Form.Item>

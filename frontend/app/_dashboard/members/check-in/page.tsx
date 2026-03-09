@@ -18,6 +18,8 @@ import {
   DatePicker,
   Spin,
   Alert,
+  message,
+  App,
 } from 'antd';
 import {
   UserOutlined,
@@ -32,6 +34,8 @@ import {
 import type { ColumnsType } from 'antd/es/table';
 import { api } from '../../../utils/api';
 import dayjs from 'dayjs';
+
+
 
 interface AttendanceData {
   period: string;
@@ -93,6 +97,7 @@ export default function CheckInPage() {
   const [viewMode, setViewMode] = useState<'all' | 'present' | 'absent'>('all');
   const { message } = App.useApp();
 
+  const { message } = App.useApp();
   const fetchAttendanceReport = async () => {
     try {
       setLoading(true);

@@ -3,11 +3,13 @@ const { v4: uuidv4 } = require('uuid');
 
 const gymSchema = new mongoose.Schema({
   _id: { type: String, default: uuidv4 },
-  name: { 
-    type: String, 
+  name: {
+    type: String,
     required: true,
     trim: true
   },
+  /** Gym icon/logo (data URL or base64) uploaded during signup; used in navbar branding */
+  logoUrl: { type: String, default: null },
   description: {
     type: String,
     trim: true
@@ -120,9 +122,9 @@ gymSchema.pre('save', function(next) {
 });
 
 // Instance methods
-gymSchema.methods.freeze = function(adminId, reason) {
+gymSchema.methods.freeze = function(userId, reason) {
   this.isFrozen = true;
-  this.frozenBy = adminId;
+  this.frozenBy = userId;
   this.frozenReason = reason;
   this.status = 'frozen';
   return this.save();

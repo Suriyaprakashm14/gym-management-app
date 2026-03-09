@@ -10,6 +10,7 @@ export interface MembershipPrice {
   currency?: string;
   isActive?: boolean;
   type?: string; // canonical backend type (e.g., monthly)
+  activeCount?: number; // number of members with active subscription on this plan
 }
 
 interface MembershipPricesState {
@@ -70,16 +71,18 @@ const membershipsSlice = createSlice({
       fetchMembershipPrices.fulfilled,
       (state, action: PayloadAction<MembershipPrice[]>) => {
         state.loading = false;
+        state.error = null;
         const incoming = Array.isArray(action.payload) ? action.payload : [];
         state.items = incoming.map((p: any) => ({
           id: p.id || p._id,
-          name: p.name,
+          name: p.name || p.type,
           description: p.description,
           price: p.price,
           duration: p.duration,
-          currency: p.currency || 'USD',
+          currency: p.currency || 'INR',
           isActive: p.isActive,
           type: p.type,
+          activeCount: p.activeCount,
         }));
       }
     );

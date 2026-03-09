@@ -5,10 +5,10 @@ const Details = require('../models/membersPersonalDetails');
 
 exports.create = async (req, res) => {
   try {
-    // Check authorization - only gym_owner can create membership prices (admin cannot access gym internal operations)
-    const allowedRoles = ['gym_owner'];
+    // Check authorization - only gym_owner or manager can create membership prices
+    const allowedRoles = ['gym_owner', 'manager'];
     if (!allowedRoles.includes(req.user.role)) {
-      return res.status(403).json({ error: "Access denied. Only gym_owner can create membership prices. Admin cannot access gym internal operations." });
+      return res.status(403).json({ error: "Access denied. Only gym_owner can create membership prices." });
     }
 
     // Validate required fields
@@ -50,10 +50,10 @@ exports.create = async (req, res) => {
 
 exports.getAll = async (req, res) => {
   try {
-    // Check authorization - only gym_owner and manager can view pricing (admin cannot access gym internal operations)
-    const allowedRoles = ['gym_owner', 'manager'];
+    // Check authorization - gym_owner, manager, and staff can view pricing
+    const allowedRoles = ['gym_owner', 'manager', 'staff'];
     if (!allowedRoles.includes(req.user.role)) {
-      return res.status(403).json({ error: "Access denied. Only gym_owner or manager can view membership prices. Admin cannot access gym internal operations." });
+      return res.status(403).json({ error: "Access denied. Only gym_owner or manager can view membership prices." });
     }
 
     let filter = {};
@@ -69,8 +69,20 @@ exports.getAll = async (req, res) => {
     }
 
     // Gym owners and managers see only their gym's prices (filter applied)
-    const prices = await MembershipPrice.find(filter);
-    res.json(prices);
+    const prices = await MembershipPrice.find(filter).lean();
+    const now = new Date();
+    const pricesWithCount = await Promise.all(
+      prices.map(async (p) => {
+        const gymMemberIds = await Member.find({ gymId: p.gymId }).distinct('_id');
+        const activeCount = await Details.countDocuments({
+          memberId: { $in: gymMemberIds.map((id) => id.toString()) },
+          membership: p.type,
+          membership_end_date: { $gt: now },
+        });
+        return { ...p, activeCount };
+      })
+    );
+    res.json(pricesWithCount);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -78,10 +90,10 @@ exports.getAll = async (req, res) => {
 
 exports.getOne = async (req, res) => {
   try {
-    // Check authorization - only gym_owner and manager can view individual pricing (admin cannot access gym internal operations)
-    const allowedRoles = ['gym_owner', 'manager'];
+    // Check authorization - gym_owner, manager, and staff can view individual pricing
+    const allowedRoles = ['gym_owner', 'manager', 'staff'];
     if (!allowedRoles.includes(req.user.role)) {
-      return res.status(403).json({ error: "Access denied. Only gym_owner or manager can view membership prices. Admin cannot access gym internal operations." });
+      return res.status(403).json({ error: "Access denied. Only gym_owner or manager can view membership prices." });
     }
 
     const price = await MembershipPrice.findById(req.params.id);
@@ -104,10 +116,10 @@ exports.getOne = async (req, res) => {
 
 exports.update = async (req, res) => {
   try {
-    // Check authorization - only gym_owner can update membership prices (admin cannot access gym internal operations)
-    const allowedRoles = ['gym_owner'];
+    // Check authorization - only gym_owner or manager can update membership prices
+    const allowedRoles = ['gym_owner', 'manager'];
     if (!allowedRoles.includes(req.user.role)) {
-      return res.status(403).json({ error: "Access denied. Only gym_owner can update membership prices. Admin cannot access gym internal operations." });
+      return res.status(403).json({ error: "Access denied. Only gym_owner can update membership prices." });
     }
 
     const price = await MembershipPrice.findById(req.params.id);
@@ -127,10 +139,10 @@ exports.update = async (req, res) => {
 
 exports.remove = async (req, res) => {
   try {
-    // Check authorization - only gym_owner can delete membership prices (admin cannot access gym internal operations)
-    const allowedRoles = ['gym_owner'];
+    // Check authorization - only gym_owner or manager can delete membership prices
+    const allowedRoles = ['gym_owner', 'manager'];
     if (!allowedRoles.includes(req.user.role)) {
-      return res.status(403).json({ error: "Access denied. Only gym_owner can delete membership prices. Admin cannot access gym internal operations." });
+      return res.status(403).json({ error: "Access denied. Only gym_owner can delete membership prices." });
     }
 
     const price = await MembershipPrice.findById(req.params.id);
@@ -139,6 +151,14 @@ exports.remove = async (req, res) => {
     // Check access permissions - gym owners can only delete their own gym's prices
     if (req.user.role === 'gym_owner' && price.gymId !== req.user.gymId) {
       return res.status(403).json({ error: 'Access denied: Not authorized to delete this membership price' });
+    }
+
+    // Allow delete only when plan is inactive
+    if (price.isActive !== false) {
+      return res.status(400).json({
+        error: 'Cannot delete an active plan. Make it inactive first.',
+        message: 'Cannot delete an active plan. Make it inactive first.',
+      });
     }
 
     // Block delete if any active users are assigned to this plan (subscription not yet expired)

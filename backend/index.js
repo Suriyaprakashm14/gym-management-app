@@ -25,6 +25,9 @@ const gymRoutes = require('./routes/gymRoutes');
 const branchRoutes = require('./routes/branchRoutes');
 const membershipPriceRoutes = require('./routes/membershipPriceRoutes');
 const paymentRoutes = require('./routes/paymentRoutes');
+const expenseRoutes = require('./routes/expenseRoutes');
+const expenseCategoryRoutes = require('./routes/expenseCategoryRoutes');
+const staffRoutes = require('./routes/staffRoutes');
 
 const port = process.env.PORT || 3000;
 const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://localhost:27017/';
@@ -103,6 +106,9 @@ app.use('/api/payments', paymentRoutes);
 app.use('/api/attendance', attendanceRoutes);
 app.use('/api/fingerprints', fingerprintRoutes);
 app.use('/api/members-personal-details', detailsRoutes);
+app.use('/api/expenses', expenseRoutes);
+app.use('/api/expense-categories', expenseCategoryRoutes);
+app.use('/api/staffs', staffRoutes);
 
 // Legacy API routes (for backward compatibility)
 app.use('/api/legacy/auth', authRoutes);
@@ -144,8 +150,9 @@ const checkExpiredMemberships = async () => {
 // Run immediately on startup
 checkExpiredMemberships();
 
-// Schedule to run daily at midnight
-setInterval(checkExpiredMemberships, 24 * 60 * 60 * 1000); // 24 hours in milliseconds
+// Schedule to run every hour so multi-period members advance promptly after each period ends
+const ONE_HOUR_MS = 60 * 60 * 1000;
+setInterval(checkExpiredMemberships, ONE_HOUR_MS);
 
 // 404 and error handling should be last in middleware chain
 app.use(notFoundHandler);
@@ -153,5 +160,5 @@ app.use(errorHandler);
 
 app.listen(port, () => {
   console.log(`App listening at http://localhost:${port}`);
-  console.log('Daily membership expiry check scheduled');
+  console.log('Membership expiry check scheduled (hourly)');
 });

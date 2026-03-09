@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
 import {
+  App,
   Table,
   Tag,
   Space,
@@ -17,7 +18,6 @@ import {
   DatePicker,
   Spin,
   Alert,
-  message,
   Modal,
   List,
 } from 'antd';
@@ -87,6 +87,7 @@ interface AttendanceMember {
 }
 
 export default function CheckInPage() {
+  const { message } = App.useApp();
   const [attendanceData, setAttendanceData] = useState<AttendanceData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -96,7 +97,7 @@ export default function CheckInPage() {
   const [detailsModalOpen, setDetailsModalOpen] = useState(false);
   const [selectedMember, setSelectedMember] = useState<AttendanceMember | null>(null);
 
-  const fetchAttendanceReport = async () => {
+  const fetchAttendanceReport = async (showSuccessMessage = false) => {
     try {
       setLoading(true);
       setError(null);
@@ -105,7 +106,7 @@ export default function CheckInPage() {
         ...(selectedPeriod === 'day' && { date: selectedDate.format('YYYY-MM-DD') }),
       });
       setAttendanceData(response);
-      message.success('Attendance data refreshed successfully');
+      if (showSuccessMessage) message.success('Attendance data refreshed successfully');
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Failed to fetch attendance data';
       setError(errorMessage);
@@ -116,7 +117,7 @@ export default function CheckInPage() {
   };
 
   useEffect(() => {
-    fetchAttendanceReport();
+    fetchAttendanceReport(false);
   }, [selectedPeriod, selectedDate]);
 
   const getAuthMethodText = (method: string) => {
@@ -273,7 +274,7 @@ export default function CheckInPage() {
           description={error}
           type="error"
           action={
-            <Button size="small" danger onClick={fetchAttendanceReport}>
+            <Button size="small" danger onClick={() => fetchAttendanceReport(true)}>
               Retry
             </Button>
           }
@@ -324,7 +325,7 @@ export default function CheckInPage() {
           </Col>
           <Col flex="auto" />
           <Col>
-            <Button type="primary" icon={<ReloadOutlined />} onClick={fetchAttendanceReport} loading={loading}>
+            <Button type="primary" icon={<ReloadOutlined />} onClick={() => fetchAttendanceReport(true)} loading={loading}>
               Refresh
             </Button>
           </Col>

@@ -35,7 +35,7 @@ const userSchema = new mongoose.Schema({
   // RBAC Role system
   role: { 
     type: String, 
-    enum: ['admin', 'gym_owner', 'manager'],
+    enum: ['gym_owner', 'manager', 'staff'],
     required: true
   },
   // Organization structure
@@ -43,14 +43,19 @@ const userSchema = new mongoose.Schema({
     type: String,
     ref: 'Gym',
     required: function() {
-      return ['gym_owner', 'manager'].includes(this.role);
+      return ['gym_owner', 'manager', 'staff'].includes(this.role);
     }
   },
+  // Gym owner only: branches this gym owner owns (for branch ownership isolation)
+  branches: [{
+    type: String,
+    ref: 'Branch'
+  }],
   branchId: {
     type: String,
     ref: 'Branch',
     required: function() {
-      return ['manager'].includes(this.role);
+      return ['manager', 'staff'].includes(this.role);
     }
   },
   // User status
@@ -179,33 +184,27 @@ userSchema.methods.resetLoginAttempts = function() {
 };
 
 userSchema.methods.hasPermission = function(resource, action) {
-  // Admin has all permissions
-  if (this.role === 'admin') return true;
-  
   // Check specific permissions
   const permission = this.permissions.find(p => p.resource === resource);
   return permission && permission.actions.includes(action);
 };
 
 userSchema.methods.canAccessGym = function(gymId) {
-  // Admin can access all gyms
-  if (this.role === 'admin') return true;
-  
-  // Others can only access their own gym
-  return this.gymId === gymId;
+  return this.gymId && this.gymId.toString() === gymId.toString();
 };
 
 userSchema.methods.canAccessBranch = function(branchId) {
-  // Admin can access all branches
-  if (this.role === 'admin') return true;
-  
-  // Gym owner can access all branches in their gym
+  // Gym owner: strict branch ownership when branches array is set
   if (this.role === 'gym_owner') {
-    // This would need to be checked against the branch's gymId
-    return true; // Simplified for now
+    if (this.branches && this.branches.length > 0) {
+      const allowed = this.branches.some(b => b && b.toString() === branchId.toString());
+      if (!allowed) return false;
+    }
+    // Legacy: no branches array — caller may check gymId vs branch.gymId
+    return true;
   }
   
-  // Manager can only access their own branch
+  // Manager / staff can only access their own branch
   return this.branchId && this.branchId.toString() === branchId.toString();
 };
 

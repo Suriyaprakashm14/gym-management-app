@@ -1,0 +1,164 @@
+/* Signup page: mobile, tablet, and desktop */
+
+.wrapper {
+  min-height: 100vh;
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: row;
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+}
+
+/* Tablets & desktop: cap width and center so it doesn’t stretch on large monitors */
+@media (min-width: 641px) {
+  .wrapper {
+    max-width: 1280px;
+    margin: 0 auto;
+    width: 100%;
+    box-shadow: 0 0 0 1px rgba(148, 163, 184, 0.08);
+  }
+}
+
+.outer {
+  min-height: 100vh;
+  min-height: 100dvh;
+  background: linear-gradient(160deg, #0f172a 0%, #1e293b 40%, #0f172a 100%);
+}
+
+.brandPanel {
+  flex: 0 0 42%;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  padding: 48px 56px;
+  border-right: 1px solid rgba(148, 163, 184, 0.12);
+}
+
+/* Tablet: slightly narrower branding so form has more room */
+@media (min-width: 641px) and (max-width: 1024px) {
+  .brandPanel {
+    flex: 0 0 38%;
+    padding: 40px 32px;
+  }
+}
+
+.formPanel {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  min-height: 100vh;
+  min-height: 100dvh;
+}
+
+@media (min-width: 641px) and (max-width: 1024px) {
+  .formPanel {
+    padding: 32px 24px;
+  }
+}
+
+.card {
+  width: 100%;
+  max-width: 420px;
+  border-radius: 16px;
+  box-shadow: 0 24px 48px rgba(0, 0, 0, 0.18), 0 0 0 1px rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(30, 41, 59, 0.6);
+  backdrop-filter: blur(12px);
+}
+
+.card :global(.ant-card-body) {
+  padding: 32px 28px;
+}
+
+/* Monitors: slightly larger card so it doesn’t look lost */
+@media (min-width: 1200px) {
+  .card {
+    max-width: 440px;
+  }
+
+  .card :global(.ant-card-body) {
+    padding: 36px 32px;
+  }
+}
+
+/* Touch-friendly minimum tap target */
+.inputHeight {
+  min-height: 44px;
+}
+
+.submitBtn {
+  min-height: 48px;
+}
+
+/* Upload: smaller on mobile */
+.uploadWrap :global(.ant-upload.ant-upload-select) {
+  width: 88px !important;
+  height: 88px !important;
+}
+
+/* Mobile only: single column, compact branding, full-width form (tablets get two columns) */
+@media (max-width: 640px) {
+  .wrapper {
+    flex-direction: column;
+    padding: 0;
+  }
+
+  .brandPanel {
+    flex: none;
+    padding: 20px 20px 16px;
+    border-right: none;
+    border-bottom: 1px solid rgba(148, 163, 184, 0.12);
+    justify-content: flex-start;
+  }
+
+  .brandPanel .title {
+    font-size: 20px !important;
+    margin-bottom: 4px !important;
+  }
+
+  .brandPanel .subtitle {
+    font-size: 13px !important;
+    margin-bottom: 0 !important;
+  }
+
+  .brandPanel .features {
+    display: none;
+  }
+
+  .formPanel {
+    flex: 1;
+    min-height: auto;
+    padding: 20px 16px 28px;
+    align-items: flex-start;
+  }
+
+  .card {
+    max-width: none;
+    border-radius: 12px;
+  }
+
+  .card :global(.ant-card-body) {
+    padding: 24px 20px;
+  }
+
+  .uploadWrap :global(.ant-upload.ant-upload-select) {
+    width: 72px !important;
+    height: 72px !important;
+  }
+}
+
+/* Very small screens: reduce padding further */
+@media (max-width: 380px) {
+  .brandPanel {
+    padding: 16px 16px 12px;
+  }
+
+  .formPanel {
+    padding: 16px 12px 24px;
+  }
+
+  .card :global(.ant-card-body) {
+    padding: 20px 16px;
+  }
+}

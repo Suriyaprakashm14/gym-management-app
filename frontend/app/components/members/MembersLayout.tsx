@@ -1,25 +1,23 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import type { MenuProps } from 'antd';
-import { Layout, Menu, Button, Space, Avatar, Typography, Dropdown, Badge, Radio, ConfigProvider } from 'antd';
+import { Layout, Menu, Button, Space, Typography, Badge, Radio, ConfigProvider } from 'antd';
 import {
   UserOutlined,
   CheckCircleOutlined,
   CreditCardOutlined,
-  FullscreenOutlined,
-  TranslationOutlined,
-  DownOutlined,
   PlusOutlined,
 } from '@ant-design/icons';
-import { useAppSelector } from '../../redux/hooks';
+import { useAppDispatch, useAppSelector } from '../../redux/hooks';
+import { fetchMembershipPrices } from '../../redux/membershipsSlice';
 import { MemberFilterProvider, useMemberFilter, type MemberFilterValue } from '../../contexts/MemberFilterContext';
 import AddMemberModal from './AddMemberModal';
 
 const { Header, Content } = Layout;
-const { Title, Text } = Typography;
+const { Title } = Typography;
 
 const theme = {
   token: {
@@ -37,9 +35,15 @@ function MembersLayoutInner({
   organizationName = 'Small Circle Martial Arts',
 }: MembersLayoutProps) {
   const pathname = usePathname();
+  const dispatch = useAppDispatch();
   const memberCount = useAppSelector((state) => state.members.total);
   const [addModalOpen, setAddModalOpen] = useState(false);
   const { filter, setFilter } = useMemberFilter();
+
+  // Prefetch membership plans so Add Member / Renew dropdowns render promptly
+  useEffect(() => {
+    dispatch(fetchMembershipPrices());
+  }, [dispatch]);
 
   const getCurrentTab = () => {
     if (pathname === '/members') return 'members';
@@ -75,63 +79,34 @@ function MembersLayoutInner({
     },
   ];
 
-  const organizationMenuItems: MenuProps['items'] = [
-    { key: '1', label: organizationName },
-    { type: 'divider' },
-    { key: '2', label: 'Switch Organization' },
-    { key: '3', label: 'Organization Settings' },
-  ];
-
   return (
     <Layout style={{ minHeight: '100vh', background: '#f0f2f5' }}>
       <Header
         style={{
           background: '#fff',
-          padding: '16px 24px 0 24px',
+          padding: '16px 24px',
           display: 'flex',
           alignItems: 'center',
-          justifyContent: 'space-between',
           borderBottom: '1px solid #e8e8e8',
-          height: 80,
+          height: 64,
           position: 'sticky',
           top: 0,
           zIndex: 999,
         }}
       >
-        <Space size={16} align="center">
-          <Avatar
-            size={40}
-            style={{ backgroundColor: '#52c41a' }}
-            icon={<UserOutlined />}
-          />
-          <div>
-            <Title level={4} style={{ margin: 0, fontSize: 20, lineHeight: 1.2 }}>
-              Members
-            </Title>
-            <Dropdown menu={{ items: organizationMenuItems }} trigger={['click']}>
-              <Space style={{ cursor: 'pointer' }} size={4}>
-                <Text type="secondary" style={{ fontSize: 13 }}>
-                  {organizationName}
-                </Text>
-                <DownOutlined style={{ fontSize: 10, color: '#8c8c8c' }} />
-              </Space>
-            </Dropdown>
-          </div>
-        </Space>
-        <Space size={12}>
-          <Button icon={<FullscreenOutlined />} type="text" size="large" />
-          <Button icon={<TranslationOutlined />} type="text" size="large" />
-        </Space>
+        <Title level={4} style={{ margin: 0, fontSize: 20, lineHeight: 1.2 }}>
+          Members
+        </Title>
       </Header>
 
-      {/* Single sticky strip: tabs + action bar */}
+      {/* Single sticky strip: tabs + action bar — flush under header */}
       <div
         style={{
           background: '#fff',
           borderBottom: '1px solid #e8e8e8',
           boxShadow: '0 1px 2px rgba(0,0,0,0.04)',
           position: 'sticky',
-          top: 80,
+          top: 64,
           zIndex: 998,
         }}
       >
@@ -161,9 +136,9 @@ function MembersLayoutInner({
                 value={filter}
                 onChange={(e) => setFilter(e.target.value as MemberFilterValue)}
                 options={[
-                  { label: 'Active Users', value: 'activeUsers' },
-                  { label: 'Recently Expired', value: 'recentlyExpired' },
-                  { label: 'Archived Users', value: 'archivedUsers' },
+                  { label: 'Active', value: 'activeUsers' },
+                  { label: 'Inactive', value: 'inactiveUsers' },
+                  { label: 'Long time inactive', value: 'longTimeInactiveUsers' },
                 ]}
               />
             </div>
@@ -179,7 +154,7 @@ function MembersLayoutInner({
         )}
       </div>
 
-      <Content style={{ background: '#f0f2f5', minHeight: 'calc(100vh - 80px)', padding: '24px 24px 32px' }}>
+      <Content style={{ background: '#f0f2f5', minHeight: 'calc(100vh - 64px)', padding: '24px 24px 32px' }}>
         {children}
       </Content>
 

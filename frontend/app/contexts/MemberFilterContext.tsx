@@ -2,7 +2,7 @@
 
 import React, { createContext, useContext, useState, useCallback, ReactNode } from 'react';
 
-export type MemberFilterValue = 'activeUsers' | 'recentlyExpired' | 'archivedUsers';
+export type MemberFilterValue = 'activeUsers' | 'inactiveUsers' | 'longTimeInactiveUsers';
 
 interface MemberFilterContextType {
   filter: MemberFilterValue;

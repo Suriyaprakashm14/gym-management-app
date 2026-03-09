@@ -2,6 +2,7 @@ const Details = require('../models/membersPersonalDetails');
 const MembershipPrice = require('../models/membershipPrice');
 const Member = require('../models/member');
 const Attendance = require('../models/attendance');
+const Payment = require('../models/payment');
 
 
 exports.create = async (req, res) => {
@@ -11,14 +12,23 @@ exports.create = async (req, res) => {
     let priceDoc = null;
 
     if (membership) {
-      // Normalize type: use your price table, which uses the exact strings ("monthly", "annual", "pay-as-you-go")
-      priceDoc = await MembershipPrice.findOne({
-        type: membership.trim().toLowerCase()
-      });
+      const typeTrimmed = String(membership).trim();
+      if (!typeTrimmed) {
+        return res.status(400).json({ error: "Membership type is required" });
+      }
+      const typeRegex = new RegExp(`^\\s*${typeTrimmed.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*$`, 'i');
+      const memberForPrice = await Member.findById(memberId).select('gymId').lean();
+      const gymId = memberForPrice?.gymId || null;
+      priceDoc = await MembershipPrice.findOne(
+        gymId ? { type: { $regex: typeRegex }, gymId } : { type: { $regex: typeRegex } }
+      );
+      if (!priceDoc) {
+        priceDoc = await MembershipPrice.findOne({ type: { $regex: typeRegex } });
+      }
       if (priceDoc) {
         totalAmount = priceDoc.price;
       } else {
-        return res.status(400).json({ error: `Membership type '${membership}' not found` });
+        return res.status(400).json({ error: `Membership type '${typeTrimmed}' not found` });
       }
     } else {
       return res.status(400).json({ error: "Membership type is required" });
@@ -70,38 +80,83 @@ exports.create = async (req, res) => {
       }
     }
 
-    // Calculate membership dates
+    // Plan quantity: number of consecutive subscription periods (default 1)
+    const quantity = Math.max(1, parseInt(req.body.planQuantity, 10) || 1);
+    const durationDays = priceDoc ? priceDoc.duration : 30;
+
     let membershipStartDate = null;
     let membershipEndDate = null;
+    const subscriptionPeriods = [];
     if (membership && priceDoc) {
-      membershipStartDate = new Date(); // Today's date
-      membershipEndDate = new Date();
-      membershipEndDate.setDate(membershipStartDate.getDate() + priceDoc.duration); // Add duration in days
+      let periodStart = null;
+      if (req.body.membershipStartDate) {
+        periodStart = new Date(req.body.membershipStartDate);
+        if (!Number.isNaN(periodStart.getTime())) {
+          periodStart.setHours(0, 0, 0, 0);
+        } else {
+          periodStart = new Date();
+          periodStart.setHours(0, 0, 0, 0);
+        }
+      } else {
+        periodStart = new Date();
+        periodStart.setHours(0, 0, 0, 0);
+      }
+      for (let i = 0; i < quantity; i++) {
+        const periodEnd = new Date(periodStart);
+        periodEnd.setDate(periodEnd.getDate() + durationDays);
+        subscriptionPeriods.push({ startDate: new Date(periodStart), endDate: new Date(periodEnd) });
+        if (i === 0) {
+          membershipStartDate = new Date(periodStart);
+          membershipEndDate = new Date(periodEnd);
+        }
+        periodStart = new Date(periodEnd);
+      }
     }
 
+    const totalAmountForQuantity = priceDoc ? totalAmount * quantity : totalAmount;
+    const initialPaidAmount = Number(req.body.paidAmount) || 0;
+
+    const membershipToSave = membership ? String(membership).trim() : req.body.membership;
     const details = new Details({
       ...req.body,
-      branchId: member.branchId, // Use branchId from member data
-      totalAmount, // Always set here from DB!
-      paidAmount: req.body.paidAmount || 0,
+      membership: membershipToSave,
+      branchId: member.branchId,
+      totalAmount: totalAmountForQuantity,
+      paidAmount: initialPaidAmount,
       last_visit: lastAttendance ? lastAttendance.attendanceDate : null,
       age: calculatedAge,
       membership_start_date: membershipStartDate,
       membership_end_date: membershipEndDate,
+      planQuantity: quantity,
+      subscriptionPeriods: subscriptionPeriods.length ? subscriptionPeriods : undefined,
     });
 
     await details.save();
 
-    // Update member's membership information
-    if (priceDoc) {
-      const startDate = new Date();
-      const endDate = new Date();
-      endDate.setDate(startDate.getDate() + priceDoc.duration); // Add duration in days
+    // Every income is revenue: create a Payment record for initial payment so it shows in dashboard/revenue
+    if (initialPaidAmount > 0 && member.branchId && membershipToSave) {
+      try {
+        const payment = new Payment({
+          memberId: String(memberId),
+          branchId: String(member.branchId),
+          name: `${member.firstName || ''} ${member.lastName || ''}`.trim() || 'Member',
+          detailsId: String(details._id),
+          membership: membershipToSave,
+          totalAmount: priceDoc ? priceDoc.price : totalAmount,
+          paidAmount: initialPaidAmount,
+        });
+        await payment.save();
+      } catch (paymentErr) {
+        console.error('Failed to create initial payment record for revenue:', paymentErr);
+        // Don't fail the whole request; details are already saved
+      }
+    }
 
+    if (priceDoc && membershipStartDate && membershipEndDate) {
       await Member.findByIdAndUpdate(memberId, {
-        'membership.type': membership,
-        'membership.startDate': startDate,
-        'membership.endDate': endDate,
+        'membership.type': membershipToSave,
+        'membership.startDate': membershipStartDate,
+        'membership.endDate': membershipEndDate,
         'membership.isActive': true,
         status: 'active'
       });
@@ -113,29 +168,16 @@ exports.create = async (req, res) => {
   }
 };
 
-exports.update = async (req, res) => {
-  try {
-    // Only update totalAmount if membership is updated in request
-    if (req.body.membership) {
-      const priceDoc = await MembershipPrice.findOne({
-        type: req.body.membership.trim().toLowerCase()
-      });
-      if (priceDoc) {
-        req.body.totalAmount = priceDoc.price;
-      } else {
-        return res.status(400).json({ error: `Membership type '${req.body.membership}' not found` });
-      }
-    }
-
-    const details = await Details.findByIdAndUpdate(req.params.id, req.body, { new: true });
-    if (!details) return res.status(404).json({ error: 'Details not found' });
-    res.json(details);
-  } catch (err) {
-    res.status(400).json({ error: err.message });
-  }
-};
-
-
+async function findMembershipPriceByType(type, gymId = null) {
+  const typeTrimmed = (type || '').trim();
+  if (!typeTrimmed) return null;
+  const typeRegex = new RegExp(`^\\s*${typeTrimmed.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*$`, 'i');
+  let doc = gymId
+    ? await MembershipPrice.findOne({ type: { $regex: typeRegex }, gymId })
+    : null;
+  if (!doc) doc = await MembershipPrice.findOne({ type: { $regex: typeRegex } });
+  return doc;
+}
 
 // Get all personal details
 exports.getAll = async (req, res) => {
@@ -235,20 +277,22 @@ exports.update = async (req, res) => {
     }
     
     // Calculate membership dates if membership is being updated
-    if (membership) {
-      const priceDoc = await MembershipPrice.findOne({ type: membership.toLowerCase() });
+    if (membership != null && String(membership).trim() !== '') {
+      const membershipTrimmed = String(membership).trim();
+      req.body.membership = membershipTrimmed;
+      const priceDoc = await findMembershipPriceByType(membershipTrimmed);
       if (priceDoc) {
         req.body.totalAmount = priceDoc.price;
-        
+
         // Calculate new membership dates
         const membershipStartDate = new Date(); // Today's date
         const membershipEndDate = new Date();
         membershipEndDate.setDate(membershipStartDate.getDate() + priceDoc.duration); // Add duration in days
-        
+
         req.body.membership_start_date = membershipStartDate;
         req.body.membership_end_date = membershipEndDate;
       } else {
-        return res.status(400).json({ error: `Membership type '${membership}' not found` });
+        return res.status(400).json({ error: `Membership type '${membershipTrimmed}' not found` });
       }
     }
     const details = await Details.findByIdAndUpdate(req.params.id, req.body, { new: true });
@@ -299,23 +343,27 @@ exports.updateByMemberId = async (req, res) => {
     }
     
     // Calculate membership dates if membership is being updated
-    if (membership) {
-      const priceDoc = await MembershipPrice.findOne({ type: membership.toLowerCase() });
+    if (membership != null && String(membership).trim() !== '') {
+      const membershipTrimmed = String(membership).trim();
+      req.body.membership = membershipTrimmed;
+      const memberForGym = await Member.findById(memberId).select('gymId').lean();
+      const gymId = memberForGym?.gymId || null;
+      const priceDoc = await findMembershipPriceByType(membershipTrimmed, gymId);
       if (priceDoc) {
         req.body.totalAmount = priceDoc.price;
-        
+
         // Calculate new membership dates
         const membershipStartDate = new Date(); // Today's date
         const membershipEndDate = new Date();
         membershipEndDate.setDate(membershipStartDate.getDate() + priceDoc.duration); // Add duration in days
-        
+
         req.body.membership_start_date = membershipStartDate;
         req.body.membership_end_date = membershipEndDate;
       } else {
-        return res.status(400).json({ error: `Membership type '${membership}' not found` });
+        return res.status(400).json({ error: `Membership type '${membershipTrimmed}' not found` });
       }
     }
-    
+
     const details = await Details.findOneAndUpdate({ memberId }, req.body, { new: true });
     if (!details) return res.status(404).json({ error: 'Personal details not found for this member' });
     res.json(details);

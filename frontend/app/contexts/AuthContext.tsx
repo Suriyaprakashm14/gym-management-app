@@ -10,6 +10,9 @@ interface User {
   role: string;
   branchId: string;
   gymId?: string;
+  gymName?: string;
+  gymLogo?: string | null;
+  branchName?: string;
 }
 
 interface AuthContextType {

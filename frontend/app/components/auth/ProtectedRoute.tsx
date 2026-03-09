@@ -24,7 +24,7 @@ const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children, allowedRoles 
     if (!loading && isAuthenticated && allowedRoles?.length) {
       const hasRole = !!user?.role && allowedRoles.includes(user.role);
       if (!hasRole) {
-        router.push('/dashboard');
+        router.replace('/not-found');
       }
     }
   }, [isAuthenticated, loading, router, allowedRoles, user?.role]);

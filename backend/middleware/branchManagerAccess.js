@@ -1,10 +1,7 @@
 module.exports = function branchManagerAccess(req, res, next) {
   const user = req.user; // from authMiddleware
-  if (!user || !['admin', 'manager'].includes(user.role)) {
-    return res.status(403).json({ error: 'Access denied. Admins or Managers only' });
-  }
-  if (user.role === 'admin') {
-    return next(); // unrestricted access
+  if (!user || user.role !== 'manager') {
+    return res.status(403).json({ error: 'Access denied. Managers only' });
   }
 
   // Manager access: check branchId

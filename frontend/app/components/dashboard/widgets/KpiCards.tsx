@@ -10,7 +10,7 @@ interface KpiCardsProps {
 }
 
 const totalSum = (kpis: KpiSummary) => {
-  const sum = kpis.revenueThisMonth + kpis.pendingAmount + kpis.overdueAmount;
+  const sum = kpis.revenueThisMonth + kpis.pendingAmount + kpis.expensesAmount;
   return sum > 0 ? sum : 1;
 };
 
@@ -76,7 +76,7 @@ function CircularPaymentCard({
             color: '#fff',
           }}
         >
-          ${value.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+          ₹{value.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
         </div>
       </div>
       <div style={{ fontSize: '0.875rem', color: 'rgba(255,255,255,0.9)', fontWeight: 500 }}>{label}</div>
@@ -88,25 +88,17 @@ export default function KpiCards({ kpis, showBranchStats }: KpiCardsProps) {
   const sum = totalSum(kpis);
   const revenuePercent = (kpis.revenueThisMonth / sum) * 100;
   const pendingPercent = (kpis.pendingAmount / sum) * 100;
-  const overduePercent = (kpis.overdueAmount / sum) * 100;
+  const expensesPercent = (kpis.expensesAmount / sum) * 100;
 
   return (
     <div style={{ marginBottom: 8 }}>
       <div style={{ fontSize: '0.875rem', color: 'rgba(255,255,255,0.9)', marginBottom: 12 }}>
-        Payments this month
+        Financial Overview
       </div>
       <Row gutter={[16, 16]}>
         <Col xs={24} sm={8}>
           <CircularPaymentCard
-            label="Revenue This Month"
-            value={kpis.pendingAmount}
-            color="#3B82F6"
-            percent={pendingPercent}
-          />
-        </Col>
-        <Col xs={24} sm={8}>
-          <CircularPaymentCard
-            label="Pending Amount"
+            label="Revenue"
             value={kpis.revenueThisMonth}
             color="#22C55E"
             percent={revenuePercent}
@@ -114,10 +106,18 @@ export default function KpiCards({ kpis, showBranchStats }: KpiCardsProps) {
         </Col>
         <Col xs={24} sm={8}>
           <CircularPaymentCard
-            label="Overdue Amount"
-            value={kpis.overdueAmount}
+            label="Pending Amount"
+            value={kpis.pendingAmount}
             color="#F59E0B"
-            percent={overduePercent}
+            percent={pendingPercent}
+          />
+        </Col>
+        <Col xs={24} sm={8}>
+          <CircularPaymentCard
+            label="Expenses"
+            value={kpis.expensesAmount}
+            color="#EF4444"
+            percent={expensesPercent}
           />
         </Col>
       </Row>

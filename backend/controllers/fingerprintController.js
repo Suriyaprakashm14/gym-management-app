@@ -79,17 +79,8 @@ exports.enrollFingerprint = async (req, res) => {
       });
     }
 
-    const device = createDeviceConnection();
-    await device.createSocket();
-
-    // Capture fingerprint template
-    console.log('Please place finger on scanner...');
-    
-    // Note: In a real implementation, you would need to handle the fingerprint capture
-    // This is a simplified version - you'll need to implement the actual capture logic
-    // based on your ZKFinger device's specific API
-    
-    // For now, we'll simulate the template capture
+    // Dev-friendly mock: skip real device connection and simulate capture
+    console.log('Simulating fingerprint capture for member:', memberId);
     const templateData = Buffer.from('simulated_template_data_' + Date.now());
     const templateSize = templateData.length;
     const quality = 85; // Simulated quality score
@@ -117,8 +108,6 @@ exports.enrollFingerprint = async (req, res) => {
     member.fingerprintEnrolled = new Date();
     member.authMethods.fingerprint = true;
     await member.save();
-
-    await device.disconnect();
 
     res.json({
       success: true,
@@ -166,34 +155,24 @@ exports.verifyFingerprint = async (req, res) => {
       });
     }
 
-    const device = createDeviceConnection();
-    await device.createSocket();
-
-    // Get member's fingerprint template
+    // Get member's fingerprint template (no real device in mock mode)
     const fingerprintTemplate = await FingerprintTemplate.findOne({ 
       memberId, 
       status: 'active' 
     });
 
     if (!fingerprintTemplate) {
-      await device.disconnect();
       return res.status(404).json({ 
         error: 'Fingerprint template not found',
         details: 'Member fingerprint template is missing or inactive'
       });
     }
 
-    // Verify fingerprint
-    console.log('Please place finger on scanner for verification...');
-    
-    // Note: In a real implementation, you would capture the fingerprint
-    // and compare it with the stored template
-    // This is a simplified version
-    
-    // Simulate verification (replace with actual verification logic)
+    // Dev-friendly mock verification
+    console.log('Simulating fingerprint verification for member:', memberId);
     const verificationResult = {
-      success: true, // This would be determined by actual fingerprint comparison
-      confidence: 95, // Confidence score from verification
+      success: true,
+      confidence: 95,
       match: true
     };
 
@@ -205,8 +184,6 @@ exports.verifyFingerprint = async (req, res) => {
         status: 'Present',
         authMethod: 'fingerprint'
       });
-
-      await device.disconnect();
 
       res.json({
         success: true,
@@ -220,7 +197,6 @@ exports.verifyFingerprint = async (req, res) => {
         }
       });
     } else {
-      await device.disconnect();
       res.status(401).json({
         success: false,
         error: 'Fingerprint verification failed',

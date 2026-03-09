@@ -7,9 +7,9 @@ import { useRouter, usePathname } from 'next/navigation';
 import {
   DashboardOutlined,
   UserOutlined,
-  DollarOutlined,
   LogoutOutlined,
   BankOutlined,
+  TeamOutlined,
 } from '@ant-design/icons';
 import { useAuth } from '../../contexts/AuthContext';
 import { api } from '../../utils/api';
@@ -29,32 +29,34 @@ const Sidebar: React.FC<SidebarProps> = ({ collapsed, onCollapse }) => {
   const [logoutLoading, setLogoutLoading] = useState(false);
   
   // Use actual user data or fallback to mock for demo
-  const currentUser = user || {
+  const currentUser = user ?? {
+    id: 'demo-user',
     firstName: 'Demo',
     lastName: 'User',
-    role: 'admin',
-    gymId: 'demo-gym-id'
+    role: 'gym_owner',
+    branchId: 'demo-branch-id',
+    gymId: 'demo-gym-id',
+    gymName: 'GymPro',
+    gymLogo: null,
   };
 
   // Normalize role variants from different auth payloads.
   const normalizedRole = String(currentUser.role || '').toLowerCase().replace(/\s+/g, '_');
-  const isGymOwner =
-    normalizedRole === 'gym_owner' ||
-    normalizedRole === 'owner' ||
-    normalizedRole === 'admin';
+  const isGymOwner = normalizedRole === 'gym_owner';
+  const isManager = normalizedRole === 'manager';
+  const isStaff = normalizedRole === 'staff';
 
-  const baseMenuItems = [
-    {
-      key: '/dashboard',
-      icon: <DashboardOutlined />,
-      label: <Link href="/dashboard" prefetch>Dashboard</Link>,
-    },
-    {
-      key: '/members',
-      icon: <UserOutlined />,
-      label: <Link href="/members" prefetch>Members</Link>,
-    },
-  ];
+  const baseDashboardItem = {
+    key: '/dashboard',
+    icon: <DashboardOutlined />,
+    label: <Link href="/dashboard" prefetch>Dashboard</Link>,
+  };
+
+  const baseMembersItem = {
+    key: '/members',
+    icon: <UserOutlined />,
+    label: <Link href="/members" prefetch>Members</Link>,
+  };
 
   const branchesMenuItem = {
     key: '/branches',
@@ -64,7 +66,7 @@ const Sidebar: React.FC<SidebarProps> = ({ collapsed, onCollapse }) => {
 
   const billingMenuItem = {
     key: '/revenue',
-    icon: <DollarOutlined />,
+    icon: <span style={{ fontWeight: 600, fontSize: '1em' }}>₹</span>,
     label: <Link href="/revenue" prefetch>Revenue</Link>,
   };
 
@@ -74,19 +76,64 @@ const Sidebar: React.FC<SidebarProps> = ({ collapsed, onCollapse }) => {
     label: <Link href="/billing" prefetch>Billing</Link>,
   };
 
+  const expensesMenuItem = {
+    key: '/expenses',
+    icon: <span style={{ fontWeight: 600, fontSize: '1em' }}>₹</span>,
+    label: <Link href="/expenses" prefetch>Expenses</Link>,
+  };
+
+  const staffsMenuItem = {
+    key: '/staffs',
+    icon: <TeamOutlined />,
+    label: <Link href="/staffs" prefetch>Staffs</Link>,
+  };
+
   const logoutMenuItem = {
     key: 'logout',
     icon: <LogoutOutlined />,
     label: 'Logout',
   };
 
-  const menuItems = [
-    ...baseMenuItems,
-    ...(isGymOwner ? [branchesMenuItem] : []),
-    billingMenuItem,
-    pendingBillingMenuItem,
-    logoutMenuItem,
-  ];
+  let menuItems;
+  if (isGymOwner) {
+    // Owner: Dashboard, Members, Branches, Revenue, Billing, Expenses, Staffs
+    menuItems = [
+      baseDashboardItem,
+      baseMembersItem,
+      branchesMenuItem,
+      billingMenuItem,
+      pendingBillingMenuItem,
+      expensesMenuItem,
+      staffsMenuItem,
+      logoutMenuItem,
+    ];
+  } else if (isManager) {
+    // Manager: Dashboard, Members, Revenue, Billing, Expenses, Staffs
+    menuItems = [
+      baseDashboardItem,
+      baseMembersItem,
+      billingMenuItem,
+      pendingBillingMenuItem,
+      expensesMenuItem,
+      staffsMenuItem,
+      logoutMenuItem,
+    ];
+  } else if (isStaff) {
+    // Staff: Dashboard, Members, Billing
+    menuItems = [
+      baseDashboardItem,
+      baseMembersItem,
+      pendingBillingMenuItem,
+      logoutMenuItem,
+    ];
+  } else {
+    // Fallback for unexpected roles: basic navigation
+    menuItems = [
+      baseDashboardItem,
+      baseMembersItem,
+      logoutMenuItem,
+    ];
+  }
 
   const handleClick = (e: { key: string }) => {
     if (e.key === 'logout') {
@@ -133,16 +180,32 @@ const Sidebar: React.FC<SidebarProps> = ({ collapsed, onCollapse }) => {
       }}
     >
       <div style={{ 
-        height: 50, 
+        minHeight: 50, 
         margin: 16, 
         color: 'white', 
         fontWeight: 'bold', 
-        textAlign: 'center',
         display: 'flex',
         alignItems: 'center',
-        justifyContent: 'center'
+        justifyContent: collapsed ? 'center' : 'flex-start',
+        gap: 10,
+        padding: collapsed ? 0 : '0 4px'
       }}>
-        {!collapsed ? 'Small Circle' : 'SC'}
+        {currentUser.gymLogo ? (
+          <img
+            src={currentUser.gymLogo}
+            alt=""
+            style={{ width: collapsed ? 32 : 36, height: collapsed ? 32 : 36, borderRadius: 8, objectFit: 'contain', flexShrink: 0 }}
+          />
+        ) : (
+          <div style={{ width: collapsed ? 32 : 36, height: collapsed ? 32 : 36, borderRadius: 8, background: 'rgba(255,255,255,0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, fontSize: collapsed ? 14 : 18 }}>
+            {collapsed ? 'G' : 'Gym'}
+          </div>
+        )}
+        {!collapsed && (
+          <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            {currentUser.gymName || 'GymPro'}
+          </span>
+        )}
       </div>
       
       <div style={{ 
@@ -153,7 +216,7 @@ const Sidebar: React.FC<SidebarProps> = ({ collapsed, onCollapse }) => {
           theme="dark"
           mode="inline"
           items={menuItems}
-          selectedKeys={[pathname?.startsWith('/members') ? '/members' : pathname || '/dashboard']}
+          selectedKeys={[pathname?.startsWith('/members') ? '/members' : (pathname && pathname !== '/') ? pathname : '/dashboard']}
           onClick={handleClick}
           style={{ border: 'none' }}
         />

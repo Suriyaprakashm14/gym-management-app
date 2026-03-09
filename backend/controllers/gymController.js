@@ -75,12 +75,11 @@ exports.getAllGyms = async (req, res) => {
     let query = {};
     let user = req.currentUser;
 
-    // If not admin, filter by user's gym
-    if (user.role !== 'admin') {
+    // Filter by user's gym (owner / gym_owner only)
+    if (user.gymId) {
       if (user.role === 'gym_owner') {
         query._id = user.gymId;
       } else {
-        // Manager and member can't see gym list
         return res.status(403).json({
           error: 'Access denied',
           message: 'You do not have permission to view gym list'
@@ -149,7 +148,7 @@ exports.getGymById = async (req, res) => {
     }
 
     // Check access permissions
-    if (user.role !== 'admin' && user.gymId !== gymId) {
+    if (user.gymId && user.gymId.toString() !== gymId.toString()) {
       return res.status(403).json({
         error: 'Access denied',
         message: 'You do not have permission to view this gym'
@@ -203,7 +202,7 @@ exports.updateGym = async (req, res) => {
 
     // Check permissions
     const user = req.currentUser;
-    if (user.role !== 'admin' && user.gymId !== gymId) {
+    if (user.gymId && user.gymId.toString() !== gymId.toString()) {
       return res.status(403).json({
         error: 'Access denied',
         message: 'You do not have permission to update this gym'
@@ -287,7 +286,7 @@ exports.freezeGym = async (req, res) => {
   }
 };
 
-// Unfreeze gym (Admin only)
+// Unfreeze gym (owner only)
 exports.unfreezeGym = async (req, res) => {
   try {
     const { gymId } = req.params;
@@ -383,7 +382,7 @@ exports.getGymStatistics = async (req, res) => {
     const user = req.currentUser;
 
     // Check access permissions
-    if (user.role !== 'admin' && user.gymId !== gymId) {
+    if (user.gymId && user.gymId.toString() !== gymId.toString()) {
       return res.status(403).json({
         error: 'Access denied',
         message: 'You do not have permission to view this gym statistics'

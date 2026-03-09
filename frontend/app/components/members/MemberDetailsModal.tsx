@@ -25,7 +25,6 @@ import {
   HomeOutlined,
   HeartOutlined,
   FileTextOutlined,
-  DollarOutlined,
   ContactsOutlined,
   ManOutlined,
   WomanOutlined,
@@ -34,6 +33,12 @@ import { api } from '../../utils/api';
 import { useAppSelector } from '../../redux/hooks';
 
 const { Title, Text } = Typography;
+
+function getAvatarSrc(image: string | undefined | null): string | undefined {
+  if (!image || typeof image !== 'string') return undefined;
+  if (image.startsWith('data:')) return image;
+  return `data:image/jpeg;base64,${image}`;
+}
 
 interface EmergencyContact {
   name: string;
@@ -54,6 +59,10 @@ interface MemberPersonalDetails {
   emergencyContacts?: EmergencyContact[];
   dateOfBirth?: string;
   membership?: string;
+  membership_start_date?: string | Date;
+  membership_end_date?: string | Date;
+  planQuantity?: number;
+  subscriptionPeriods?: { startDate: string | Date; endDate: string | Date }[];
   totalAmount?: number;
   paidAmount?: number;
 }
@@ -76,6 +85,8 @@ interface MemberDetails {
   billingStatus: string;
   status: string;
   personalDetails?: MemberPersonalDetails;
+  /** Profile image (base64 or data URL) */
+  image?: string;
 }
 
 interface MemberDetailsModalProps {
@@ -96,15 +107,6 @@ const MemberDetailsModal: React.FC<MemberDetailsModalProps> = ({
   // Get member data from Redux store
   const { members } = useAppSelector((state) => state.members);
   const memberDetails = members.find((m: any) => m.id === memberId);
-  
-  // Debug logging
-  useEffect(() => {
-    if (visible && memberId) {
-      console.log('Looking for member with ID:', memberId);
-      console.log('Available members:', members.map(m => ({ id: m.id, name: m.name })));
-      console.log('Found member:', memberDetails);
-    }
-  }, [visible, memberId, members, memberDetails]);
 
   useEffect(() => {
     if (visible && memberId) {
@@ -136,6 +138,7 @@ const MemberDetailsModal: React.FC<MemberDetailsModalProps> = ({
       case 'active':
         return 'success';
       case 'inactive':
+      case 'long term inactive':
         return 'default';
       default:
         return 'processing';
@@ -169,6 +172,17 @@ const MemberDetailsModal: React.FC<MemberDetailsModalProps> = ({
       onCancel={onClose}
       width={1000}
       footer={null}
+      style={{ top: 24 }}
+      styles={{
+        body: {
+          maxHeight: 'calc(100vh - 120px)',
+          overflowY: 'auto',
+          overflowX: 'hidden',
+        },
+        content: {
+          overflow: 'hidden',
+        },
+      }}
     >
       {!memberDetails ? (
         <Alert
@@ -195,13 +209,14 @@ const MemberDetailsModal: React.FC<MemberDetailsModalProps> = ({
           <Card style={{ marginBottom: 16 }}>
             <Row gutter={16} align="middle">
               <Col>
-                <Avatar 
-                  size={80} 
-                  style={{ backgroundColor: '#1890ff' }}
-                  src={memberDetails.image ? `data:image/jpeg;base64,${memberDetails.image}` : undefined}
+                <Avatar
+                  size={80}
+                  src={getAvatarSrc(memberDetails.image)}
+                  style={{ backgroundColor: memberDetails.image ? 'transparent' : '#1890ff' }}
+                  icon={!memberDetails.image ? <UserOutlined /> : undefined}
                 >
-                  {!memberDetails.image &&
-                    (memberDetails.name?.split(' ').map(n => n[0]).join('') || 'M')}
+                  {!memberDetails.image && (!memberDetails.image &&
+                    (memberDetails.name?.split(' ').map(n => n[0]).join('') || 'M'))}
                 </Avatar>
               </Col>
               <Col flex={1}>
@@ -253,19 +268,45 @@ const MemberDetailsModal: React.FC<MemberDetailsModalProps> = ({
               <Descriptions.Item label="Membership Type">
                 {personalDetails?.membership || memberDetails.membership || 'N/A'}
               </Descriptions.Item>
-              <Descriptions.Item label={<><DollarOutlined /> Total Amount</>}>
-                ₹{personalDetails?.totalAmount || 0}
+              <Descriptions.Item label="Total Amount (₹)">
+                ₹{personalDetails?.totalAmount ?? 0}
               </Descriptions.Item>
-              <Descriptions.Item label={<><DollarOutlined /> Paid Amount</>}>
-                ₹{personalDetails?.paidAmount || 0}
+              <Descriptions.Item label="Start Date">
+                {personalDetails?.membership_start_date
+                  ? new Date(personalDetails.membership_start_date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
+                  : 'N/A'}
               </Descriptions.Item>
-              <Descriptions.Item label={<><DollarOutlined /> Outstanding Amount</>}>
+              <Descriptions.Item
+                label={
+                  (personalDetails?.planQuantity ?? 1) > 1 && Array.isArray(personalDetails?.subscriptionPeriods) && personalDetails.subscriptionPeriods.length > 0
+                    ? (() => {
+                        const endDate = personalDetails?.membership_end_date || memberDetails.expires;
+                        if (!endDate) return 'End Date';
+                        const endStr = new Date(endDate as string).toISOString().slice(0, 10);
+                        const idx = personalDetails!.subscriptionPeriods!.findIndex(
+                          (p) => new Date(p.endDate).toISOString().slice(0, 10) === endStr
+                        );
+                        const periodNum = idx >= 0 ? idx + 1 : 1;
+                        const total = personalDetails!.planQuantity ?? personalDetails!.subscriptionPeriods!.length;
+                        return `End Date (Period ${periodNum} of ${total})`;
+                      })()
+                    : 'End Date'
+                }
+              >
+                {(personalDetails?.membership_end_date || memberDetails.expires)
+                  ? new Date((personalDetails?.membership_end_date || memberDetails.expires) as string).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
+                  : 'N/A'}
+              </Descriptions.Item>
+              <Descriptions.Item label="Paid Amount (₹)">
+                ₹{personalDetails?.paidAmount ?? 0}
+              </Descriptions.Item>
+              <Descriptions.Item label="Outstanding Amount (₹)">
                 <Text 
                   style={{ 
-                    color: (personalDetails?.totalAmount || 0) - (personalDetails?.paidAmount || 0) > 0 ? '#ff4d4f' : '#52c41a' 
+                    color: ((personalDetails?.totalAmount ?? 0) - (personalDetails?.paidAmount ?? 0)) > 0 ? '#ff4d4f' : '#52c41a' 
                   }}
                 >
-                  ₹{(personalDetails?.totalAmount || 0) - (personalDetails?.paidAmount || 0)}
+                  ₹{((personalDetails?.totalAmount ?? 0) - (personalDetails?.paidAmount ?? 0))}
                 </Text>
               </Descriptions.Item>
             </Descriptions>

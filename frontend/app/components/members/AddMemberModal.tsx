@@ -17,7 +17,7 @@ export default function AddMemberModal({ open, onClose }: AddMemberModalProps) {
       onCancel={onClose}
       footer={null}
       width={720}
-      destroyOnHidden
+      destroyOnHidden={false}
       styles={{
         body: {
           maxHeight: '75vh',
@@ -33,7 +33,7 @@ export default function AddMemberModal({ open, onClose }: AddMemberModalProps) {
       wrapClassName="add-member-modal-wrap"
     >
       <div style={{ paddingRight: 8 }}>
-        <AddMemberForm onSuccess={onClose} onCancel={onClose} />
+        <AddMemberForm visible={open} onSuccess={onClose} onCancel={onClose} />
       </div>
     </Modal>
   );

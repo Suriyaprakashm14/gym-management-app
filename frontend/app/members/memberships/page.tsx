@@ -15,8 +15,10 @@ import { api } from '../../utils/api';
 const { Title, Text } = Typography;
 
 const CANNOT_DELETE_MESSAGE = 'Cannot delete this membership plan because active users are currently assigned.';
+const CANNOT_DELETE_ACTIVE_MESSAGE = 'Cannot delete an active plan. Make it inactive first.';
+const CANNOT_DELETE_INACTIVE_USERS_MESSAGE = 'Cannot delete until all users on this plan have expired.';
 
-type Row = { key: string; name: string; duration: string; priceInr: string; isActive: boolean; description?: string; type?: string };
+type Row = { key: string; name: string; duration: string; priceInr: string; isActive: boolean; activeCount: number; description?: string; type?: string };
 
 export default function MembershipsPage() {
   const { message } = App.useApp();
@@ -43,6 +45,14 @@ export default function MembershipsPage() {
   };
 
   const handleDeleteMembership = (record: Row) => {
+    if (record.isActive) {
+      message.error(CANNOT_DELETE_ACTIVE_MESSAGE);
+      return;
+    }
+    if (record.activeCount > 0) {
+      message.error(CANNOT_DELETE_INACTIVE_USERS_MESSAGE);
+      return;
+    }
     const run = async () => {
       try {
         await api.membershipPrices.delete(record.key);
@@ -52,6 +62,8 @@ export default function MembershipsPage() {
         const msg = String(err?.message || '');
         if (msg.includes('active users') || msg.includes('currently assigned')) {
           message.error(CANNOT_DELETE_MESSAGE);
+        } else if (msg.includes('inactive first')) {
+          message.error(CANNOT_DELETE_ACTIVE_MESSAGE);
         } else {
           message.error(msg || 'Failed to delete membership plan');
         }
@@ -95,41 +107,65 @@ export default function MembershipsPage() {
           {
             title: 'Actions',
             key: 'actions',
-            width: 140,
+            width: 180,
             fixed: 'right',
-            render: (_: unknown, record: Row) => (
-              <Space size={8}>
-                <Tooltip title="Edit">
-                  <Button
-                    type="text"
-                    icon={<EditOutlined style={{ color: '#13c2c2' }} />}
-                    onClick={() => handleEditMembership(record)}
-                  />
-                </Tooltip>
-                <Popconfirm
-                  title="Delete this membership plan?"
-                  description="This can only be done if no active users are assigned to this plan."
-                  onConfirm={() => handleDeleteMembership(record)}
-                  okText="Yes"
-                  cancelText="No"
-                >
-                  <Tooltip title="Delete">
-                    <Button type="text" danger icon={<DeleteOutlined />} />
+            render: (_: unknown, record: Row) => {
+              const canDelete = !record.isActive && record.activeCount === 0;
+              const deleteDisabled = !record.isActive && record.activeCount > 0;
+              return (
+                <Space size={8}>
+                  <Tooltip title={record.isActive ? 'Make inactive' : 'Edit status'}>
+                    <Button
+                      type="text"
+                      icon={<EditOutlined style={{ color: '#13c2c2' }} />}
+                      onClick={() => handleEditMembership(record)}
+                    />
                   </Tooltip>
-                </Popconfirm>
-              </Space>
-            ),
+                  {deleteDisabled ? (
+                    <Tooltip title={CANNOT_DELETE_INACTIVE_USERS_MESSAGE}>
+                      <span>
+                        <Button type="text" danger icon={<DeleteOutlined />} disabled />
+                      </span>
+                    </Tooltip>
+                  ) : (
+                    <Popconfirm
+                      title="Delete this membership plan?"
+                      description={
+                        record.isActive
+                          ? 'Make the plan inactive first, then delete when no users are on it.'
+                          : 'This can only be done when no active users are assigned to this plan.'
+                      }
+                      onConfirm={() => handleDeleteMembership(record)}
+                      okText="Yes"
+                      cancelText="No"
+                    >
+                      <Tooltip title={canDelete ? 'Delete' : CANNOT_DELETE_ACTIVE_MESSAGE}>
+                        <span>
+                          <Button
+                            type="text"
+                            danger
+                            icon={<DeleteOutlined />}
+                            disabled={!canDelete}
+                          />
+                        </span>
+                      </Tooltip>
+                    </Popconfirm>
+                  )}
+                </Space>
+              );
+            },
           } as const,
         ]
       : []),
   ];
 
   const data: Row[] = items.map((p) => ({
-    key: p.id,
+    key: p.id || (p as any)._id,
     name: (p.type || p.name || '').toString(),
     duration: (p.duration || '').toString(),
     priceInr: formatINR(p.price),
     isActive: Boolean(p.isActive ?? true),
+    activeCount: Number(p.activeCount ?? 0),
     description: p.description,
     type: p.type,
   }));
@@ -146,7 +182,9 @@ export default function MembershipsPage() {
           </Button>
         )}
       </div>
-      {error && <Text type="danger" style={{ display: 'block', marginBottom: 12 }}>{error}</Text>}
+      {error && items.length === 0 && (
+        <Text type="danger" style={{ display: 'block', marginBottom: 12 }}>{error}</Text>
+      )}
       <Table
         columns={columns}
         dataSource={data}

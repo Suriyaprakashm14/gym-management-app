@@ -29,7 +29,7 @@ const validateMembership = async (req, res, next) => {
     if (!member.isActive) {
       return res.status(403).json({
         error: 'Member inactive',
-        message: 'Your account is inactive. Please contact the gym administrator.',
+        message: 'Your account is inactive. Please contact your gym owner or manager.',
         data: {
           memberId: member._id,
           memberName: `${member.firstName} ${member.lastName}`,
@@ -89,7 +89,7 @@ const validateMembership = async (req, res, next) => {
     if (isGymFrozen) {
       return res.status(403).json({
         error: 'Gym frozen',
-        message: 'Your gym is currently frozen. Please contact the admin.',
+        message: 'Your gym is currently frozen. Please contact your gym owner or manager.',
         data: {
           memberId: member._id,
           memberName: `${member.firstName} ${member.lastName}`,
@@ -133,7 +133,7 @@ const validateMembershipForFaceRecognition = async (req, res, next) => {
     if (!member.isActive) {
       return res.status(403).json({
         error: 'Member inactive',
-        message: 'Your account is inactive. Please contact the gym administrator.',
+        message: 'Your account is inactive. Please contact your gym owner or manager.',
         data: {
           memberId: member._id,
           memberName: `${member.firstName} ${member.lastName}`,
@@ -193,7 +193,7 @@ const validateMembershipForFaceRecognition = async (req, res, next) => {
     if (isGymFrozen) {
       return res.status(403).json({
         error: 'Gym frozen',
-        message: 'Your gym is currently frozen. Please contact the admin.',
+        message: 'Your gym is currently frozen. Please contact your gym owner or manager.',
         data: {
           memberId: member._id,
           memberName: `${member.firstName} ${member.lastName}`,
@@ -234,7 +234,7 @@ const checkMembershipStatus = async (memberId) => {
       return {
         isValid: false,
         error: 'Member inactive',
-        message: 'Your account is inactive. Please contact the gym administrator.',
+        message: 'Your account is inactive. Please contact your gym owner or manager.',
         data: {
           memberId: member._id,
           memberName: `${member.firstName} ${member.lastName}`,
@@ -294,7 +294,7 @@ const checkMembershipStatus = async (memberId) => {
       return {
         isValid: false,
         error: 'Gym frozen',
-        message: 'Your gym is currently frozen. Please contact the admin.',
+        message: 'Your gym is currently frozen. Please contact your gym owner or manager.',
         data: {
           memberId: member._id,
           memberName: `${member.firstName} ${member.lastName}`,

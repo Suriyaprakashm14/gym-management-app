@@ -22,6 +22,8 @@ exports.markAttendanceWithFace = async (req, res) => {
   }
 
   try {
+    console.log("===== FACE ATTENDANCE REQUEST =====");
+    console.log("Member ID:", memberId);
     console.log("Looking for member with ID:", memberId);
     console.log("ID type:", typeof memberId, "Length:", memberId.length);
     
@@ -55,6 +57,7 @@ exports.markAttendanceWithFace = async (req, res) => {
     const formData = new FormData();
     formData.append("photo", req.file.buffer, { filename: req.file.originalname });
 
+    console.log("Sending image to Luxand API (search v2)...");
     const response = await axios.post(
       "https://api.luxand.cloud/photo/search/v2",
       formData,
@@ -67,7 +70,7 @@ exports.markAttendanceWithFace = async (req, res) => {
     );
 
     const matches = response.data;
-    console.log("Luxand search response:", matches);
+    console.log("Luxand response (search results):", matches);
 
     if (!Array.isArray(matches) || matches.length === 0) {
       return res.status(400).json({ error: "No face detected in the image" });
@@ -77,6 +80,7 @@ exports.markAttendanceWithFace = async (req, res) => {
     const match = matches.find(f => f.uuid === member.personId);
 
     if (match) {
+      console.log("Match found with confidence:", match.confidence || 95);
       await Attendance.create({
         memberId,
         attendanceDate: new Date(), // allow multiple entries per day
@@ -95,6 +99,7 @@ exports.markAttendanceWithFace = async (req, res) => {
           deviceId: "face_recognition_camera"
         }
       });
+      console.log("Attendance record created successfully.");
       return res.json({ 
         success: true, 
         message: "Attendance marked successfully with face recognition",
@@ -170,6 +175,9 @@ exports.enrollMemberFace = async (req, res) => {
     // Create form data for Luxand API
     const formData = new FormData();
     formData.append("photo", req.file.buffer, { filename: req.file.originalname });
+    // Luxand expects a person name for the record
+    const fullName = `${member.firstName || ''} ${member.lastName || ''}`.trim() || `Member ${member._id}`;
+    formData.append("name", fullName);
 
     // Call Luxand API to add person
     const response = await axios.post(
@@ -188,7 +196,7 @@ exports.enrollMemberFace = async (req, res) => {
 
     if (!personData.uuid) {
       return res.status(400).json({ 
-        error: "Failed to create person in face recognition system",
+        error: personData?.message || "Failed to create person in face recognition system",
         details: personData
       });
     }
@@ -435,7 +443,7 @@ exports.markAttendanceWithPhotoOnly = async (req, res) => {
     if (!member) {
       return res.status(404).json({ 
         error: "Person not recognized",
-        message: "The face in the photo is not registered in our system. Please contact an administrator to register your face.",
+        message: "The face in the photo is not registered in our system. Please contact your gym owner or manager to register your face.",
         details: {
           detectedFaces: matches.length,
           bestMatchConfidence: bestMatch.confidence
@@ -517,7 +525,7 @@ exports.markAttendanceWithPhotoOnly = async (req, res) => {
     if (error.response?.status === 401) {
       return res.status(401).json({ 
         error: "Invalid API token",
-        message: "Face recognition service is not properly configured. Please contact administrator."
+        message: "Face recognition service is not properly configured. Please contact your gym owner or manager."
       });
     }
     

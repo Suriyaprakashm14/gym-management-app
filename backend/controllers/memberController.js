@@ -1,6 +1,7 @@
 const Member = require('../models/member');
 const Details = require('../models/membersPersonalDetails');
 const Payment = require('../models/payment');
+const MembershipPrice = require('../models/membershipPrice');
 const axios = require('axios');
 const FormData = require('form-data');
 const multer = require('multer');
@@ -58,14 +59,14 @@ exports.testLuxand = async (req, res) => {
 exports.create = async (req, res) => {
   const { firstName, lastName, role, branchId, email, ...rest } = req.body;
 
-  // Check authorization - only gym_owner and manager roles (no admin access to gym internal activities)
+  // Check authorization - only gym_owner and manager roles
   if (!req.user) {
     return res.status(401).json({ error: "Authentication required" });
   }
 
   const allowedRoles = ['gym_owner', 'manager'];
   if (!allowedRoles.includes(req.user.role)) {
-    return res.status(403).json({ error: "Access denied. Only gym_owner or manager can create members. Admin cannot access gym internal activities." });
+    return res.status(403).json({ error: "Access denied. Only gym_owner or manager can create members." });
   }
 
   // For managers, ensure they can only create members in their branch
@@ -220,15 +221,16 @@ exports.create = async (req, res) => {
 
 exports.getAll = async (req, res) => {
   try {
-    // Check authorization - only gym_owner and manager roles
-    const allowedRoles = ['gym_owner', 'manager'];
+    // Check authorization - only gym_owner, manager, and staff roles
+    const allowedRoles = ['gym_owner', 'manager', 'staff'];
     if (!allowedRoles.includes(req.user.role)) {
-      return res.status(403).json({ error: "Access denied. Only gym_owner or manager can view members. Admin cannot access gym internal activities." });
+      return res.status(403).json({ error: "Access denied. Only gym_owner, manager, or staff can view members." });
     }
 
     let filter = {};
 
-    if (req.user.role === 'manager') {
+    if (req.user.role === 'manager' || req.user.role === 'staff') {
+      // Managers and staff can only see members from their own branch
       filter.branchId = req.user.branchId;
     } else if (req.user.role === 'gym_owner') {
       // Gym owners can view members from all branches of their gym
@@ -246,24 +248,31 @@ exports.getAll = async (req, res) => {
       }
     }
 
-    // Status filter: activeUsers | recentlyExpired | archivedUsers
-    const statusFilter = req.query.status || 'activeUsers';
+    // Status filter: activeUsers | inactiveUsers | longTimeInactiveUsers (status stored in DB)
+    let statusFilter = req.query.status || 'activeUsers';
+    if (statusFilter === 'recentlyExpired') statusFilter = 'inactiveUsers';
+    if (statusFilter === 'archivedUsers') statusFilter = 'longTimeInactiveUsers';
+
     const now = new Date();
-    const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
-    const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+    const ninetyDaysAgo = new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000);
 
     if (statusFilter === 'activeUsers') {
+      filter.status = { $nin: ['inactive', 'long term inactive'] };
       filter.$or = [
         { 'membership.endDate': null },
         { 'membership.endDate': { $gt: now } },
       ];
-      filter.status = { $nin: ['inactive'] };
-    } else if (statusFilter === 'recentlyExpired') {
-      filter['membership.endDate'] = { $gte: sevenDaysAgo, $lte: now };
-    } else if (statusFilter === 'archivedUsers') {
+    } else if (statusFilter === 'inactiveUsers') {
+      // Recently expired (1–90 days) or already status 'inactive'
       filter.$or = [
-        { 'membership.endDate': { $lt: sevenDaysAgo } },
         { status: 'inactive' },
+        { 'membership.endDate': { $gte: ninetyDaysAgo, $lte: now } },
+      ];
+    } else if (statusFilter === 'longTimeInactiveUsers') {
+      // Expired >90 days ago or already status 'long term inactive'
+      filter.$or = [
+        { status: 'long term inactive' },
+        { 'membership.endDate': { $lt: ninetyDaysAgo } },
       ];
     }
 
@@ -295,15 +304,75 @@ exports.getAll = async (req, res) => {
     }
 
     for (const m of members) {
-      const details = detailsByMemberId[m._id];
+      let details = detailsByMemberId[m._id];
       if (details) {
         if (!m.profile) m.profile = {};
         if (details.phoneNumber) m.profile.phone = details.phoneNumber;
         if (!m.membership) m.membership = {};
         if (details.membership) m.membership.type = details.membership;
+        if (Array.isArray(details.subscriptionPeriods) && details.subscriptionPeriods.length > 0) {
+          const currentEnd = details.membership_end_date ? new Date(details.membership_end_date) : null;
+          if (currentEnd && currentEnd < now) {
+            const nextPeriod = details.subscriptionPeriods.find(
+              (p) => p.endDate && new Date(p.endDate) > now
+            );
+            if (nextPeriod) {
+              const nextStart = new Date(nextPeriod.startDate);
+              const nextEnd = new Date(nextPeriod.endDate);
+              await Details.findOneAndUpdate(
+                { memberId: m._id },
+                { membership_start_date: nextStart, membership_end_date: nextEnd }
+              );
+              await Member.findByIdAndUpdate(m._id, {
+                'membership.startDate': nextStart,
+                'membership.endDate': nextEnd,
+                'membership.isActive': true,
+                status: 'active'
+              });
+              if (!m.membership) m.membership = {};
+              m.membership.startDate = nextStart;
+              m.membership.endDate = nextEnd;
+              m.membership.isActive = true;
+              m.status = 'active';
+              details = { ...details, membership_start_date: nextStart, membership_end_date: nextEnd };
+            } else {
+              // End date expired and no next period: set status from end date (inactive vs long term inactive)
+              const effectiveEnd = details.membership_end_date ? new Date(details.membership_end_date) : (m.membership?.endDate ? new Date(m.membership.endDate) : null);
+              const newStatus = effectiveEnd && effectiveEnd < ninetyDaysAgo ? 'long term inactive' : 'inactive';
+              if (String(m.status) !== 'inactive' && String(m.status) !== 'long term inactive') {
+                await Member.findByIdAndUpdate(m._id, {
+                  'membership.isActive': false,
+                  status: newStatus
+                });
+                m.status = newStatus;
+                if (m.membership) m.membership.isActive = false;
+              }
+            }
+          }
+        }
+      }
+      // For every member: if effective end date (from details or member) has expired, set status in DB and on object
+      const effectiveEndRaw = details?.membership_end_date ?? m.membership?.endDate;
+      const effectiveEnd = effectiveEndRaw ? new Date(effectiveEndRaw) : null;
+      if (effectiveEnd && effectiveEnd < now && String(m.status) !== 'inactive' && String(m.status) !== 'long term inactive') {
+        const newStatus = effectiveEnd < ninetyDaysAgo ? 'long term inactive' : 'inactive';
+        await Member.findByIdAndUpdate(m._id, {
+          'membership.isActive': false,
+          status: newStatus
+        });
+        m.status = newStatus;
+        if (m.membership) m.membership.isActive = false;
       }
       const payment = paymentByMemberId[m._id];
-      if (payment) {
+      const totalAmount = details && (details.totalAmount != null) ? Number(details.totalAmount) : 0;
+      const paidAmount = details && (details.paidAmount != null) ? Number(details.paidAmount) : 0;
+      const pendingBalance = Math.max(0, totalAmount - paidAmount);
+
+      if (pendingBalance > 0) {
+        m.billingAmount = String(pendingBalance);
+        m.billingDate = payment && payment.paidAt ? (payment.paidAt instanceof Date ? payment.paidAt.toISOString() : payment.paidAt) : '';
+        m.billingStatus = 'pending';
+      } else if (payment) {
         m.billingAmount = payment.paidAmount != null ? String(payment.paidAmount) : '';
         m.billingDate = payment.paidAt ? (payment.paidAt instanceof Date ? payment.paidAt.toISOString() : payment.paidAt) : '';
         m.billingStatus = 'paid';
@@ -325,10 +394,10 @@ exports.getOne = async (req, res) => {
     // Check authorization - only gym_owner and manager roles
     const allowedRoles = ['gym_owner', 'manager'];
     if (!allowedRoles.includes(req.user.role)) {
-      return res.status(403).json({ error: "Access denied. Only gym_owner or manager can view members. Admin cannot access gym internal activities." });
+      return res.status(403).json({ error: "Access denied. Only gym_owner or manager can view members." });
     }
 
-    const member = await Member.findById(req.params.id);
+    let member = await Member.findById(req.params.id);
     if (!member) return res.status(404).json({ error: 'Member not found' });
 
     // Check access permissions
@@ -338,6 +407,39 @@ exports.getOne = async (req, res) => {
 
     if (req.user.role === 'gym_owner' && member.gymId !== req.user.gymId) {
       return res.status(403).json({ error: 'Access denied: Not authorized for this member' });
+    }
+
+    const now = new Date();
+    const ninetyDaysAgo = new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000);
+    const details = await Details.findOne({ memberId: member._id }).lean();
+    const effectiveEndRaw = details?.membership_end_date ?? member.membership?.endDate;
+    const effectiveEnd = effectiveEndRaw ? new Date(effectiveEndRaw) : null;
+    if (effectiveEnd && effectiveEnd < now) {
+      const nextPeriod = details?.subscriptionPeriods?.length
+        ? details.subscriptionPeriods.find((p) => p.endDate && new Date(p.endDate) > now)
+        : null;
+      if (nextPeriod) {
+        const nextStart = new Date(nextPeriod.startDate);
+        const nextEnd = new Date(nextPeriod.endDate);
+        await Details.findOneAndUpdate(
+          { memberId: member._id },
+          { membership_start_date: nextStart, membership_end_date: nextEnd }
+        );
+        await Member.findByIdAndUpdate(member._id, {
+          'membership.startDate': nextStart,
+          'membership.endDate': nextEnd,
+          'membership.isActive': true,
+          status: 'active'
+        });
+        member = await Member.findById(req.params.id);
+      } else {
+        const newStatus = effectiveEnd < ninetyDaysAgo ? 'long term inactive' : 'inactive';
+        await Member.findByIdAndUpdate(member._id, {
+          'membership.isActive': false,
+          status: newStatus
+        });
+        member = await Member.findById(req.params.id);
+      }
     }
 
     res.json(member);
@@ -351,7 +453,7 @@ exports.update = async (req, res) => {
     // Check authorization - only gym_owner and manager roles
     const allowedRoles = ['gym_owner', 'manager'];
     if (!allowedRoles.includes(req.user.role)) {
-      return res.status(403).json({ error: "Access denied. Only gym_owner or manager can update members. Admin cannot access gym internal activities." });
+      return res.status(403).json({ error: "Access denied. Only gym_owner or manager can update members." });
     }
 
     const member = await Member.findById(req.params.id);
@@ -383,7 +485,7 @@ exports.patch = async (req, res) => {
     // Check authorization - only gym_owner and manager roles
     const allowedRoles = ['gym_owner', 'manager'];
     if (!allowedRoles.includes(req.user.role)) {
-      return res.status(403).json({ error: "Access denied. Only gym_owner or manager can update members. Admin cannot access gym internal activities." });
+      return res.status(403).json({ error: "Access denied. Only gym_owner or manager can update members." });
     }
 
     const member = await Member.findById(req.params.id);
@@ -403,14 +505,17 @@ exports.patch = async (req, res) => {
       return res.status(403).json({ error: 'Cannot change branch of member outside your branch' });
     }
 
-    // Use findByIdAndUpdate with $set to handle nested objects properly
+    // Map top-level fields to profile where the schema expects them
+    const profileKeys = ['phone', 'age', 'gender', 'dateOfBirth', 'address'];
     const updateData = {};
     for (const [key, value] of Object.entries(req.body)) {
       if (key.startsWith('profile.')) {
-        // Handle nested profile fields
         const profileField = key.split('.')[1];
         if (!updateData['profile']) updateData['profile'] = {};
         updateData['profile'][profileField] = value;
+      } else if (profileKeys.includes(key)) {
+        if (!updateData['profile']) updateData['profile'] = {};
+        updateData['profile'][key] = value;
       } else {
         updateData[key] = value;
       }
@@ -423,12 +528,41 @@ exports.patch = async (req, res) => {
   }
 };
 
+exports.updateProfileImage = async (req, res) => {
+  try {
+    const allowedRoles = ['gym_owner', 'manager'];
+    if (!allowedRoles.includes(req.user.role)) {
+      return res.status(403).json({ error: "Access denied." });
+    }
+    const member = await Member.findById(req.params.id);
+    if (!member) return res.status(404).json({ error: 'Member not found' });
+    if (req.user.role === 'manager' && member.branchId.toString() !== req.user.branchId.toString()) {
+      return res.status(403).json({ error: 'Access denied: Not authorized for this member' });
+    }
+    if (req.user.role === 'gym_owner' && member.gymId !== req.user.gymId) {
+      return res.status(403).json({ error: 'Access denied: Not authorized for this member' });
+    }
+    if (!req.file || !req.file.buffer) {
+      return res.status(400).json({ error: 'No image file provided' });
+    }
+    const imageBase64 = req.file.buffer.toString('base64');
+    const updated = await Member.findByIdAndUpdate(
+      req.params.id,
+      { image: imageBase64 },
+      { new: true }
+    ).lean();
+    res.json(updated);
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+};
+
 exports.remove = async (req, res) => {
   try {
     // Check authorization - only gym_owner can delete members (managers cannot delete)
     const allowedRoles = ['gym_owner'];
     if (!allowedRoles.includes(req.user.role)) {
-      return res.status(403).json({ error: "Access denied. Only gym_owner can delete members. Managers and admin cannot delete members." });
+      return res.status(403).json({ error: "Access denied. Only gym_owner can delete members. Managers cannot delete members." });
     }
 
     const member = await Member.findById(req.params.id);
@@ -446,13 +580,145 @@ exports.remove = async (req, res) => {
   }
 };
 
+// Renew membership for a member (expired or active): new plan/period, payment, update Details + Member
+exports.renew = async (req, res) => {
+  try {
+    const allowedRoles = ['gym_owner', 'manager'];
+    if (!allowedRoles.includes(req.user.role)) {
+      return res.status(403).json({ error: 'Access denied. Only gym_owner or manager can renew memberships.' });
+    }
+
+    const memberId = req.params.id;
+    const { membership, planQuantity, paidAmount, membershipStartDate: startDateBody } = req.body;
+
+    const membershipTrimmed = membership ? String(membership).trim() : '';
+    if (!membershipTrimmed) {
+      return res.status(400).json({ error: 'Membership type is required' });
+    }
+
+    const member = await Member.findById(memberId);
+    if (!member) return res.status(404).json({ error: 'Member not found' });
+
+    if (req.user.role === 'manager' && member.branchId.toString() !== req.user.branchId.toString()) {
+      return res.status(403).json({ error: 'Access denied: Not authorized for this member' });
+    }
+    if (req.user.role === 'gym_owner' && member.gymId !== req.user.gymId) {
+      return res.status(403).json({ error: 'Access denied: Not authorized for this member' });
+    }
+
+    const typeRegex = new RegExp(`^\\s*${membershipTrimmed.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*$`, 'i');
+    let priceDoc = member.gymId
+      ? await MembershipPrice.findOne({ type: { $regex: typeRegex }, gymId: member.gymId, isActive: { $ne: false } })
+      : null;
+    if (!priceDoc) priceDoc = await MembershipPrice.findOne({ type: { $regex: typeRegex } });
+    if (!priceDoc) {
+      return res.status(400).json({ error: `Membership type '${membershipTrimmed}' not found` });
+    }
+
+    const quantity = Math.max(1, parseInt(planQuantity, 10) || 1);
+    const durationDays = priceDoc.duration || 30;
+    let periodStart;
+    if (startDateBody) {
+      periodStart = new Date(startDateBody);
+      if (!Number.isNaN(periodStart.getTime())) {
+        periodStart.setHours(0, 0, 0, 0);
+      } else {
+        periodStart = new Date();
+        periodStart.setHours(0, 0, 0, 0);
+      }
+    } else {
+      periodStart = new Date();
+      periodStart.setHours(0, 0, 0, 0);
+    }
+    const subscriptionPeriods = [];
+    let membershipStartDate = null;
+    let membershipEndDate = null;
+    for (let i = 0; i < quantity; i++) {
+      const periodEnd = new Date(periodStart);
+      periodEnd.setDate(periodEnd.getDate() + durationDays);
+      subscriptionPeriods.push({ startDate: new Date(periodStart), endDate: new Date(periodEnd) });
+      if (i === 0) {
+        membershipStartDate = new Date(periodStart);
+        membershipEndDate = new Date(periodEnd);
+      }
+      periodStart = new Date(periodEnd);
+    }
+
+    const newTotal = priceDoc.price * quantity;
+    const paid = Math.max(0, Number(paidAmount) || 0);
+
+    let details = await Details.findOne({ memberId });
+    if (!details) {
+      details = new Details({
+        memberId,
+        membership: membershipTrimmed,
+        branchId: member.branchId,
+        totalAmount: newTotal,
+        paidAmount: paid,
+        membership_start_date: membershipStartDate,
+        membership_end_date: membershipEndDate,
+        planQuantity: quantity,
+        subscriptionPeriods,
+      });
+      await details.save();
+    } else {
+      details.membership = membershipTrimmed;
+      details.membership_start_date = membershipStartDate;
+      details.membership_end_date = membershipEndDate;
+      details.subscriptionPeriods = subscriptionPeriods;
+      details.planQuantity = quantity;
+      details.totalAmount = (details.totalAmount || 0) + newTotal;
+      details.paidAmount = (details.paidAmount || 0) + paid;
+      await details.save();
+    }
+
+    if (paid > 0 && member.branchId) {
+      try {
+        const payment = new Payment({
+          memberId: String(memberId),
+          branchId: String(member.branchId),
+          name: `${member.firstName || ''} ${member.lastName || ''}`.trim() || 'Member',
+          detailsId: String(details._id),
+          membership: membershipTrimmed,
+          totalAmount: newTotal,
+          paidAmount: paid,
+        });
+        await payment.save();
+      } catch (paymentErr) {
+        console.error('Failed to create renewal payment record:', paymentErr);
+      }
+    }
+
+    await Member.findByIdAndUpdate(memberId, {
+      'membership.type': membershipTrimmed,
+      'membership.startDate': membershipStartDate,
+      'membership.endDate': membershipEndDate,
+      'membership.isActive': true,
+      status: 'active',
+    });
+
+    res.status(200).json({
+      success: true,
+      message: 'Membership renewed successfully',
+      data: {
+        membership: membershipTrimmed,
+        membershipEndDate,
+        paidAmount: paid,
+      },
+    });
+  } catch (err) {
+    console.error('Renew error:', err);
+    res.status(400).json({ error: err.message || 'Failed to renew membership' });
+  }
+};
+
 // Check and update expired memberships
 exports.checkExpiredMemberships = async (req, res) => {
   try {
-    // Check authorization - only gym_owner and admin can trigger this
-    const allowedRoles = ['gym_owner', 'admin'];
+    // Check authorization - only gym_owner or owner can trigger this
+    const allowedRoles = ['gym_owner'];
     if (!allowedRoles.includes(req.user.role)) {
-      return res.status(403).json({ error: "Access denied. Only gym_owner and admin can check expired memberships." });
+      return res.status(403).json({ error: "Access denied. Only gym_owner can check expired memberships." });
     }
 
     const result = await Member.checkAndUpdateExpiredMemberships();

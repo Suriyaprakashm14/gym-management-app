@@ -1,8 +1,8 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { App, Table, Button, Modal, Form, InputNumber, Spin, Card, Typography, Space, Tag } from 'antd';
-import { PlusOutlined, DollarOutlined, ClockCircleOutlined } from '@ant-design/icons';
+import { Table, Button, Modal, Form, InputNumber, App, Spin, Card, Typography, Space, Tag } from 'antd';
+import { PlusOutlined, ClockCircleOutlined } from '@ant-design/icons';
 import { useAuth } from '../../contexts/AuthContext';
 import { api } from '../../utils/api';
 
@@ -166,7 +166,7 @@ export default function BillingContent() {
         />
       </Card>
       <Modal
-        title={<Space><DollarOutlined /><span>Add Payment</span></Space>}
+        title={<Space><span style={{ fontWeight: 600 }}>₹</span><span>Add Payment</span></Space>}
         open={paymentModalVisible}
         onCancel={() => { setPaymentModalVisible(false); form.resetFields(); }}
         footer={null}

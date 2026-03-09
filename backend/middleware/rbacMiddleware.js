@@ -2,39 +2,6 @@ const User = require('../models/user');
 const Gym = require('../models/gym');
 const Branch = require('../models/branch');
 const bcrypt = require('bcrypt');
-const PRIVILEGED_ACCESS_EMAIL = 'signalflow16@gmail.com';
-
-const hasPrivilegedAccess = (req, user) => {
-  const tokenEmail = req.user?.email;
-  const userEmail = user?.email;
-  return [tokenEmail, userEmail].some(
-    (email) => typeof email === 'string' && email.trim().toLowerCase() === PRIVILEGED_ACCESS_EMAIL
-  );
-};
-
-const getPrivilegedUserFromToken = (req) => {
-  if (!hasPrivilegedAccess(req)) {
-    return null;
-  }
-
-  return {
-    _id: req.user?.id || 'local-super-admin',
-    firstName: req.user?.firstName || 'Local',
-    lastName: req.user?.lastName || 'Admin',
-    email: PRIVILEGED_ACCESS_EMAIL,
-    role: 'admin',
-    gymId: req.user?.gymId || null,
-    branchId: req.user?.branchId || null,
-    status: 'active',
-    isActive: true,
-    isLegacyUser: false,
-    permissions: [{ resource: '*', actions: ['*'] }],
-    canAccessGym: () => true,
-    canAccessBranch: () => true,
-    hasPermission: () => true,
-    isFrozen: async () => false
-  };
-};
 
 /**
  * RBAC Middleware for Role-Based Access Control
@@ -52,12 +19,6 @@ const requireRole = (...allowedRoles) => {
         });
       }
 
-      const privilegedUser = getPrivilegedUserFromToken(req);
-      if (privilegedUser) {
-        req.currentUser = privilegedUser;
-        return next();
-      }
-
       // First try to find user in the new RBAC system
       let user = await User.findById(req.user.id);
       let isLegacyUser = false;
@@ -68,8 +29,8 @@ const requireRole = (...allowedRoles) => {
         const member = await Member.findById(req.user.id);
         
         if (member) {
-          // Only allow admin and manager roles from legacy system
-          const allowedLegacyRoles = ['admin', 'manager'];
+          // Only allow manager role from legacy system
+          const allowedLegacyRoles = ['manager'];
           if (!allowedLegacyRoles.includes(member.role)) {
             return res.status(403).json({ 
               error: 'Access denied',
@@ -113,28 +74,25 @@ const requireRole = (...allowedRoles) => {
         });
       }
 
-      if (hasPrivilegedAccess(req, user)) {
-        user.role = 'admin';
-        req.currentUser = user;
-        return next();
-      }
-
       // Check if user is frozen (RBAC users only)
       if (!isLegacyUser) {
         const isFrozen = await user.isFrozen();
         if (isFrozen) {
           return res.status(403).json({ 
             error: 'Account frozen',
-            message: 'Your account is frozen. Please contact the admin.'
+            message: 'Your account is frozen. Please contact your gym owner or manager.'
           });
         }
       }
 
       // Check if user has required role
       if (!allowedRoles.includes(user.role)) {
-        return res.status(403).json({ 
-          error: 'Insufficient permissions',
-          message: `Access denied. Required role: ${allowedRoles.join(' or ')}`
+        return res.status(403).json({
+          success: false,
+          error: {
+            code: 'FORBIDDEN',
+            message: 'Access denied',
+          },
         });
       }
 
@@ -164,28 +122,12 @@ const requireGymAccess = (gymIdParam = 'gymId') => {
         });
       }
 
-      const privilegedUser = getPrivilegedUserFromToken(req);
-      if (privilegedUser) {
-        req.currentUser = privilegedUser;
-        return next();
-      }
-
       const user = req.currentUser || await User.findById(req.user.id);
       if (!user) {
         return res.status(401).json({ 
           error: 'User not found',
           message: 'User account does not exist'
         });
-      }
-
-      if (hasPrivilegedAccess(req, user)) {
-        req.currentUser = user;
-        return next();
-      }
-
-      // Admin can access all gyms
-      if (user.role === 'admin') {
-        return next();
       }
 
       // Check if user can access this gym
@@ -201,7 +143,7 @@ const requireGymAccess = (gymIdParam = 'gymId') => {
       if (gym && gym.isFrozen) {
         return res.status(403).json({ 
           error: 'Gym frozen',
-          message: 'This gym is currently frozen. Please contact the admin.'
+          message: 'This gym is currently frozen. Please contact your gym owner or manager.'
         });
       }
 
@@ -230,12 +172,6 @@ const requireBranchAccess = (branchIdParam = 'branchId') => {
         });
       }
 
-      const privilegedUser = getPrivilegedUserFromToken(req);
-      if (privilegedUser) {
-        req.currentUser = privilegedUser;
-        return next();
-      }
-
       // First try to find user in the new RBAC system
       let user = req.currentUser || await User.findById(req.user.id);
       let isLegacyUser = false;
@@ -246,8 +182,8 @@ const requireBranchAccess = (branchIdParam = 'branchId') => {
         const member = await Member.findById(req.user.id);
         
         if (member) {
-          // Only allow admin and manager roles from legacy system
-          const allowedLegacyRoles = ['admin', 'manager'];
+          // Only allow manager role from legacy system
+          const allowedLegacyRoles = ['manager'];
           if (!allowedLegacyRoles.includes(member.role)) {
             return res.status(403).json({ 
               error: 'Access denied',
@@ -292,14 +228,30 @@ const requireBranchAccess = (branchIdParam = 'branchId') => {
         });
       }
 
-      if (hasPrivilegedAccess(req, user)) {
-        req.currentUser = user;
-        return next();
-      }
-
-      // Admin can access all branches
-      if (user.role === 'admin') {
-        return next();
+      // Gym owner: strict branch ownership — branchId must be in user.branches
+      if (user.role === 'gym_owner') {
+        if (user.branches && user.branches.length > 0) {
+          const allowed = user.branches.some(b => b && b.toString() === branchId.toString());
+          if (!allowed) {
+            return res.status(403).json({
+              error: 'Access denied',
+              message: 'You do not have permission to access this branch'
+            });
+          }
+          req.currentUser = user;
+          const branch = await Branch.findById(branchId);
+          if (!isLegacyUser && branch) {
+            const isFrozen = await branch.isFrozen();
+            if (isFrozen) {
+              return res.status(403).json({
+                error: 'Branch frozen',
+                message: 'This branch is currently frozen. Please contact your gym owner or manager.'
+              });
+            }
+          }
+          req.currentBranch = branch;
+          return next();
+        }
       }
 
       // For legacy users (managers), check if they can access the branch
@@ -340,11 +292,12 @@ const requireBranchAccess = (branchIdParam = 'branchId') => {
         if (isFrozen) {
           return res.status(403).json({ 
             error: 'Branch frozen',
-            message: 'This branch is currently frozen. Please contact the admin.'
+            message: 'This branch is currently frozen. Please contact your gym owner or manager.'
           });
         }
       }
 
+      req.currentUser = user;
       req.currentBranch = branch;
       next();
     } catch (error) {
@@ -361,28 +314,12 @@ const requireBranchAccess = (branchIdParam = 'branchId') => {
 const requirePermission = (resource, action) => {
   return async (req, res, next) => {
     try {
-      const privilegedUser = getPrivilegedUserFromToken(req);
-      if (privilegedUser) {
-        req.currentUser = privilegedUser;
-        return next();
-      }
-
       const user = req.currentUser || await User.findById(req.user.id);
       if (!user) {
         return res.status(401).json({ 
           error: 'User not found',
           message: 'User account does not exist'
         });
-      }
-
-      if (hasPrivilegedAccess(req, user)) {
-        req.currentUser = user;
-        return next();
-      }
-
-      // Admin has all permissions
-      if (user.role === 'admin') {
-        return next();
       }
 
       // Check specific permission
@@ -408,28 +345,12 @@ const requirePermission = (resource, action) => {
 const enforceDataIsolation = (modelName, gymIdField = 'gymId', branchIdField = 'branchId') => {
   return async (req, res, next) => {
     try {
-      const privilegedUser = getPrivilegedUserFromToken(req);
-      if (privilegedUser) {
-        req.currentUser = privilegedUser;
-        return next();
-      }
-
       const user = req.currentUser || await User.findById(req.user.id);
       if (!user) {
         return res.status(401).json({ 
           error: 'User not found',
           message: 'User account does not exist'
         });
-      }
-
-      if (hasPrivilegedAccess(req, user)) {
-        req.currentUser = user;
-        return next();
-      }
-
-      // Admin can see all data
-      if (user.role === 'admin') {
-        return next();
       }
 
       // Add data isolation filters to query
@@ -441,7 +362,7 @@ const enforceDataIsolation = (modelName, gymIdField = 'gymId', branchIdField = '
           ...originalQuery,
           [gymIdField]: user.gymId
         };
-      } else if (['manager'].includes(user.role)) {
+      } else if (['manager', 'staff'].includes(user.role)) {
         // Manager can only see data from their branch
         req.query = {
           ...originalQuery,
@@ -464,12 +385,6 @@ const enforceDataIsolation = (modelName, gymIdField = 'gymId', branchIdField = '
 // Middleware to check if gym is not frozen
 const requireActiveGym = async (req, res, next) => {
   try {
-    const privilegedUser = getPrivilegedUserFromToken(req);
-    if (privilegedUser) {
-      req.currentUser = privilegedUser;
-      return next();
-    }
-
     // Use the user from req.currentUser if available (set by requireRole middleware)
     let user = req.currentUser;
     
@@ -484,8 +399,8 @@ const requireActiveGym = async (req, res, next) => {
         const member = await Member.findById(req.user.id);
         
         if (member) {
-          // Only allow admin and manager roles from legacy system
-          const allowedLegacyRoles = ['admin', 'manager'];
+          // Only allow manager role from legacy system
+          const allowedLegacyRoles = ['manager'];
           if (!allowedLegacyRoles.includes(member.role)) {
             return res.status(403).json({ 
               error: 'Access denied',
@@ -531,16 +446,6 @@ const requireActiveGym = async (req, res, next) => {
         });
     }
 
-    if (hasPrivilegedAccess(req, user)) {
-      req.currentUser = user;
-      return next();
-    }
-
-    // Admin is not affected by gym freezing
-    if (user.role === 'admin') {
-      return next();
-    }
-
     // For legacy users, skip gym freezing check
     if (user.isLegacyUser) {
       return next();
@@ -551,7 +456,7 @@ const requireActiveGym = async (req, res, next) => {
     if (isFrozen) {
       return res.status(403).json({ 
         error: 'Gym frozen',
-        message: 'Your gym is currently frozen. Please contact the admin.'
+        message: 'Your gym is currently frozen. Please contact your gym owner or manager.'
       });
     }
 
@@ -566,10 +471,10 @@ const requireActiveGym = async (req, res, next) => {
 };
 
 // Combined middleware for common use cases
-const adminOnly = requireRole('admin');
-const gymOwnerOrAdmin = requireRole('gym_owner', 'admin');
-const managerOrAbove = requireRole('manager', 'gym_owner', 'admin');
-const allRoles = requireRole('admin', 'gym_owner', 'manager');
+const gymOwnerOrAdmin = requireRole('gym_owner');
+const managerOrAbove = requireRole('manager', 'staff', 'gym_owner');
+const staffManagerOrAbove = requireRole('gym_owner', 'manager');
+const allRoles = requireRole('gym_owner', 'manager', 'staff');
 
 module.exports = {
   requireRole,
@@ -578,8 +483,8 @@ module.exports = {
   requirePermission,
   enforceDataIsolation,
   requireActiveGym,
-  adminOnly,
   gymOwnerOrAdmin,
   managerOrAbove,
+  staffManagerOrAbove,
   allRoles
 };

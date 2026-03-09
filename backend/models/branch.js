@@ -26,19 +26,9 @@ const branchSchema = new mongoose.Schema({
       longitude: Number
     }
   },
-  // Contact information
+  // Contact information (email removed per requirements)
   contactInfo: {
-    phone: String,
-    email: {
-      type: String,
-      validate: {
-        validator: function(v) {
-          if (!v) return true;
-          return /^[\w-.]+@([\w-]+\.)+[\w-]{2,4}$/.test(v);
-        },
-        message: props => `${props.value} is not a valid email!`
-      }
-    }
+    phone: String
   },
   // Branch status
   status: {

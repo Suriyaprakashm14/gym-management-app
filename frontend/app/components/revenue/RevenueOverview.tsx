@@ -5,8 +5,10 @@ import {
   AlertCircle, 
   CheckCircle, 
   Clock,
-  TrendingUp,
-  CreditCard
+  CreditCard,
+  Receipt,
+  TrendingDown,
+  TrendingUp
 } from 'lucide-react'
 import { 
   BarChart, 
@@ -34,6 +36,8 @@ interface AnalyticsData {
     totalPayments: number;
     averagePayment: number;
   };
+  /** Tracked expenses from Expenses feature (separate from revenue/pending) */
+  expensesAmount?: number;
   monthlyBreakdown: Record<string, { totalPaid: number; paymentCount: number }>;
   branches: Array<{
     branchId: string;
@@ -75,7 +79,7 @@ const BillingOverview: React.FC = () => {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [selectedYear, setSelectedYear] = useState(new Date().getFullYear())
-  const [selectedMonth, setSelectedMonth] = useState<number | null>(null)
+  const [selectedMonth, setSelectedMonth] = useState<number | null>(() => new Date().getMonth() + 1)
 
   // Fetch analytics data
   useEffect(() => {
@@ -93,11 +97,30 @@ const BillingOverview: React.FC = () => {
       }
       
       const params = selectedMonth ? { year: selectedYear, month: selectedMonth } : { year: selectedYear }
-      const response = user?.role === 'gym_owner' 
+      const useGymAnalytics = user?.role === 'gym_owner'
+      const response = useGymAnalytics
         ? await api.payments.getGymOwnerAnalytics(params)
         : await api.payments.getBranchManagerAnalytics(params)
-      
-      // Fetch paid members for current month
+
+      // Expenses = tracked expenses from Expenses feature (separate from revenue/pending)
+      let expensesAmount = 0
+      try {
+        const start = selectedMonth
+          ? new Date(selectedYear, selectedMonth - 1, 1)
+          : new Date(selectedYear, 0, 1)
+        const end = selectedMonth
+          ? new Date(selectedYear, selectedMonth, 0)
+          : new Date(selectedYear, 11, 31)
+        const startDate = start.toISOString().slice(0, 10)
+        const endDate = end.toISOString().slice(0, 10)
+        const expensesRes = await api.expenses.getTotal(startDate, endDate)
+        const data = expensesRes as { total?: number; data?: { total?: number } }
+        expensesAmount = Number(data?.total ?? data?.data?.total) || 0
+      } catch {
+        expensesAmount = 0
+      }
+
+      // Fetch paid members for selected period
       let paidMembers = []
       try {
         const currentMonth = new Date().getMonth() + 1
@@ -107,17 +130,13 @@ const BillingOverview: React.FC = () => {
         // Use different API based on user role
         let paidResponse
         if (user?.role === 'gym_owner') {
-          // For gym owners, use gym ID
           const gymId = user.gymId || user.id
-          console.log(`Fetching payments for gym ID: ${gymId}`)
           paidResponse = await api.payments.getByGymId(gymId)
-        } else if (user?.role === 'branch_manager') {
-          // For branch managers, use branch ID
+        } else if (user?.role === 'manager' || user?.role === 'branch_manager') {
           const branchId = user.branchId || user.id
-          console.log(`Fetching payments for branch ID: ${branchId}`)
           paidResponse = await api.payments.getByBranchId(branchId)
         } else {
-          throw new Error('Invalid user role for payments API')
+          paidResponse = null
         }
         
         console.log('Paid members API response:', paidResponse)
@@ -156,17 +175,12 @@ const BillingOverview: React.FC = () => {
       try {
         // Use different API based on user role for pending payments
         if (user?.role === 'gym_owner') {
-          // For gym owners, use the overdue analytics API
-          console.log('Fetching overdue payments for gym owner')
           pendingResponse = await api.request('/payments/analytics/overdue/gym-owner')
-        } else if (user?.role === 'branch_manager') {
-          // For branch managers, use branch ID
+        } else if (user?.role === 'manager' || user?.role === 'branch_manager') {
           const branchId = user.branchId || user.id
-          console.log(`Fetching pending payments for branch ID: ${branchId}`)
           pendingResponse = await api.payments.getPendingByBranchId(branchId)
         } else {
-          // Fallback to general pending API
-          pendingResponse = await api.request(`/payments/pending`)
+          pendingResponse = await api.request('/payments/pending')
         }
         
         console.log('Pending payments response:', pendingResponse)
@@ -247,16 +261,17 @@ const BillingOverview: React.FC = () => {
         }
       }
       
-      // Combine analytics data with member data
-      const combinedData = {
+      // Combine analytics: Revenue=received only, Pending=unpaid only, Expenses=tracked expenses (separate)
+      const combinedData: AnalyticsData = {
         ...response,
+        expensesAmount,
         paidMembers,
         pendingMembers,
         pendingSummary,
         pendingByMembership: pendingResponse?.pendingByMembership || [],
         pendingByBranch: pendingResponse?.pendingByBranch || []
       }
-      
+
       setAnalyticsData(combinedData)
     } catch (err: any) {
       console.error('Error fetching analytics:', err)
@@ -378,6 +393,16 @@ const BillingOverview: React.FC = () => {
   }
 
   const monthlyRevenue = prepareChartData()
+
+  // Revenue trend: compare latest month to previous month (from same data as chart)
+  const revenueTrend = (() => {
+    if (!monthlyRevenue || monthlyRevenue.length < 2) return null
+    const sorted = [...monthlyRevenue].sort((a, b) => (a.month < b.month ? -1 : 1))
+    const prev = sorted[sorted.length - 2]?.amount ?? 0
+    const curr = sorted[sorted.length - 1]?.amount ?? 0
+    if (prev === 0) return curr > 0 ? 100 : 0
+    return ((curr - prev) / prev) * 100
+  })()
 
   if (loading) {
     return (
@@ -574,7 +599,7 @@ const BillingOverview: React.FC = () => {
             </div>
           </div>
 
-          {/* Circular Progress Cards */}
+          {/* Financial Overview: Revenue=received, Pending=unpaid, Expenses=tracked expenses (separate) */}
           <div style={{
             display: 'grid',
             gridTemplateColumns: 'repeat(auto-fit, minmax(clamp(200px, 35vw, 240px), 1fr))',
@@ -582,28 +607,22 @@ const BillingOverview: React.FC = () => {
             marginBottom: 'clamp(2rem, 5vw, 3rem)'
           }}>
             <CircularProgress 
+              value={analyticsData?.summary?.totalPaidAmount || 0} 
+              label="Revenue" 
+              color="#22C55E"
+              icon={TrendingUp}
+            />
+            <CircularProgress 
               value={analyticsData?.summary?.totalPendingAmount || 0} 
-              label="Pending" 
+              label="Pending Amount" 
               color="#F59E0B"
               icon={Clock}
             />
             <CircularProgress 
-              value={analyticsData?.summary?.totalPaidAmount || 0} 
-              label="Completed" 
-              color="#10B981"
-              icon={CheckCircle}
-            />
-            <CircularProgress 
-              value={analyticsData?.summary?.totalPendingAmount || 0} 
-              label="Overdue" 
+              value={analyticsData?.expensesAmount ?? 0} 
+              label="Expenses" 
               color="#EF4444"
-              icon={AlertCircle}
-            />
-            <CircularProgress 
-              value={(analyticsData?.summary?.totalPaidAmount || 0) + (analyticsData?.summary?.totalPendingAmount || 0)} 
-              label="Total Revenue" 
-              color="#8B5CF6"
-              icon={TrendingUp}
+              icon={Receipt}
             />
           </div>
 
@@ -645,10 +664,22 @@ const BillingOverview: React.FC = () => {
                   display: 'flex',
                   alignItems: 'center',
                   gap: '0.5rem',
-                  color: '#10B981'
+                  color: revenueTrend === null
+                    ? '#64748B'
+                    : revenueTrend >= 0
+                      ? '#10B981'
+                      : '#EF4444'
                 }}>
-                  <TrendingUp style={{width: '1.25rem', height: '1.25rem'}} />
-                  <span style={{fontSize: 'clamp(0.875rem, 2vw, 1rem)', fontWeight: '600'}}>+12.5%</span>
+                  {revenueTrend !== null && (
+                    revenueTrend >= 0
+                      ? <TrendingUp style={{ width: '1.25rem', height: '1.25rem' }} />
+                      : <TrendingDown style={{ width: '1.25rem', height: '1.25rem' }} />
+                  )}
+                  <span style={{ fontSize: 'clamp(0.875rem, 2vw, 1rem)', fontWeight: '600' }}>
+                    {revenueTrend === null
+                      ? '—'
+                      : `${revenueTrend >= 0 ? '+' : ''}${revenueTrend.toFixed(1)}%`}
+                  </span>
                 </div>
               </div>
             </div>
@@ -727,14 +758,16 @@ const BillingOverview: React.FC = () => {
                 color: '#1E293B',
                 margin: '0 0 0.25rem 0'
               }}>
-                Current Month Revenue
+                {selectedMonth ? 'Revenue by branch' : 'Revenue by branch (year)'}
               </h3>
               <p style={{
                 color: '#64748B',
                 fontSize: 'clamp(0.875rem, 2vw, 1rem)',
                 margin: 0
               }}>
-                Revenue breakdown for {new Date().toLocaleString('default', { month: 'long', year: 'numeric' })}
+                {selectedMonth
+                  ? `Revenue (received only) for ${new Date(selectedYear, selectedMonth - 1, 1).toLocaleString('default', { month: 'long', year: 'numeric' })}`
+                  : `Revenue (received only) for ${selectedYear}`}
               </p>
             </div>
           </div>
@@ -790,23 +823,6 @@ const BillingOverview: React.FC = () => {
                         color: '#16A34A',
                         fontSize: '0.875rem'
                       }}>
-                        {formatCurrency((branch.totalPaid || 0) + (branch.totalOverdueAmount || 0))}
-                      </p>
-                      <p style={{
-                        margin: 0,
-                        color: '#64748B',
-                        fontSize: '0.75rem'
-                      }}>
-                        Total Revenue
-                      </p>
-                    </div>
-                    <div style={{ textAlign: 'right' }}>
-                      <p style={{
-                        margin: '0 0 0.25rem 0',
-                        fontWeight: '600',
-                        color: '#0369A1',
-                        fontSize: '0.875rem'
-                      }}>
                         {formatCurrency(branch.totalPaid || 0)}
                       </p>
                       <p style={{
@@ -814,7 +830,7 @@ const BillingOverview: React.FC = () => {
                         color: '#64748B',
                         fontSize: '0.75rem'
                       }}>
-                        Paid Amount
+                        Revenue
                       </p>
                     </div>
                     <div style={{ textAlign: 'right' }}>
@@ -824,7 +840,7 @@ const BillingOverview: React.FC = () => {
                         color: '#D97706',
                         fontSize: '0.875rem'
                       }}>
-                        {formatCurrency(branch.totalOverdueAmount || 0)}
+                        {formatCurrency((branch as any).totalPendingAmount ?? (branch as any).totalOverdueAmount ?? 0)}
                       </p>
                       <p style={{
                         margin: 0,

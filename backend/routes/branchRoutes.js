@@ -2,7 +2,6 @@ const express = require('express');
 const router = express.Router();
 const authMiddleware = require('../middleware/authMiddleware');
 const { 
-  adminOnly, 
   gymOwnerOrAdmin, 
   managerOrAbove,
   requireGymAccess,
@@ -22,12 +21,12 @@ router.get('/:gymId/branches', gymOwnerOrAdmin, requireGymAccess('gymId'), branc
 router.get('/branches/:branchId', managerOrAbove, requireBranchAccess('branchId'), branchController.getBranchById);
 router.get('/branches/:branchId/statistics', managerOrAbove, requireBranchAccess('branchId'), branchController.getBranchStatistics);
 
-// Gym owner and admin routes for branch management
+// Gym owner routes for branch management
 router.put('/branches/:branchId', gymOwnerOrAdmin, requireBranchAccess('branchId'), requireActiveGym, branchController.updateBranch);
 router.put('/branches/:branchId/deactivate', gymOwnerOrAdmin, requireBranchAccess('branchId'), requireActiveGym, branchController.deactivateBranch);
 router.put('/branches/:branchId/reactivate', gymOwnerOrAdmin, requireBranchAccess('branchId'), requireActiveGym, branchController.reactivateBranch);
 
-// Admin only routes
-router.delete('/branches/:branchId', adminOnly, requireBranchAccess('branchId'), branchController.deleteBranch);
+// Gym owner can delete branches
+router.delete('/branches/:branchId', gymOwnerOrAdmin, requireBranchAccess('branchId'), branchController.deleteBranch);
 
 module.exports = router;

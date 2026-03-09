@@ -15,7 +15,6 @@ import {
   Space,
   Typography,
   Divider,
-  InputNumber,
 } from 'antd';
 import {
   UserOutlined,
@@ -25,7 +24,6 @@ import {
   UploadOutlined,
   HomeOutlined,
   ContactsOutlined,
-  DollarOutlined,
   ManOutlined,
   WomanOutlined,
 } from '@ant-design/icons';
@@ -60,10 +58,6 @@ interface MemberFormData {
   state: string;
   country: string;
   phoneNumber: string;
-  // Membership Details
-  membership: string;
-  totalAmount: number;
-  paidAmount: number;
   // Emergency Contacts
   emergencyContacts: Array<{
     name: string;
@@ -85,60 +79,64 @@ const EditMemberModal: React.FC<EditMemberModalProps> = ({
   const dispatch = useAppDispatch();
 
   useEffect(() => {
-    if (visible && member) {
-      fetchPersonalDetails();
+    if (visible && member?.id) {
       loadMemberData();
+      fetchPersonalDetails().catch(() => {});
     }
-  }, [visible, member, form]);
+  }, [visible, member?.id, form]);
 
   const fetchPersonalDetails = async () => {
     if (!member?.id) return;
-    
+    let personalData: any = null;
     try {
-      const response = await api.membersPersonalDetails.getByMemberId(member.id);
-      const personalData = response;
-      setPersonalDetails(personalData);
-      
-      // Pre-fill form with personal details
-      form.setFieldsValue({
-        dateOfBirth: personalData.dateOfBirth ? new Date(personalData.dateOfBirth).toISOString().split('T')[0] : '',
-        streetAddress: personalData.streetAddress || '',
-        city: personalData.city || '',
-        zipcode: personalData.zipcode || '',
-        state: personalData.state || '',
-        country: personalData.country || '',
-        phoneNumber: personalData.phoneNumber || '',
-        membership: personalData.membership || '',
-        totalAmount: personalData.totalAmount || 0,
-        paidAmount: personalData.paidAmount || 0,
-        emergencyContacts: personalData.emergencyContacts || [],
-      });
-    } catch (error) {
-      console.log('No personal details found for this member');
-      setPersonalDetails(null);
+      personalData = await api.membersPersonalDetails.getByMemberId(member.id);
+    } catch (error: any) {
+      const isNotFound =
+        error?.message?.includes('Personal details not found') ||
+        error?.message?.includes('404') ||
+        String(error?.message || '').toLowerCase().includes('not found');
+      if (!isNotFound) {
+        message.warning('Could not load personal details. You can still edit basic info.');
+      }
     }
+    setPersonalDetails(personalData);
+    form.setFieldsValue({
+      dateOfBirth: personalData?.dateOfBirth
+        ? new Date(personalData.dateOfBirth).toISOString().split('T')[0]
+        : undefined,
+      streetAddress: personalData?.streetAddress ?? '',
+      city: personalData?.city ?? '',
+      zipcode: personalData?.zipcode ?? '',
+      state: personalData?.state ?? '',
+      country: personalData?.country ?? '',
+      phoneNumber: personalData?.phoneNumber ?? '',
+      emergencyContacts: personalData?.emergencyContacts ?? [],
+    });
   };
 
   const loadMemberData = () => {
-    // Pre-fill form with member data
+    if (!member?.id) return;
     form.setFieldsValue({
-      firstName: member.firstName || '',
-      lastName: member.lastName || '',
-      email: member.email || '',
-      phone: member.phone || '',
-      age: member.age || '',
-      gender: member.gender || 'male',
-      role: member.role || 'member',
-      status: member.status || 'active',
+      firstName: member.firstName ?? '',
+      lastName: member.lastName ?? '',
+      email: member.email ?? '',
+      phone: member.phone ?? member.profile?.phone ?? '',
+      age: member.age ?? member.profile?.age ?? undefined,
+      gender: member.gender ?? member.profile?.gender ?? 'male',
+      role: member.role ?? 'member',
+      status: member.status ?? 'active',
     });
 
-    // Set file list if member has an image
+    // Set file list if member has an image (preview needs data URL for base64)
     if (member.image) {
+      const src = typeof member.image === 'string' && member.image.startsWith('data:')
+        ? member.image
+        : `data:image/jpeg;base64,${member.image}`;
       setFileList([{
         uid: '-1',
         name: 'current-image.jpg',
         status: 'done',
-        url: member.image,
+        url: src,
       }]);
     } else {
       setFileList([]);
@@ -148,7 +146,14 @@ const EditMemberModal: React.FC<EditMemberModalProps> = ({
   const handleSubmit = async (values: MemberFormData) => {
     setLoading(true);
     try {
-      // Update member basic details
+      const newImageFile = fileList.length > 0 && fileList[0].originFileObj ? fileList[0].originFileObj : null;
+      if (newImageFile) {
+        const formData = new FormData();
+        formData.append('image', newImageFile);
+        const updatedMember = await api.members.updateProfileImage(member.id, formData);
+        await dispatch(updateMember({ id: member.id, data: updatedMember as any })).unwrap();
+      }
+
       const memberData: any = {
         firstName: values.firstName,
         lastName: values.lastName,
@@ -160,31 +165,10 @@ const EditMemberModal: React.FC<EditMemberModalProps> = ({
         status: values.status,
       };
 
-      // If there's an uploaded file, add it to the form data
-      if (fileList.length > 0 && fileList[0].originFileObj) {
-        memberData.image = fileList[0].originFileObj;
-      }
+      await dispatch(updateMember({ id: member.id, data: memberData })).unwrap();
 
-      // Create FormData for file upload
-      const formData = new FormData();
-      formData.append('firstName', memberData.firstName);
-      formData.append('lastName', memberData.lastName);
-      formData.append('email', memberData.email);
-      formData.append('phone', memberData.phone);
-      formData.append('age', memberData.age.toString());
-      formData.append('gender', memberData.gender);
-      formData.append('role', memberData.role);
-      formData.append('status', memberData.status);
-
-      if (memberData.image) {
-        formData.append('image', memberData.image);
-      }
-
-      // Update member basic details
-      await dispatch(updateMember({ id: member.id, data: formData })).unwrap();
-
-      // Update personal details
-      const personalDetailsData = {
+      // Update personal details (membership info is not edited here)
+      const personalDetailsData: Record<string, unknown> = {
         gender: values.gender,
         streetAddress: values.streetAddress,
         city: values.city,
@@ -193,14 +177,21 @@ const EditMemberModal: React.FC<EditMemberModalProps> = ({
         country: values.country,
         phoneNumber: values.phoneNumber,
         dateOfBirth: values.dateOfBirth,
-        membership: values.membership,
-        totalAmount: values.totalAmount,
-        paidAmount: values.paidAmount,
         emergencyContacts: values.emergencyContacts,
       };
 
       try {
-        await api.membersPersonalDetails.update(member.id, personalDetailsData);
+        if (personalDetails != null) {
+          await api.membersPersonalDetails.update(member.id, personalDetailsData);
+        } else {
+          await api.membersPersonalDetails.create({
+            memberId: member.id,
+            ...personalDetailsData,
+            membership: (member as any).membership?.type || 'Monthly',
+            totalAmount: 0,
+            paidAmount: '0',
+          });
+        }
       } catch (personalError) {
         console.log('Personal details update failed:', personalError);
         // Don't fail the entire operation if personal details update fails
@@ -244,23 +235,26 @@ const EditMemberModal: React.FC<EditMemberModalProps> = ({
       open={visible}
       onCancel={handleCancel}
       footer={null}
-      width={1000}
-      destroyOnHidden
+      width={720}
+      destroyOnHidden={false}
+      style={{ top: 20 }}
       styles={{
         body: {
-          maxHeight: 'none',
-          overflow: 'visible',
-          padding: 0,
+          maxHeight: 'calc(100vh - 140px)',
+          overflowY: 'auto',
+          overflowX: 'hidden',
+          padding: '12px 0',
         },
         content: {
-          overflow: 'visible',
+          overflow: 'hidden',
         },
       }}
     >
-      <Card>
+      <Card size="small" style={{ margin: 0 }}>
         <Form
           form={form}
           layout="vertical"
+          size="small"
           onFinish={handleSubmit}
           initialValues={{
             gender: 'male',
@@ -373,16 +367,23 @@ const EditMemberModal: React.FC<EditMemberModalProps> = ({
             <Select placeholder="Select status">
               <Option value="active">Active</Option>
               <Option value="inactive">Inactive</Option>
+              <Option value="long term inactive">Long term inactive</Option>
             </Select>
           </Form.Item>
 
-          <Form.Item label="Profile Image">
-            <Upload {...uploadProps}>
-              <Button icon={<UploadOutlined />}>Upload New Image</Button>
+          <Form.Item
+            label="Profile photo"
+            tooltip="Shown in members list and details. Upload a new image to replace."
+          >
+            <Upload {...uploadProps} accept="image/*" listType="picture-card" maxCount={1}>
+              <div>
+                <UploadOutlined />
+                <div style={{ marginTop: 8 }}>Upload</div>
+              </div>
             </Upload>
           </Form.Item>
 
-          <Divider>Personal Details</Divider>
+          <Divider>Personal details</Divider>
 
           <Row gutter={16}>
             <Col span={12}>
@@ -452,53 +453,6 @@ const EditMemberModal: React.FC<EditMemberModalProps> = ({
           >
             <Input placeholder="Enter country" />
           </Form.Item>
-
-          <Divider>Membership Information</Divider>
-
-          <Row gutter={16}>
-            <Col span={8}>
-              <Form.Item
-                label="Membership Type"
-                name="membership"
-                rules={[{ required: true, message: 'Please select membership type' }]}
-              >
-                <Select placeholder="Select membership type">
-                  <Option value="monthly">Monthly</Option>
-                  <Option value="quarterly">Quarterly</Option>
-                  <Option value="yearly">Yearly</Option>
-                  <Option value="basic">Basic</Option>
-                  <Option value="premium">Premium</Option>
-                  <Option value="vip">VIP</Option>
-                </Select>
-              </Form.Item>
-            </Col>
-            <Col span={8}>
-              <Form.Item
-                label="Total Amount"
-                name="totalAmount"
-              >
-                <InputNumber
-                  prefix={<DollarOutlined />}
-                  placeholder="Enter total amount"
-                  style={{ width: '100%' }}
-                  min={0}
-                />
-              </Form.Item>
-            </Col>
-            <Col span={8}>
-              <Form.Item
-                label="Paid Amount"
-                name="paidAmount"
-              >
-                <InputNumber
-                  prefix={<DollarOutlined />}
-                  placeholder="Enter paid amount"
-                  style={{ width: '100%' }}
-                  min={0}
-                />
-              </Form.Item>
-            </Col>
-          </Row>
 
           <Form.Item>
             <Space>

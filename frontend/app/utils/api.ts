@@ -121,8 +121,34 @@ export const api = {
           const rawPayload: ApiEnvelope | any = isJsonResponse ? await response.json() : await response.text();
 
           if (!response.ok) {
+            // Only trigger global logout for 401 on authenticated requests, not on login failure
             if (response.status === 401 && typeof window !== 'undefined') {
-              window.dispatchEvent(new CustomEvent('auth:logout'));
+              const lowerEndpoint = endpoint.toLowerCase();
+              const isLoginRequest = lowerEndpoint.includes('/auth/login');
+              // Biometric endpoints may return 401 for third‑party API issues (e.g. Luxand token),
+              // which should NOT log the user out.
+              const isBiometricEndpoint =
+                lowerEndpoint.includes('/attendance/enroll-face') ||
+                lowerEndpoint.includes('/attendance/photo-only') ||
+                lowerEndpoint.includes('/attendance/dual-auth') ||
+                lowerEndpoint.includes('/fingerprints/');
+              if (!isLoginRequest && !isBiometricEndpoint) {
+                window.dispatchEvent(new CustomEvent('auth:logout'));
+              }
+            }
+            // Gracefully handle RBAC access denials without crashing the UI
+            if (response.status === 403) {
+              // eslint-disable-next-line no-console
+              console.warn('Access denied for this request', {
+                url,
+                status: response.status,
+                message:
+                  (typeof rawPayload?.error === 'string'
+                    ? rawPayload.error
+                    : rawPayload?.error?.message) || rawPayload?.message,
+              });
+              // Return null so callers can treat "no access" as "no data"
+              return null;
             }
             const errorMessage =
               (typeof rawPayload?.error === 'string' ? rawPayload.error : rawPayload?.error?.message) ||
@@ -178,7 +204,10 @@ export const api = {
           lastError = fetchError;
           const isAbortError =
             fetchError instanceof DOMException && fetchError.name === 'AbortError';
-          const isNetworkError = fetchError instanceof TypeError || isAbortError;
+          const isNetworkError =
+            fetchError instanceof TypeError ||
+            isAbortError ||
+            (fetchError instanceof Error && fetchError.message === 'Failed to fetch');
           if (!isNetworkError) {
             throw fetchError;
           }
@@ -187,7 +216,17 @@ export const api = {
         }
       }
 
-      throw lastError || new Error('Unable to connect to API server');
+      const err = lastError as Error | null;
+      const isConnectionError =
+        err instanceof TypeError ||
+        (err instanceof Error && (err.message === 'Failed to fetch' || err.message.includes('fetch'))) ||
+        (err instanceof DOMException && err.name === 'AbortError');
+      if (isConnectionError) {
+        throw new Error(
+          'Unable to reach the server. Check that the backend is running (e.g. run "npm run dev" in the backend folder) and that the API URL is correct.'
+        );
+      }
+      throw err || new Error('Unable to connect to API server');
     } catch (error) {
       console.error('API request failed:', error);
       throw error;
@@ -200,6 +239,12 @@ export const api = {
       api.request('/auth/login', {
         method: 'POST',
         body: JSON.stringify(credentials),
+      }),
+
+    signup: (data: { gymName: string; firstName: string; lastName: string; email: string; password: string; gymIcon?: string }) =>
+      api.request('/auth/signup', {
+        method: 'POST',
+        body: JSON.stringify(data),
       }),
 
     createManager: (managerData: any) =>
@@ -247,10 +292,27 @@ export const api = {
               body: JSON.stringify(memberData),
             });
           },
+
+    updateProfileImage: (id: string, formData: FormData) =>
+      api.request(`/members/${id}/profile-image`, {
+        method: 'PATCH',
+        body: formData,
+        headers: {},
+      }),
     
     delete: (id: string) =>
       api.request(`/members/${id}`, {
         method: 'DELETE',
+      }),
+
+    renew: (memberId: string, data: { membership: string; planQuantity?: number; paidAmount?: number }) =>
+      api.request(`/members/${memberId}/renew`, {
+        method: 'POST',
+        body: JSON.stringify({
+          membership: data.membership,
+          planQuantity: data.planQuantity ?? 1,
+          paidAmount: data.paidAmount ?? 0,
+        }),
       }),
   },
 
@@ -275,14 +337,18 @@ export const api = {
     
     getStats: () => api.request('/payments/stats'),
     
-      // Analytics endpoints
-      getGymOwnerAnalytics: (params?: { year?: number; month?: number }) => {
-        const queryString = params ? `?${new URLSearchParams(params as Record<string, string>)}` : '';
+      // Analytics endpoints (year/month OR startDate/endDate for date range)
+      getGymOwnerAnalytics: (params?: { year?: number; month?: number; startDate?: string; endDate?: string }) => {
+        const queryString = params && Object.keys(params).length
+          ? `?${new URLSearchParams(params as Record<string, string>)}`
+          : '';
         return api.request(`/payments/analytics/gym-owner${queryString}`);
       },
-      
-      getBranchManagerAnalytics: (params?: { year?: number; month?: number }) => {
-        const queryString = params ? `?${new URLSearchParams(params as Record<string, string>)}` : '';
+
+      getBranchManagerAnalytics: (params?: { year?: number; month?: number; startDate?: string; endDate?: string }) => {
+        const queryString = params && Object.keys(params).length
+          ? `?${new URLSearchParams(params as Record<string, string>)}`
+          : '';
         return api.request(`/payments/analytics/branch-manager${queryString}`);
       },
       
@@ -297,6 +363,33 @@ export const api = {
       // Pending payments with filters
       getPendingByGymId: (gymId: string) => api.request(`/payments/pending?gymId=${gymId}`),
       getPendingByBranchId: (branchId: string) => api.request(`/payments/pending?branchId=${branchId}`),
+  },
+
+  // Expenses endpoints
+  expenses: {
+    list: (params?: { startDate?: string; endDate?: string; branchId?: string }) => {
+      const q = params ? `?${new URLSearchParams(params as Record<string, string>)}` : '';
+      return api.request(`/expenses${q}`);
+    },
+    getTotal: (startDate: string, endDate: string) =>
+      api.request(`/expenses/total?startDate=${encodeURIComponent(startDate)}&endDate=${encodeURIComponent(endDate)}`),
+    create: (data: { amount: number; date?: string; category?: string; description?: string; branchId?: string }) =>
+      api.request('/expenses', { method: 'POST', body: JSON.stringify(data) }),
+    update: (id: string, data: { amount?: number; date?: string; category?: string; description?: string }) =>
+      api.request(`/expenses/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+    delete: (id: string) =>
+      api.request(`/expenses/${id}`, { method: 'DELETE' }),
+  },
+
+  // Expense categories (master data, like membership types)
+  expenseCategories: {
+    list: () => api.request('/expense-categories'),
+    create: (data: { name: string }) =>
+      api.request('/expense-categories', { method: 'POST', body: JSON.stringify(data) }),
+    update: (id: string, data: { name?: string; isActive?: boolean }) =>
+      api.request(`/expense-categories/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+    delete: (id: string) =>
+      api.request(`/expense-categories/${id}`, { method: 'DELETE' }),
   },
 
   // Branches endpoints
@@ -368,6 +461,35 @@ export const api = {
     },
   },
 
+  // Biometric enrollment helpers
+  biometrics: {
+    enrollFingerprint: (memberId: string, branchId?: string) => {
+      const payload: any = { memberId };
+      if (branchId) {
+        payload.branchId = branchId;
+      }
+      // Returns the backend response data (already unwrapped by api.request)
+      return api.request('/fingerprints/enroll', {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      });
+    },
+
+    enrollFace: (memberId: string, image: Blob) => {
+      const formData = new FormData();
+      formData.append('memberId', memberId);
+      // Backend multer middleware expects field name "image"
+      formData.append('image', image, 'face-capture.jpg');
+
+      // Returns the backend response data (already unwrapped by api.request)
+      return api.request('/attendance/enroll-face', {
+        method: 'POST',
+        body: formData,
+        headers: {}, // Let browser set Content-Type for FormData
+      });
+    },
+  },
+
   // Members Personal Details endpoints
   membersPersonalDetails: {
     getAll: () => api.request('/members-personal-details'),
@@ -378,14 +500,34 @@ export const api = {
         body: JSON.stringify(personalDetails),
       }),
     
-    getByMemberId: (memberId: string) => 
-      api.request(`/members-personal-details/member/${memberId}`),
+    getByMemberId: async (memberId: string) => {
+      try {
+        return await api.request(`/members-personal-details/member/${memberId}`);
+      } catch (err: any) {
+        // For this helper, treat any error as \"no details yet\" so Edit modal never crashes
+        // and can still create details on save. Log the error for debugging.
+        // eslint-disable-next-line no-console
+        console.warn('membersPersonalDetails.getByMemberId failed, treating as empty:', err);
+        return null;
+      }
+    },
     
     update: (memberId: string, personalDetails: any) =>
       api.request(`/members-personal-details/member/${memberId}`, {
         method: 'PATCH',
         body: JSON.stringify(personalDetails),
       }),
+  },
+
+  // Staff endpoints
+  staffs: {
+    getStaffs: () => api.request('/staffs'),
+    createStaff: (data: { firstName: string; lastName: string; email: string; password: string; branchId: string }) =>
+      api.request('/staffs', { method: 'POST', body: JSON.stringify(data) }),
+    updateStaff: (id: string, data: { firstName?: string; lastName?: string; status?: string; isActive?: boolean; branchId?: string }) =>
+      api.request(`/staffs/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
+    deleteStaff: (id: string) =>
+      api.request(`/staffs/${id}`, { method: 'DELETE' }),
   },
 
   // Membership Prices endpoints

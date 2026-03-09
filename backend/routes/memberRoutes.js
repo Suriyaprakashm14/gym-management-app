@@ -23,7 +23,13 @@ router.put('/:id', authMiddleware, memberController.update);
 // Patch method for partial updates
 router.patch('/:id', authMiddleware, memberController.patch);
 
-// Only gym owner can delete members (branch managers and admin cannot delete)
+// Update profile image only (multipart)
+router.patch('/:id/profile-image', authMiddleware, memberController.uploadMiddleware, memberController.updateProfileImage);
+
+// Renew membership (gym owner and manager)
+router.post('/:id/renew', authMiddleware, memberController.renew);
+
+// Only gym owner can delete members (managers cannot delete)
 router.delete('/:id', authMiddleware, memberController.remove);
 
 // Attendance marking (separate functionality)
