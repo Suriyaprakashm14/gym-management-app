@@ -1,6 +1,7 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
+  transpilePackages: ['@ant-design/cssinjs'],
   eslint: {
     ignoreDuringBuilds: true,
   },
