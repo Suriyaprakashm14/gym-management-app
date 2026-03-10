@@ -102,7 +102,6 @@ const MemberTable: React.FC = () => {
   const [renewForm] = Form.useForm();
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(PAGE_SIZE);
-  const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'inactive'>('all');
   const dispatch = useAppDispatch();
   const { members, total, loading, error: membersError } = useAppSelector((s) => s.members);
   const reduxPlans = useAppSelector((s) => s.membershipPrices.items);
@@ -496,20 +495,6 @@ const MemberTable: React.FC = () => {
           <Text type="secondary">{membersError}</Text>
         </div>
       )}
-      <div style={{ marginBottom: 16, display: 'flex', justifyContent: 'flex-end' }}>
-        <Space size={8}>
-          <Text type="secondary">Status:</Text>
-          <select
-            value={statusFilter}
-            onChange={(e) => setStatusFilter(e.target.value as 'all' | 'active' | 'inactive')}
-            style={{ padding: '4px 8px', borderRadius: 4, border: '1px solid #d9d9d9' }}
-          >
-            <option value="all">All</option>
-            <option value="active">Active</option>
-            <option value="inactive">Inactive</option>
-          </select>
-        </Space>
-      </div>
       <Table
         rowSelection={rowSelection}
         columns={columns}
@@ -588,7 +573,29 @@ const MemberTable: React.FC = () => {
           <Form.Item name="membershipStartDate" label="Start date" tooltip="Membership period starts from this date. Leave empty for today.">
             <DatePicker style={{ width: '100%' }} />
           </Form.Item>
-          <Form.Item name="paidAmount" label="Amount paid (₹)">
+          <Form.Item
+            name="paidAmount"
+            label="Amount paid (₹)"
+            dependencies={['membership', 'planQuantity']}
+            rules={[
+              { type: 'number', min: 0, message: 'Amount must be ≥ 0' },
+              () => ({
+                validator(_: unknown, value: number | string) {
+                  if (value == null || value === '' || !membershipTypes.length) return Promise.resolve();
+                  const planType = renewForm.getFieldValue('membership');
+                  const qty = renewForm.getFieldValue('planQuantity') ?? 1;
+                  if (!planType) return Promise.resolve();
+                  const plan = membershipTypes.find((p: any) => p.type === planType);
+                  if (!plan || typeof plan.price !== 'number') return Promise.resolve();
+                  const maxAmount = plan.price * qty;
+                  if (Number(value) > maxAmount) {
+                    return Promise.reject(new Error(`Cannot pay more than expected (₹${maxAmount.toLocaleString('en-IN')})`));
+                  }
+                  return Promise.resolve();
+                },
+              }),
+            ]}
+          >
             <InputNumber min={0} step={100} style={{ width: '100%' }} />
           </Form.Item>
         </Form>

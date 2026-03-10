@@ -6,6 +6,7 @@ import { UserOutlined, UploadOutlined, HomeOutlined, PhoneOutlined, PlusOutlined
 import { useRouter } from 'next/navigation';
 import { useAuth } from '../../../contexts/AuthContext';
 import { api } from '../../../utils/api';
+import { emailRule, emailPatternRule, mobileRequiredRule, mobilePatternRule, dobValidator } from '../../../utils/validation';
 
 const { Option } = Select;
 
@@ -161,7 +162,7 @@ export default function MemberCreationPage() {
           </Row>
           <Row gutter={16}>
             <Col span={12}>
-              <Form.Item label="Email" name="email" rules={[{ required: true, message: 'Please enter email' }, { type: 'email', message: 'Please enter a valid email' }]}>
+              <Form.Item label="Email" name="email" rules={[emailRule, emailPatternRule()]}>
                 <Input placeholder="Enter email address" />
               </Form.Item>
             </Col>
@@ -189,7 +190,7 @@ export default function MemberCreationPage() {
           <Divider>Personal Details</Divider>
           <Row gutter={16}>
             <Col span={12}>
-              <Form.Item label="Phone Number" name="phoneNumber" rules={[{ required: true, message: 'Please enter phone number' }]}>
+              <Form.Item label="Phone Number" name="phoneNumber" rules={[mobileRequiredRule, mobilePatternRule()]}>
                 <Input prefix={<PhoneOutlined />} placeholder="Enter phone number" />
               </Form.Item>
             </Col>
@@ -203,7 +204,7 @@ export default function MemberCreationPage() {
               </Form.Item>
             </Col>
           </Row>
-          <Form.Item label="Date of Birth" name="dateOfBirth">
+          <Form.Item label="Date of Birth" name="dateOfBirth" rules={[{ validator: dobValidator() }]}>
             <DatePicker style={{ width: '100%' }} placeholder="Select date of birth" />
           </Form.Item>
           <Form.Item label="Street Address" name="streetAddress">
@@ -228,7 +229,28 @@ export default function MemberCreationPage() {
               ))}
             </Select>
           </Form.Item>
-          <Form.Item label="Paid Amount" name="paidAmount" initialValue={0}>
+          <Form.Item
+            label="Paid Amount"
+            name="paidAmount"
+            initialValue={0}
+            dependencies={['membership']}
+            rules={[
+              { type: 'number', min: 0, message: 'Amount must be ≥ 0' },
+              () => ({
+                validator(_: unknown, value: number | string) {
+                  if (value == null || value === '' || !membershipTypes.length) return Promise.resolve();
+                  const planType = form.getFieldValue('membership');
+                  if (!planType) return Promise.resolve();
+                  const plan = membershipTypes.find((m: any) => m.type === planType);
+                  if (!plan || typeof plan.price !== 'number') return Promise.resolve();
+                  if (Number(value) > plan.price) {
+                    return Promise.reject(new Error(`Cannot pay more than expected (₹${plan.price.toLocaleString('en-IN')})`));
+                  }
+                  return Promise.resolve();
+                },
+              }),
+            ]}
+          >
             <InputNumber style={{ width: '100%' }} placeholder="Enter paid amount" min={0} />
           </Form.Item>
           <Form.List name="emergencyContacts">
@@ -247,7 +269,7 @@ export default function MemberCreationPage() {
                         </Form.Item>
                       </Col>
                       <Col span={8}>
-                        <Form.Item {...rest} name={[name, 'phone']} rules={[{ required: true, message: 'Missing phone number' }]}>
+                        <Form.Item {...rest} name={[name, 'phone']} rules={[{ required: true, message: 'Missing phone number' }, mobilePatternRule('Valid 10-digit number (e.g. 9876543210)')]}>
                           <Input placeholder="Phone number" />
                         </Form.Item>
                       </Col>

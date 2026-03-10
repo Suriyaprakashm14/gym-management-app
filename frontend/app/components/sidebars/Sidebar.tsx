@@ -1,8 +1,8 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import Link from 'next/link';
-import { Layout, Menu, Button, Typography, App } from 'antd';
+import { Layout, Menu, Button, Typography, App, Modal, Form, Input } from 'antd';
 import { useRouter, usePathname } from 'next/navigation';
 import {
   DashboardOutlined,
@@ -10,11 +10,21 @@ import {
   LogoutOutlined,
   BankOutlined,
   TeamOutlined,
+  EditOutlined,
 } from '@ant-design/icons';
 import { useAuth } from '../../contexts/AuthContext';
 import { api } from '../../utils/api';
 
 const { Sider } = Layout;
+
+function fileToDataUrl(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result as string);
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
 
 interface SidebarProps {
   collapsed: boolean;
@@ -25,8 +35,14 @@ const Sidebar: React.FC<SidebarProps> = ({ collapsed, onCollapse }) => {
   const { message } = App.useApp();
   const router = useRouter();
   const pathname = usePathname();
-  const { user, logout } = useAuth();
+  const { user, logout, updateUser } = useAuth();
   const [logoutLoading, setLogoutLoading] = useState(false);
+  const [editGymModalVisible, setEditGymModalVisible] = useState(false);
+  const [editGymLoading, setEditGymLoading] = useState(false);
+  const [editGymLogoFile, setEditGymLogoFile] = useState<File | null>(null);
+  const [editGymLogoPreview, setEditGymLogoPreview] = useState<string | null>(null);
+  const logoInputRef = useRef<HTMLInputElement>(null);
+  const [editGymForm] = Form.useForm();
   
   // Use actual user data or fallback to mock for demo
   const currentUser = user ?? {
@@ -164,6 +180,54 @@ const Sidebar: React.FC<SidebarProps> = ({ collapsed, onCollapse }) => {
     }
   };
 
+  const openEditGymModal = () => {
+    if (!isGymOwner || !currentUser.gymId) return;
+    editGymForm.setFieldsValue({ gymName: currentUser.gymName || '' });
+    setEditGymLogoFile(null);
+    setEditGymLogoPreview(null);
+    setEditGymModalVisible(true);
+  };
+
+  const handleEditGymLogoClick = () => logoInputRef.current?.click();
+
+  const handleEditGymLogoChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file && file.type.startsWith('image/')) {
+      setEditGymLogoFile(file);
+      const url = URL.createObjectURL(file);
+      setEditGymLogoPreview(url);
+    }
+    e.target.value = '';
+  };
+
+  const handleEditGymSave = async () => {
+    if (!currentUser.gymId) return;
+    try {
+      const values = await editGymForm.validateFields();
+      setEditGymLoading(true);
+      let logoUrl: string | null = null;
+      if (editGymLogoFile) {
+        logoUrl = await fileToDataUrl(editGymLogoFile);
+      }
+      const payload: { name?: string; logoUrl?: string | null } = { name: values.gymName?.trim() || undefined };
+      if (logoUrl !== null) payload.logoUrl = logoUrl;
+      const res = await api.gyms.update(currentUser.gymId, payload);
+      type GymUpdateResponse = { data?: { name?: string; logoUrl?: string | null } } | { name?: string; logoUrl?: string | null };
+      const raw = res as GymUpdateResponse;
+      const data = (raw && typeof raw === 'object' && 'data' in raw && raw.data != null) ? raw.data : (raw as { name?: string; logoUrl?: string | null });
+      updateUser({
+        gymName: data?.name ?? values.gymName?.trim(),
+        gymLogo: data?.logoUrl !== undefined ? data.logoUrl : (logoUrl ?? currentUser.gymLogo),
+      });
+      message.success('Gym updated');
+      setEditGymModalVisible(false);
+    } catch (err: any) {
+      message.error(err?.message || 'Failed to update gym');
+    } finally {
+      setEditGymLoading(false);
+    }
+  };
+
   return (
     <Sider 
       collapsible 
@@ -179,17 +243,27 @@ const Sidebar: React.FC<SidebarProps> = ({ collapsed, onCollapse }) => {
         zIndex: 1000
       }}
     >
-      <div style={{ 
-        minHeight: 50, 
-        margin: 16, 
-        color: 'white', 
-        fontWeight: 'bold', 
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: collapsed ? 'center' : 'flex-start',
-        gap: 10,
-        padding: collapsed ? 0 : '0 4px'
-      }}>
+      <div
+        role={isGymOwner ? 'button' : undefined}
+        onClick={isGymOwner ? openEditGymModal : undefined}
+        style={{
+          minHeight: 50,
+          margin: 16,
+          color: 'white',
+          fontWeight: 'bold',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: collapsed ? 'center' : 'flex-start',
+          gap: 10,
+          padding: collapsed ? 0 : '0 4px',
+          cursor: isGymOwner ? 'pointer' : 'default',
+          borderRadius: 8,
+          transition: 'background 0.2s',
+        }}
+        onMouseEnter={(e) => isGymOwner && (e.currentTarget.style.background = 'rgba(255,255,255,0.08)')}
+        onMouseLeave={(e) => (e.currentTarget.style.background = '')}
+        title={isGymOwner ? 'Click to edit gym name and logo' : undefined}
+      >
         {currentUser.gymLogo ? (
           <img
             src={currentUser.gymLogo}
@@ -202,11 +276,70 @@ const Sidebar: React.FC<SidebarProps> = ({ collapsed, onCollapse }) => {
           </div>
         )}
         {!collapsed && (
-          <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-            {currentUser.gymName || 'GymPro'}
-          </span>
+          <>
+            <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>
+              {currentUser.gymName || 'GymPro'}
+            </span>
+            {isGymOwner && <EditOutlined style={{ fontSize: 12, opacity: 0.7, flexShrink: 0 }} />}
+          </>
         )}
       </div>
+
+      <Modal
+        title="Edit gym name and logo"
+        open={editGymModalVisible}
+        onCancel={() => setEditGymModalVisible(false)}
+        onOk={handleEditGymSave}
+        confirmLoading={editGymLoading}
+        okText="Save"
+        destroyOnHidden
+      >
+        <input
+          ref={logoInputRef}
+          type="file"
+          accept="image/*"
+          onChange={handleEditGymLogoChange}
+          style={{ display: 'none' }}
+          aria-hidden
+        />
+        <Form form={editGymForm} layout="vertical" style={{ marginTop: 16 }}>
+          <Form.Item label="Gym logo" help="Click the box to change logo">
+            <div
+              role="button"
+              onClick={handleEditGymLogoClick}
+              style={{
+                width: 80,
+                height: 80,
+                borderRadius: 12,
+                border: '2px dashed #d9d9d9',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                overflow: 'hidden',
+                cursor: 'pointer',
+                background: '#fafafa',
+              }}
+            >
+              {(editGymLogoPreview || currentUser.gymLogo) ? (
+                <img
+                  src={editGymLogoPreview || currentUser.gymLogo || ''}
+                  alt="Gym logo"
+                  style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                />
+              ) : (
+                <span style={{ color: '#999', fontSize: 12 }}>Click to upload</span>
+              )}
+            </div>
+          </Form.Item>
+          <Form.Item
+            name="gymName"
+            label="Gym name"
+            rules={[{ required: true, message: 'Enter gym name' }]}
+          >
+            <Input placeholder="Gym name" />
+          </Form.Item>
+        </Form>
+      </Modal>
       
       <div style={{ 
         height: 'calc(100vh - 150px)',

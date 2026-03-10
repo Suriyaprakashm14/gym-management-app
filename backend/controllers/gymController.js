@@ -189,7 +189,8 @@ exports.updateGym = async (req, res) => {
       name,
       description,
       contactInfo,
-      settings
+      settings,
+      logoUrl
     } = req.body;
 
     const gym = await Gym.findById(gymId);
@@ -200,8 +201,8 @@ exports.updateGym = async (req, res) => {
       });
     }
 
-    // Check permissions
-    const user = req.currentUser;
+    // Check permissions (only gym owner can update gym name/logo)
+    const user = req.currentUser || req.user;
     if (user.gymId && user.gymId.toString() !== gymId.toString()) {
       return res.status(403).json({
         error: 'Access denied',
@@ -214,7 +215,8 @@ exports.updateGym = async (req, res) => {
     if (description !== undefined) gym.description = description;
     if (contactInfo) gym.contactInfo = { ...gym.contactInfo, ...contactInfo };
     if (settings) gym.settings = { ...gym.settings, ...settings };
-    
+    if (logoUrl !== undefined) gym.logoUrl = logoUrl || null;
+
     gym.lastModifiedBy = req.user.id;
     await gym.save();
 
@@ -227,6 +229,7 @@ exports.updateGym = async (req, res) => {
         description: gym.description,
         contactInfo: gym.contactInfo,
         settings: gym.settings,
+        logoUrl: gym.logoUrl,
         updatedAt: gym.updatedAt
       }
     });

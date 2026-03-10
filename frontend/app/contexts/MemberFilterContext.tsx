@@ -2,7 +2,7 @@
 
 import React, { createContext, useContext, useState, useCallback, ReactNode } from 'react';
 
-export type MemberFilterValue = 'activeUsers' | 'inactiveUsers' | 'longTimeInactiveUsers';
+export type MemberFilterValue = 'allMembers' | 'activeUsers' | 'inactiveUsers' | 'longTimeInactiveUsers';
 
 interface MemberFilterContextType {
   filter: MemberFilterValue;
@@ -12,7 +12,7 @@ interface MemberFilterContextType {
 const MemberFilterContext = createContext<MemberFilterContextType | null>(null);
 
 export function MemberFilterProvider({ children }: { children: ReactNode }) {
-  const [filter, setFilter] = useState<MemberFilterValue>('activeUsers');
+  const [filter, setFilter] = useState<MemberFilterValue>('allMembers');
   const setFilterStable = useCallback((value: MemberFilterValue) => setFilter(value), []);
   return (
     <MemberFilterContext.Provider value={{ filter, setFilter: setFilterStable }}>
