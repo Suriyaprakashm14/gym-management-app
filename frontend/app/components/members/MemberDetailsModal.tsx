@@ -78,7 +78,7 @@ interface MemberDetails {
   dob: string;
   membership: string;
   expires: string;
-   image?: string;
+
   lastVisit: string;
   billingAmount: string;
   billingDate: string;

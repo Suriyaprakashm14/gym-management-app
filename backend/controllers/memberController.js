@@ -274,15 +274,17 @@ exports.getAll = async (req, res) => {
       }
     }
 
-    // Status filter: activeUsers | inactiveUsers | longTimeInactiveUsers (status stored in DB)
-    let statusFilter = req.query.status || 'activeUsers';
+    // Status filter: allMembers | activeUsers | inactiveUsers | longTimeInactiveUsers (status stored in DB)
+    let statusFilter = req.query.status || 'allMembers';
     if (statusFilter === 'recentlyExpired') statusFilter = 'inactiveUsers';
     if (statusFilter === 'archivedUsers') statusFilter = 'longTimeInactiveUsers';
 
     const now = new Date();
     const ninetyDaysAgo = new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000);
 
-    if (statusFilter === 'activeUsers') {
+    if (statusFilter === 'allMembers' || statusFilter === 'all') {
+      // No status filter: return all members (filtered by gym/branch only)
+    } else if (statusFilter === 'activeUsers') {
       filter.status = { $nin: ['inactive', 'long term inactive'] };
       filter.$or = [
         { 'membership.endDate': null },
@@ -747,12 +749,15 @@ exports.renew = async (req, res) => {
       }
     }
 
+    // If start date is in the future (e.g. 2 days later), member is inactive until that date
+    const now = new Date();
+    const periodHasStarted = membershipStartDate && membershipStartDate <= now;
     await Member.findByIdAndUpdate(memberId, {
       'membership.type': membershipTrimmed,
       'membership.startDate': membershipStartDate,
       'membership.endDate': membershipEndDate,
-      'membership.isActive': true,
-      status: 'active',
+      'membership.isActive': !!periodHasStarted,
+      status: periodHasStarted ? 'active' : 'inactive',
     });
 
     res.status(200).json({

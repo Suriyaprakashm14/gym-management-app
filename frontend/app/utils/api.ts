@@ -254,6 +254,17 @@ export const api = {
       }),
   },
 
+  // Gyms endpoints (gym owner updates name/logo)
+  gyms: {
+    getMyGym: () => api.request('/gyms/my-gym'),
+    getById: (gymId: string) => api.request(`/gyms/${gymId}`),
+    update: (gymId: string, data: { name?: string; logoUrl?: string | null }) =>
+      api.request(`/gyms/${gymId}`, {
+        method: 'PUT',
+        body: JSON.stringify(data),
+      }),
+  },
+
   // Members endpoints
   members: {
     getAll: (params?: Record<string, string | number>) => {

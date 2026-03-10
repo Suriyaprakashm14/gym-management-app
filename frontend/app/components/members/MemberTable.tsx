@@ -102,7 +102,6 @@ const MemberTable: React.FC = () => {
   const [renewForm] = Form.useForm();
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(PAGE_SIZE);
-  const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'inactive'>('all');
   const dispatch = useAppDispatch();
   const { members, total, loading, error: membersError } = useAppSelector((s) => s.members);
   const reduxPlans = useAppSelector((s) => s.membershipPrices.items);
@@ -496,20 +495,6 @@ const MemberTable: React.FC = () => {
           <Text type="secondary">{membersError}</Text>
         </div>
       )}
-      <div style={{ marginBottom: 16, display: 'flex', justifyContent: 'flex-end' }}>
-        <Space size={8}>
-          <Text type="secondary">Status:</Text>
-          <select
-            value={statusFilter}
-            onChange={(e) => setStatusFilter(e.target.value as 'all' | 'active' | 'inactive')}
-            style={{ padding: '4px 8px', borderRadius: 4, border: '1px solid #d9d9d9' }}
-          >
-            <option value="all">All</option>
-            <option value="active">Active</option>
-            <option value="inactive">Inactive</option>
-          </select>
-        </Space>
-      </div>
       <Table
         rowSelection={rowSelection}
         columns={columns}

@@ -4,7 +4,7 @@ import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import type { MenuProps } from 'antd';
-import { Layout, Menu, Button, Space, Typography, Badge, Radio, ConfigProvider } from 'antd';
+import { Layout, Menu, Button, Space, Typography, Badge, Select, ConfigProvider } from 'antd';
 import {
   UserOutlined,
   CheckCircleOutlined,
@@ -122,26 +122,25 @@ function MembersLayoutInner({
           <div
             style={{
               display: 'flex',
-              justifyContent: 'space-between',
+              justifyContent: 'flex-end',
               alignItems: 'center',
+              gap: 12,
               minHeight: 56,
               padding: '12px 24px',
               borderTop: '1px solid #e8e8e8',
             }}
           >
-            <div style={{ flex: 1, display: 'flex', justifyContent: 'center', minWidth: 0 }}>
-              <Radio.Group
-                optionType="button"
-                buttonStyle="solid"
-                value={filter}
-                onChange={(e) => setFilter(e.target.value as MemberFilterValue)}
-                options={[
-                  { label: 'Active', value: 'activeUsers' },
-                  { label: 'Inactive', value: 'inactiveUsers' },
-                  { label: 'Long time inactive', value: 'longTimeInactiveUsers' },
-                ]}
-              />
-            </div>
+            <Select
+              value={filter}
+              onChange={(value) => setFilter(value as MemberFilterValue)}
+              options={[
+                { label: 'All members', value: 'allMembers' },
+                { label: 'Active', value: 'activeUsers' },
+                { label: 'Inactive', value: 'inactiveUsers' },
+                { label: 'Long time inactive', value: 'longTimeInactiveUsers' },
+              ]}
+              style={{ minWidth: 160 }}
+            />
             <Button
               type="primary"
               icon={<PlusOutlined />}
