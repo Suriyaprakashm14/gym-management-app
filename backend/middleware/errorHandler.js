@@ -5,6 +5,17 @@ function errorHandler(err, req, res, next) {
     return next(err);
   }
 
+  // Handle oversize payloads (e.g. large JSON/base64 bodies) in a standardized way
+  if (err?.type === 'entity.too.large') {
+    return fail(
+      res,
+      413,
+      'Uploaded file is too large',
+      null,
+      'PAYLOAD_TOO_LARGE'
+    );
+  }
+
   const statusCode = err?.statusCode || err?.status || 500;
   const message = err?.message || 'Internal server error';
 

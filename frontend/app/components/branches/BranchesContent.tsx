@@ -159,8 +159,15 @@ export default function BranchesContent() {
         message.success('Branch deleted successfully');
         fetchBranches();
       })
-      .catch(() => {
-        message.error('Unable to delete branch');
+      .catch((err: any) => {
+        const msg = typeof err?.message === 'string' ? err.message : '';
+        if (msg.includes('Branch has users or members')) {
+          message.error('Cannot delete this branch while it still has managers or members. Please remove or reassign them first.');
+        } else if (msg.includes('Cannot delete branch')) {
+          message.error(msg);
+        } else {
+          message.error(msg || 'Unable to delete branch');
+        }
       });
   };
 

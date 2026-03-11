@@ -614,7 +614,7 @@ const BillingOverview: React.FC = () => {
             />
             <CircularProgress 
               value={analyticsData?.summary?.totalPendingAmount || 0} 
-              label="Pending Amount" 
+              label="Overdue Amount" 
               color="#F59E0B"
               icon={Clock}
             />
@@ -847,7 +847,7 @@ const BillingOverview: React.FC = () => {
                         color: '#64748B',
                         fontSize: '0.75rem'
                       }}>
-                        Pending Amount
+                        Overdue Amount
                       </p>
                     </div>
                   </div>

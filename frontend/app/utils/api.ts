@@ -118,7 +118,17 @@ export const api = {
           const response = await fetch(url, init);
           const contentType = response.headers.get('content-type') || '';
           const isJsonResponse = contentType.includes('application/json');
-          const rawPayload: ApiEnvelope | any = isJsonResponse ? await response.json() : await response.text();
+          let rawPayload: ApiEnvelope | any = null;
+          if (isJsonResponse) {
+            try {
+              rawPayload = await response.json();
+            } catch {
+              // If body is empty or invalid JSON, fall back to null and rely on status/message
+              rawPayload = null;
+            }
+          } else {
+            rawPayload = await response.text();
+          }
 
           if (!response.ok) {
             // Only trigger global logout for 401 on authenticated requests, not on login failure
@@ -159,11 +169,30 @@ export const api = {
                 'Account is deactivated. Contact your owner.';
               throw new Error(msg);
             }
-            const errorMessage =
+            let errorMessage =
               (typeof rawPayload?.message === 'string' && rawPayload.message) ||
               (typeof rawPayload?.error === 'string' ? rawPayload.error : rawPayload?.error?.message) ||
               `HTTP error! status: ${response.status}`;
-            throw new Error(errorMessage);
+
+            // Friendly message for payload too large / entity too large
+            if (
+              response.status === 413 ||
+              errorMessage.toLowerCase().includes('entity too large') ||
+              errorMessage.toLowerCase().includes('payload too large')
+            ) {
+              errorMessage = 'File too large. Please upload a smaller image or reduce the payload size.';
+            }
+
+            // eslint-disable-next-line no-console
+            console.error('[api] request failed', {
+              url,
+              status: response.status,
+              message: errorMessage,
+            });
+
+            const error = new Error(errorMessage) as Error & { status?: number };
+            error.status = response.status;
+            throw error;
           }
 
           let payload: any = rawPayload;

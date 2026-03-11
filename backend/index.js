@@ -46,8 +46,10 @@ app.use(
   })
 );
 app.use(cors());
-app.use(express.json());
-app.use(express.urlencoded({ limit: '10mb', extended: true }));
+// Allow moderately large payloads for JSON and urlencoded bodies (e.g. images/base64),
+// while still protecting against excessively large requests.
+app.use(express.json({ limit: '15mb' }));
+app.use(express.urlencoded({ limit: '15mb', extended: true }));
 app.use(attachRequestContext);
 app.use(requestLogger);
 app.use(responseEnvelope);

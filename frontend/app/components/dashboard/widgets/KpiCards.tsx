@@ -106,7 +106,7 @@ export default function KpiCards({ kpis, showBranchStats }: KpiCardsProps) {
         </Col>
         <Col xs={24} sm={8}>
           <CircularPaymentCard
-            label="Pending Amount"
+            label="Overdue Amount"
             value={kpis.pendingAmount}
             color="#F59E0B"
             percent={pendingPercent}

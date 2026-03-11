@@ -18,6 +18,8 @@ import { api } from '../../utils/api';
 
 const { Sider } = Layout;
 
+const MAX_LOGO_BYTES = 2 * 1024 * 1024; // 2MB
+
 function fileToDataUrl(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -194,6 +196,11 @@ const Sidebar: React.FC<SidebarProps> = ({ collapsed, onCollapse }) => {
   const handleEditGymLogoChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file && file.type.startsWith('image/')) {
+      if (file.size > MAX_LOGO_BYTES) {
+        message.error('Logo is too large. Please upload an image under 500 KB.');
+        e.target.value = '';
+        return;
+      }
       setEditGymLogoFile(file);
       const url = URL.createObjectURL(file);
       setEditGymLogoPreview(url);
@@ -241,7 +248,12 @@ const Sidebar: React.FC<SidebarProps> = ({ collapsed, onCollapse }) => {
       message.success('Gym updated');
       setEditGymModalVisible(false);
     } catch (err: any) {
-      message.error(err?.message || 'Failed to update gym');
+      const rawMessage = String(err?.message || '').toLowerCase();
+      if (rawMessage.includes('entity too large')) {
+        message.error('Logo image is too large for the server. Please upload a smaller file (for example under 500 KB).');
+      } else {
+        message.error(err?.message || 'Failed to update gym');
+      }
     } finally {
       setEditGymLoading(false);
     }
