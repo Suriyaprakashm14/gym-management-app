@@ -263,6 +263,10 @@ export const api = {
         method: 'PUT',
         body: JSON.stringify(data),
       }),
+    removeLogo: () =>
+      api.request('/gyms/logo', {
+        method: 'DELETE',
+      }),
   },
 
   // Members endpoints
