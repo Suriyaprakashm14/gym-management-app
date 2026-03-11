@@ -645,7 +645,6 @@ exports.getAttendanceReport = async (req, res) => {
       .populate('branchId', 'name')
       .select('firstName lastName branchId');
 
-    console.log(`Found ${allMembers.length} total members`);
 
     // Process attendance data
     const memberAttendanceMap = new Map();

@@ -619,10 +619,10 @@ exports.updateProfileImage = async (req, res) => {
 
 exports.remove = async (req, res) => {
   try {
-    // Check authorization - only gym_owner can delete members (managers cannot delete)
-    const allowedRoles = ['gym_owner'];
+    // Check authorization - only gym_owner, manager and staff can delete members
+    const allowedRoles = ['gym_owner', 'manager', 'staff'];
     if (!allowedRoles.includes(req.user.role)) {
-      return res.status(403).json({ error: "Access denied. Only gym_owner can delete members. Managers cannot delete members." });
+      return res.status(403).json({ error: "Access denied. Only gym_owner, manager and staff can delete members. Managers cannot delete members." });
     }
 
     const member = await Member.findById(req.params.id);

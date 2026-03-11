@@ -231,12 +231,12 @@ export default function ExpensesContent() {
               step={1}
               style={{ width: '100%' }}
               prefix={<span style={{ fontWeight: 600 }}>₹</span>}
-              placeholder="0"
+              placeholder="Enter amount"
               formatter={(value) => (value != null ? `${value}`.replace(/\B(?=(\d{3})+(?!\d))/g, ',') : '')}
             />
           </Form.Item>
           <Form.Item name="date" label="Date" rules={[{ required: true, message: 'Select date' }]} initialValue={dayjs()}>
-            <DatePicker style={{ width: '100%' }} />
+            <DatePicker style={{ width: '100%' }} format="DD-MM-YYYY"/>
           </Form.Item>
           <Form.Item name="category" label="Category">
             <Select
@@ -312,6 +312,7 @@ function ManageCategoriesModal({ open, onClose, onSaved, categories, setCategori
     setSaving(true);
     try {
       const created = await api.expenseCategories.create({ name });
+      console.log(created.data);
       setFullList((prev) => [...prev, created as ExpenseCategoryItem]);
       setCategories((prev) => [...prev.filter((c) => c.name !== name), created as ExpenseCategoryItem]);
       setAddName('');
