@@ -1,15 +1,21 @@
 const Expense = require('../models/expense');
 
+function normalizeId(val) {
+  if (val == null) return null;
+  if (typeof val === 'string') return val;
+  return val._id ? String(val._id) : String(val);
+}
+
 exports.list = async (req, res) => {
   try {
     const { startDate, endDate, branchId } = req.query;
     let query = {};
 
     if (req.user.role === 'gym_owner') {
-      query.gymId = req.user.gymId;
+      query.gymId = normalizeId(req.user.gymId) || req.user.gymId;
       if (branchId) query.branchId = branchId;
     } else if (req.user.role === 'manager') {
-      query.branchId = req.user.branchId;
+      query.branchId = normalizeId(req.user.branchId) || req.user.branchId;
     } else {
       return res.status(403).json({ error: 'Access denied' });
     }
@@ -37,9 +43,9 @@ exports.getTotalForRange = async (req, res) => {
 
     let match = {};
     if (req.user.role === 'gym_owner') {
-      match.gymId = req.user.gymId;
+      match.gymId = normalizeId(req.user.gymId) || req.user.gymId;
     } else if (req.user.role === 'manager') {
-      match.branchId = req.user.branchId;
+      match.branchId = normalizeId(req.user.branchId) || req.user.branchId;
     } else {
       return res.status(403).json({ error: 'Access denied' });
     }
@@ -67,20 +73,23 @@ exports.create = async (req, res) => {
       return res.status(400).json({ error: 'Valid amount is required' });
     }
 
+    const gymId = normalizeId(req.user.gymId) || req.user.gymId;
+    let branchIdFinal = branchId || null;
+
+    if (req.user.role === 'manager') {
+      branchIdFinal = normalizeId(req.user.branchId) || req.user.branchId;
+    } else if (req.user.role === 'gym_owner' && branchId) {
+      branchIdFinal = branchId;
+    }
+
     const doc = {
-      gymId: req.user.gymId,
+      gymId,
       amount: Number(amount),
       date: date ? new Date(date) : new Date(),
       category: category || null,
       description: description || null,
-      branchId: branchId || null,
+      branchId: branchIdFinal,
     };
-
-    if (req.user.role === 'manager') {
-      doc.branchId = req.user.branchId;
-    } else if (branchId) {
-      doc.branchId = branchId;
-    }
 
     const expense = await Expense.create(doc);
     res.status(201).json(expense);
@@ -94,12 +103,17 @@ exports.update = async (req, res) => {
     const expense = await Expense.findById(req.params.id);
     if (!expense) return res.status(404).json({ error: 'Expense not found' });
 
+    const expenseGymId = normalizeId(expense.gymId);
+    const expenseBranchId = normalizeId(expense.branchId);
+    const userGymId = normalizeId(req.user.gymId);
+    const userBranchId = normalizeId(req.user.branchId);
+
     if (req.user.role === 'gym_owner') {
-      if (expense.gymId.toString() !== req.user.gymId) {
+      if (expenseGymId !== userGymId) {
         return res.status(403).json({ error: 'Access denied' });
       }
     } else if (req.user.role === 'manager') {
-      if (expense.branchId?.toString() !== req.user.branchId) {
+      if (expenseBranchId !== userBranchId) {
         return res.status(403).json({ error: 'Access denied' });
       }
     }
@@ -121,12 +135,17 @@ exports.delete = async (req, res) => {
     const expense = await Expense.findById(req.params.id);
     if (!expense) return res.status(404).json({ error: 'Expense not found' });
 
+    const expenseGymId = normalizeId(expense.gymId);
+    const expenseBranchId = normalizeId(expense.branchId);
+    const userGymId = normalizeId(req.user.gymId);
+    const userBranchId = normalizeId(req.user.branchId);
+
     if (req.user.role === 'gym_owner') {
-      if (expense.gymId.toString() !== req.user.gymId) {
+      if (expenseGymId !== userGymId) {
         return res.status(403).json({ error: 'Access denied' });
       }
     } else if (req.user.role === 'manager') {
-      if (expense.branchId?.toString() !== req.user.branchId) {
+      if (expenseBranchId !== userBranchId) {
         return res.status(403).json({ error: 'Access denied' });
       }
     }

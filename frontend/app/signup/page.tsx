@@ -12,7 +12,8 @@ import { api } from '../utils/api';
 const { Title, Text } = Typography;
 
 export interface SignupFormData {
-  name: string;
+  firstName: string;
+  lastName: string;
   email: string;
   password: string;
   gymName: string;
@@ -20,22 +21,13 @@ export interface SignupFormData {
 }
 
 const INITIAL_FORM_DATA: SignupFormData = {
-  name: '',
+  firstName: '',
+  lastName: '',
   email: '',
   password: '',
   gymName: '',
   gymLogo: null,
 };
-
-function parseName(name: string): { firstName: string; lastName: string } {
-  const trimmed = name.trim();
-  const space = trimmed.indexOf(' ');
-  if (space <= 0) return { firstName: trimmed || 'User', lastName: '' };
-  return {
-    firstName: trimmed.slice(0, space),
-    lastName: trimmed.slice(space + 1).trim(),
-  };
-}
 
 function fileToDataUrl(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -57,7 +49,8 @@ export default function SignupPage() {
   const handleAccountFinish = (values: AccountFormValues) => {
     setFormData((prev) => ({
       ...prev,
-      name: values.name.trim(),
+      firstName: values.firstName.trim(),
+      lastName: values.lastName.trim(),
       email: values.email.trim(),
       password: values.password,
     }));
@@ -87,13 +80,12 @@ export default function SignupPage() {
     setLoading(true);
     setErrorMessage('');
     try {
-      const { firstName, lastName } = parseName(formData.name);
       const gymIcon =
         logoFile ? await fileToDataUrl(logoFile) : (formData.gymLogo ?? undefined);
       const gymName = (values.gymName ?? '').trim() || 'My Gym';
       await submitSignup({
-        firstName,
-        lastName,
+        firstName: formData.firstName,
+        lastName: formData.lastName,
         email: formData.email,
         password: formData.password,
         gymName,
@@ -116,10 +108,9 @@ export default function SignupPage() {
     setLoading(true);
     setErrorMessage('');
     try {
-      const { firstName, lastName } = parseName(formData.name);
       await submitSignup({
-        firstName,
-        lastName,
+        firstName: formData.firstName,
+        lastName: formData.lastName,
         email: formData.email,
         password: formData.password,
         gymName: 'My Gym',
@@ -174,7 +165,8 @@ export default function SignupPage() {
             )}
             <AccountStepForm
               initialValues={{
-                name: formData.name,
+                firstName: formData.firstName,
+                lastName: formData.lastName,
                 email: formData.email,
                 password: formData.password,
               }}

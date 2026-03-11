@@ -20,6 +20,7 @@ import {
 import { PlusOutlined, EditOutlined, DeleteOutlined, SettingOutlined } from '@ant-design/icons';
 import type { ColumnsType } from 'antd/es/table';
 import { api } from '../../utils/api';
+import { useAuth } from '../../contexts/AuthContext';
 import dayjs from 'dayjs';
 
 const ADD_CATEGORY_VALUE = '__add_category__';
@@ -34,6 +35,7 @@ interface ExpenseRecord {
   category?: string | null;
   description?: string | null;
   branchId?: string | null;
+  branchName?: string | null;
 }
 
 interface ExpenseCategoryItem {
@@ -42,23 +44,44 @@ interface ExpenseCategoryItem {
   isActive?: boolean;
 }
 
+interface BranchItem {
+  _id: string;
+  name: string;
+}
+
 export default function ExpensesContent() {
   const { message } = App.useApp();
+  const { user } = useAuth();
+  const isOwner = user?.role === 'gym_owner';
   const [list, setList] = useState<ExpenseRecord[]>([]);
   const [categories, setCategories] = useState<ExpenseCategoryItem[]>([]);
+  const [branches, setBranches] = useState<BranchItem[]>([]);
   const [categoriesLoading, setCategoriesLoading] = useState(false);
   const [loading, setLoading] = useState(true);
   const [modalOpen, setModalOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [categoriesModalOpen, setCategoriesModalOpen] = useState(false);
   const [form] = Form.useForm();
+  const branchIdToName = React.useMemo(() => {
+    const map: Record<string, string> = {};
+    branches.forEach((b) => { map[b._id] = b.name; });
+    if (user?.branchName && user?.branchId) map[user.branchId] = user.branchName;
+    return map;
+  }, [branches, user?.branchId, user?.branchName]);
 
   const fetchCategories = async () => {
     setCategoriesLoading(true);
     try {
       const res = await api.expenseCategories.list();
       const data = Array.isArray(res) ? res : (res as any)?.data ?? [];
-      setCategories((data as ExpenseCategoryItem[]).filter((c) => c.isActive !== false));
+      const plain = (data as any[])
+        .map((c: any) => ({
+          _id: c._id ?? c.id ?? '',
+          name: typeof c.name === 'string' ? c.name : '',
+          isActive: c.isActive !== false,
+        }))
+        .filter((c) => c.isActive !== false);
+      setCategories(plain);
     } catch {
       message.error('Failed to load categories');
       setCategories([]);
@@ -81,6 +104,7 @@ export default function ExpensesContent() {
           category: e.category ?? null,
           description: e.description ?? null,
           branchId: e.branchId ?? null,
+          branchName: e.branchName ?? null,
         }))
       );
     } catch (err) {
@@ -91,6 +115,17 @@ export default function ExpensesContent() {
     }
   };
 
+  const fetchBranches = async () => {
+    if (!isOwner || !user?.gymId) return;
+    try {
+      const res = await api.branches.getByGym(user.gymId);
+      const data = Array.isArray(res) ? res : (res as any)?.data ?? (res as any)?.branches ?? [];
+      setBranches((data as BranchItem[]).map((b: any) => ({ _id: b._id ?? b.id, name: b.name ?? b.branchName ?? '—' })));
+    } catch {
+      setBranches([]);
+    }
+  };
+
   useEffect(() => {
     fetchList();
   }, []);
@@ -98,6 +133,10 @@ export default function ExpensesContent() {
   useEffect(() => {
     fetchCategories();
   }, []);
+
+  useEffect(() => {
+    if (isOwner && user?.gymId) fetchBranches();
+  }, [isOwner, user?.gymId]);
 
   const handleAdd = () => {
     setEditingId(null);
@@ -121,12 +160,15 @@ export default function ExpensesContent() {
       const values = await form.validateFields();
       const categoryVal = Array.isArray(values.category) ? values.category[0] : values.category;
       const categoryFinal = (categoryVal && categoryVal !== ADD_CATEGORY_VALUE && String(categoryVal).trim()) || undefined;
-      const payload = {
+      const payload: { amount: number; date: string; category?: string; description?: string; branchId?: string } = {
         amount: values.amount,
         date: values.date ? values.date.toISOString?.() ?? values.date : new Date().toISOString(),
         category: categoryFinal,
         description: values.description || undefined,
       };
+      if (!editingId && isOwner && values.branchId) {
+        payload.branchId = values.branchId;
+      }
       if (editingId) {
         await api.expenses.update(editingId, payload);
         message.success('Expense updated');
@@ -161,6 +203,9 @@ export default function ExpensesContent() {
   const columns: ColumnsType<ExpenseRecord> = [
     { title: 'Amount', dataIndex: 'amount', key: 'amount', width: 120, render: (v: number) => `₹ ${Number(v).toLocaleString('en-IN')}` },
     { title: 'Date', dataIndex: 'date', key: 'date', width: 120, render: (v: string) => (v ? dayjs(v).format('DD MMM YYYY') : '—') },
+    ...(isOwner
+      ? [{ title: 'Branch', key: 'branch', width: 140, render: (_: unknown, r: ExpenseRecord) => branchIdToName[r.branchId as string] || r.branchName || r.branchId || '—' }]
+      : []),
     { title: 'Category', dataIndex: 'category', key: 'category', width: 140, render: (v: string) => v || '—' },
     { title: 'Notes / Description', dataIndex: 'description', key: 'description', ellipsis: true, render: (v: string) => v || '—' },
     {
@@ -225,6 +270,17 @@ export default function ExpensesContent() {
         width={480}
       >
         <Form form={form} layout="vertical" onFinish={handleSubmit}>
+          {isOwner && !editingId && (
+            <Form.Item name="branchId" label="Branch (optional)">
+              <Select
+                allowClear
+                placeholder="All branches (no branch)"
+                options={branches.map((b) => ({ label: b.name, value: b._id }))}
+                showSearch
+                optionFilterProp="label"
+              />
+            </Form.Item>
+          )}
           <Form.Item name="amount" label="Amount" rules={[{ required: true, message: 'Enter amount' }]}>
             <InputNumber
               min={0}
@@ -267,7 +323,10 @@ export default function ExpensesContent() {
         onClose={() => setCategoriesModalOpen(false)}
         onSaved={() => {
           fetchCategories();
-          form.setFieldValue('category', undefined);
+          // Defer to avoid rc-field-form deepEqual circular reference warning
+          setTimeout(() => {
+            form.setFieldValue('category', undefined);
+          }, 0);
         }}
         categories={categories}
         setCategories={setCategories}
@@ -296,7 +355,12 @@ function ManageCategoriesModal({ open, onClose, onSaved, categories, setCategori
     try {
       const res = await api.expenseCategories.list();
       const data = Array.isArray(res) ? res : (res as any)?.data ?? [];
-      setFullList(data as ExpenseCategoryItem[]);
+      const plain = (data as any[]).map((c: any) => ({
+        _id: c._id ?? c.id ?? '',
+        name: typeof c.name === 'string' ? c.name : '',
+        isActive: c.isActive !== false,
+      }));
+      setFullList(plain);
     } catch {
       setFullList([]);
     }
@@ -311,10 +375,15 @@ function ManageCategoriesModal({ open, onClose, onSaved, categories, setCategori
     if (!name) return;
     setSaving(true);
     try {
-      const created = await api.expenseCategories.create({ name });
-      console.log(created.data);
-      setFullList((prev) => [...prev, created as ExpenseCategoryItem]);
-      setCategories((prev) => [...prev.filter((c) => c.name !== name), created as ExpenseCategoryItem]);
+      const res = await api.expenseCategories.create({ name });
+      const raw = (res as any)?.data ?? res;
+      const plain: ExpenseCategoryItem = {
+        _id: raw?._id ?? raw?.id ?? '',
+        name: typeof raw?.name === 'string' ? raw.name : name,
+        isActive: raw?.isActive !== false,
+      };
+      setFullList((prev) => [...prev, plain]);
+      setCategories((prev) => [...prev.filter((c) => c.name !== name), plain]);
       setAddName('');
       message.success('Category added');
       onSaved();

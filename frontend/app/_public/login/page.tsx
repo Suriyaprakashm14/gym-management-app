@@ -26,12 +26,17 @@ export default function LoginPage() {
     setErrorMessage('');
     try {
       const data = await api.auth.login(values);
+      if (!data?.token) {
+        message.error('Account is deactivated. Contact your owner.');
+        return;
+      }
       login(data.token, data.user);
       setTokenCookie(data.token);
       message.success('Login successful!');
       router.push('/dashboard');
     } catch (error: unknown) {
-      const errorMsg = error instanceof Error ? error.message : 'Something went wrong';
+      const errorMsg =
+        (error instanceof Error && error.message?.trim()) || 'Something went wrong. Please try again.';
       setErrorMessage(errorMsg);
       message.error(errorMsg);
     } finally {

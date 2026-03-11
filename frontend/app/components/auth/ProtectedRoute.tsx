@@ -8,9 +8,11 @@ import { Spin } from 'antd';
 interface ProtectedRouteProps {
   children: React.ReactNode;
   allowedRoles?: string[];
+  /** When role is not allowed, redirect here instead of /not-found */
+  redirectPath?: string;
 }
 
-const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children, allowedRoles }) => {
+const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children, allowedRoles, redirectPath = '/not-found' }) => {
   const { isAuthenticated, loading, user } = useAuth();
   const router = useRouter();
 
@@ -24,10 +26,10 @@ const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children, allowedRoles 
     if (!loading && isAuthenticated && allowedRoles?.length) {
       const hasRole = !!user?.role && allowedRoles.includes(user.role);
       if (!hasRole) {
-        router.replace('/not-found');
+        router.replace(redirectPath);
       }
     }
-  }, [isAuthenticated, loading, router, allowedRoles, user?.role]);
+  }, [isAuthenticated, loading, router, allowedRoles, user?.role, redirectPath]);
 
   if (loading) {
     return (

@@ -87,6 +87,14 @@ exports.login = async (req, res) => {
       await user.resetLoginAttempts();
     }
 
+    if (!isLegacyUser && user.isActive === false) {
+      return res.status(403).json({
+        success: false,
+        error: 'Account deactivated',
+        message: 'Account is deactivated. Contact your owner.'
+      });
+    }
+
     const devEmails = ['owner@gympro.com', 'manager@gympro.com'];
     const isDevUser = devEmails.includes((user.email || normalizedEmail).toLowerCase());
     const skipLock = process.env.NODE_ENV === 'development' && isDevUser;

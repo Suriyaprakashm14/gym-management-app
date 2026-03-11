@@ -24,7 +24,7 @@ const personalDetailsSchema = new mongoose.Schema({
   zipcode: { type: String },
   state: { type: String },
   country: { type: String },
-  phoneNumber: { type: String, required: true },
+  phoneNumber: { type: String, default: '' },
   emergencyContacts: [emergencyContactSchema],
   dateOfBirth: { type: Date },
   age: { type: Number, default: null },

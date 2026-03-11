@@ -32,6 +32,7 @@ import {
 import type { ColumnsType } from 'antd/es/table';
 import { api } from '../../utils/api';
 import { useAuth } from '../../contexts/AuthContext';
+import { mobileRequiredRule, mobilePatternRule } from '../../utils/validation';
 
 const { Title, Text } = Typography;
 
@@ -367,7 +368,7 @@ export default function BranchesContent() {
             <Col span={8}><Form.Item name="address.country" label="Country" rules={[{ required: true }]}><Input placeholder="Country" /></Form.Item></Col>
           </Row>
           <Title level={5}>Contact</Title>
-          <Form.Item name="contactInfo.phone" label="Phone" rules={[{ required: true, message: 'Please enter phone' }]}><Input placeholder="Phone" /></Form.Item>
+          <Form.Item name="contactInfo.phone" label="Phone" rules={[mobileRequiredRule, mobilePatternRule()]}><Input placeholder="Phone" /></Form.Item>
         </Form>
       </Modal>
       <Modal title={`Create Manager for ${selectedBranch?.name || 'Branch'}`} open={managerModalVisible} onCancel={() => { setManagerModalVisible(false); managerForm.resetFields(); }} onOk={() => managerForm.submit()} okText="Create Manager" cancelText="Cancel" width={500}>

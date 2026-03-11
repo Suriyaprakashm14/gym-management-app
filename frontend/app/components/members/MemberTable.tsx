@@ -100,6 +100,17 @@ const MemberTable: React.FC = () => {
   const [renewLoading, setRenewLoading] = useState(false);
   const [membershipTypes, setMembershipTypes] = useState<Array<{ id: string; type: string; price: number; duration: number }>>([]);
   const [renewForm] = Form.useForm();
+  const watchedRenewPlan = Form.useWatch(['membership', 'planQuantity'], renewForm);
+  const renewPlanType = Array.isArray(watchedRenewPlan) ? watchedRenewPlan[0] : undefined;
+  const renewPlanQty = Array.isArray(watchedRenewPlan) ? watchedRenewPlan[1] : (watchedRenewPlan as number | undefined);
+  const renewMaxAmount =
+    renewPlanType && membershipTypes.length > 0
+      ? (() => {
+          const plan = membershipTypes.find((p: any) => p.type === renewPlanType);
+          const qty = typeof renewPlanQty === 'number' && renewPlanQty >= 1 ? renewPlanQty : 1;
+          return plan && typeof plan.price === 'number' ? plan.price * qty : null;
+        })()
+      : null;
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(PAGE_SIZE);
   const dispatch = useAppDispatch();
@@ -577,6 +588,13 @@ const MemberTable: React.FC = () => {
             name="paidAmount"
             label="Amount paid (₹)"
             dependencies={['membership', 'planQuantity']}
+            extra={
+              renewMaxAmount != null ? (
+                <span style={{ color: 'var(--ant-color-text-secondary)', fontSize: 12 }}>
+                  Maximum amount for selected plan: ₹{renewMaxAmount.toLocaleString('en-IN')}
+                </span>
+              ) : null
+            }
             rules={[
               { type: 'number', min: 0, message: 'Amount must be ≥ 0' },
               () => ({
@@ -589,14 +607,19 @@ const MemberTable: React.FC = () => {
                   if (!plan || typeof plan.price !== 'number') return Promise.resolve();
                   const maxAmount = plan.price * qty;
                   if (Number(value) > maxAmount) {
-                    return Promise.reject(new Error(`Cannot pay more than expected (₹${maxAmount.toLocaleString('en-IN')})`));
+                    return Promise.reject(new Error(`Cannot exceed maximum for selected plan (₹${maxAmount.toLocaleString('en-IN')})`));
                   }
                   return Promise.resolve();
                 },
               }),
             ]}
           >
-            <InputNumber min={0} step={100} style={{ width: '100%' }} />
+            <InputNumber
+              min={0}
+              step={100}
+              style={{ width: '100%' }}
+              placeholder={renewMaxAmount != null ? `Max: ₹${renewMaxAmount.toLocaleString('en-IN')}` : 'Enter amount'}
+            />
           </Form.Item>
         </Form>
       </Modal>

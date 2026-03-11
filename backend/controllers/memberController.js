@@ -707,6 +707,14 @@ exports.renew = async (req, res) => {
     const newTotal = priceDoc.price * quantity;
     const paid = Math.max(0, Number(paidAmount) || 0);
 
+    if (paid > newTotal) {
+      return res.status(400).json({
+        error: 'Amount exceeds maximum for selected plan',
+        message: `Paid amount (₹${paid}) cannot exceed the maximum for this plan (₹${newTotal}).`,
+        maxAmount: newTotal
+      });
+    }
+
     let details = await Details.findOne({ memberId });
     if (!details) {
       details = new Details({

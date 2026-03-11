@@ -176,7 +176,7 @@ const EditMemberModal: React.FC<EditMemberModalProps> = ({
         zipcode: values.zipcode,
         state: values.state,
         country: values.country,
-        phoneNumber: values.phoneNumber,
+        phoneNumber: values.phoneNumber ?? values.phone ?? '',
         dateOfBirth: values.dateOfBirth,
         emergencyContacts: values.emergencyContacts,
       };
@@ -393,18 +393,6 @@ const EditMemberModal: React.FC<EditMemberModalProps> = ({
                 <Input
                   type="date"
                   prefix={<CalendarOutlined />}
-                />
-              </Form.Item>
-            </Col>
-            <Col span={12}>
-              <Form.Item
-                label="Phone Number"
-                name="phoneNumber"
-                rules={[mobilePatternRule()]}
-              >
-                <Input
-                  prefix={<PhoneOutlined />}
-                  placeholder="Enter phone number"
                 />
               </Form.Item>
             </Col>

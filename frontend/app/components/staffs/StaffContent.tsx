@@ -23,6 +23,7 @@ import {
   DeleteOutlined,
   StopOutlined,
   UserAddOutlined,
+  CheckCircleOutlined,
 } from '@ant-design/icons';
 import type { ColumnsType } from 'antd/es/table';
 import { api } from '../../utils/api';
@@ -54,7 +55,7 @@ interface StaffRecord {
 const PAGE_SIZE = 10;
 
 export default function StaffContent() {
-  const { message } = App.useApp();
+  const { message, modal } = App.useApp();
   const { user } = useAuth();
   const [staffs, setStaffs] = useState<StaffRecord[]>([]);
   const [assignableBranches, setAssignableBranches] = useState<AssignableBranch[]>([]);
@@ -63,6 +64,8 @@ export default function StaffContent() {
   const [editModalOpen, setEditModalOpen] = useState(false);
   const [editingStaff, setEditingStaff] = useState<StaffRecord | null>(null);
   const [submitLoading, setSubmitLoading] = useState(false);
+  const [statusLoadingId, setStatusLoadingId] = useState<string | null>(null);
+  const [roleFilter, setRoleFilter] = useState<'all' | 'managers' | 'staff'>('all');
   const [form] = Form.useForm();
   const [editForm] = Form.useForm();
 
@@ -72,7 +75,7 @@ export default function StaffContent() {
   const fetchStaffs = useCallback(async () => {
     try {
       setLoading(true);
-      const response = await api.staffs.getStaffs();
+      const response = await api.users.getStaff();
       const data = (response as any)?.data ?? response;
       const list = Array.isArray(data?.staffs) ? data.staffs : [];
       const branches = Array.isArray(data?.assignableBranches) ? data.assignableBranches : [];
@@ -175,13 +178,41 @@ export default function StaffContent() {
     }
   };
 
-  const handleDeactivate = async (record: StaffRecord) => {
+  const handleDeactivate = (record: StaffRecord) => {
+    const isManagerRole = record.role === 'manager';
+    modal.confirm({
+      title: isManagerRole ? 'Deactivate Manager?' : 'Deactivate this user?',
+      content: isManagerRole
+        ? 'This manager will not be able to login.'
+        : 'This user will not be able to login.',
+      okText: 'Deactivate',
+      cancelText: 'Cancel',
+      okButtonProps: { danger: true },
+      onOk: async () => {
+        try {
+          setStatusLoadingId(record._id);
+          await api.users.updateStatus(record._id, { isActive: false });
+          message.success('User deactivated');
+          fetchStaffs();
+        } catch (err: any) {
+          message.error(err?.message ?? 'Failed to deactivate');
+        } finally {
+          setStatusLoadingId(null);
+        }
+      },
+    });
+  };
+
+  const handleActivate = async (record: StaffRecord) => {
     try {
-      await api.staffs.updateStaff(record._id, { isActive: false, status: 'inactive' });
-      message.success('Staff deactivated');
+      setStatusLoadingId(record._id);
+      await api.users.updateStatus(record._id, { isActive: true });
+      message.success('User activated');
       fetchStaffs();
-    } catch (err) {
-      message.error('Failed to deactivate staff');
+    } catch (err: any) {
+      message.error(err?.message ?? 'Failed to activate');
+    } finally {
+      setStatusLoadingId(null);
     }
   };
 
@@ -208,7 +239,10 @@ export default function StaffContent() {
       dataIndex: 'role',
       key: 'role',
       width: 100,
-      render: (role: string) => <Tag color="blue">{role || 'staff'}</Tag>,
+      render: (role: string) => {
+        const r = (role || 'staff').toLowerCase();
+        return r === 'manager' ? <Tag color="blue">Manager</Tag> : <Tag>Staff</Tag>;
+      },
     },
     {
       title: 'Branch',
@@ -222,7 +256,7 @@ export default function StaffContent() {
       key: 'status',
       width: 120,
       render: (_, record) => (
-        <Tag color={record.isActive ? 'green' : 'default'}>
+        <Tag color={record.isActive ? 'green' : 'red'}>
           {record.isActive ? 'Active' : 'Inactive'}
         </Tag>
       ),
@@ -244,29 +278,40 @@ export default function StaffContent() {
           <Button type="link" size="small" icon={<EditOutlined />} onClick={() => handleEdit(record)}>
             Edit
           </Button>
-          {record.isActive && (
+          {record.isActive ? (
+            <Button
+              type="link"
+              size="small"
+              icon={<StopOutlined />}
+              onClick={() => handleDeactivate(record)}
+              loading={statusLoadingId === record._id}
+            >
+              Deactivate
+            </Button>
+          ) : (
+            <Button
+              type="link"
+              size="small"
+              icon={<CheckCircleOutlined />}
+              onClick={() => handleActivate(record)}
+              loading={statusLoadingId === record._id}
+            >
+              Activate
+            </Button>
+          )}
+          {record.role !== 'manager' && (
             <Popconfirm
-              title="Deactivate this staff member?"
-              onConfirm={() => handleDeactivate(record)}
+              title="Delete this staff member? This cannot be undone."
+              onConfirm={() => handleDelete(record._id)}
               okText="Yes"
               cancelText="No"
+              okButtonProps={{ danger: true }}
             >
-              <Button type="link" size="small" icon={<StopOutlined />}>
-                Deactivate
+              <Button type="link" size="small" danger icon={<DeleteOutlined />}>
+                Delete
               </Button>
             </Popconfirm>
           )}
-          <Popconfirm
-            title="Delete this staff member? This cannot be undone."
-            onConfirm={() => handleDelete(record._id)}
-            okText="Yes"
-            cancelText="No"
-            okButtonProps={{ danger: true }}
-          >
-            <Button type="link" size="small" danger icon={<DeleteOutlined />}>
-              Delete
-            </Button>
-          </Popconfirm>
         </Space>
       ),
     },
@@ -290,17 +335,31 @@ export default function StaffContent() {
           <Title level={2} style={{ margin: 0, marginBottom: 4 }}>
             Staff
           </Title>
-          <Text type="secondary">Manage staff members, roles, and branch assignments</Text>
+          <Text type="secondary">Manage managers and staff, roles, and branch assignments</Text>
         </div>
-        <Button type="primary" icon={<UserAddOutlined />} onClick={handleCreate}>
-          Create Staff
-        </Button>
+        <Space wrap>
+          {isOwner && (
+            <Select
+              value={roleFilter}
+              onChange={(v) => setRoleFilter(v)}
+              style={{ width: 140 }}
+              options={[
+                { label: 'All', value: 'all' },
+                { label: 'Managers', value: 'managers' },
+                { label: 'Staff', value: 'staff' },
+              ]}
+            />
+          )}
+          <Button type="primary" icon={<UserAddOutlined />} onClick={handleCreate}>
+            Create Staff
+          </Button>
+        </Space>
       </div>
 
       <Card style={{ boxShadow: '0 1px 2px rgba(0,0,0,0.04)' }}>
         <Table<StaffRecord>
           columns={columns}
-          dataSource={staffs}
+          dataSource={staffs.filter((s) => roleFilter === 'all' || (roleFilter === 'managers' && s.role === 'manager') || (roleFilter === 'staff' && s.role === 'staff'))}
           loading={loading}
           rowKey="key"
           scroll={{ x: 900 }}

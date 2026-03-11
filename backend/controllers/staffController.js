@@ -12,7 +12,7 @@ function getStaffFilter(req) {
   const user = req.currentUser || req.user;
   if (!user) return null;
   if (user.role === 'gym_owner') {
-    return { gymId: user.gymId, role: 'staff' };
+    return { gymId: user.gymId?._id || user.gymId, role: { $in: ['manager', 'staff'] } };
   }
   if (user.role === 'manager') {
     return { branchId: user.branchId, role: 'staff' };

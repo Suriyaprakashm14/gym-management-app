@@ -125,7 +125,7 @@ const Sidebar: React.FC<SidebarProps> = ({ collapsed, onCollapse }) => {
       logoutMenuItem,
     ];
   } else if (isManager) {
-    // Manager: Dashboard, Members, Revenue, Billing, Expenses, Staffs
+    // Manager: Dashboard, Members, Revenue, Billing, Expenses, Staffs (staff in their branch only)
     menuItems = [
       baseDashboardItem,
       baseMembersItem,

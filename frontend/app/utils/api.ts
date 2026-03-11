@@ -136,8 +136,11 @@ export const api = {
                 window.dispatchEvent(new CustomEvent('auth:logout'));
               }
             }
-            // Gracefully handle RBAC access denials without crashing the UI
-            if (response.status === 403) {
+            // 403 on auth/login (e.g. deactivated/frozen account) must throw so login page can show the message
+            const isAuthLogin =
+              (endpoint || '').toLowerCase().includes('/auth/login') ||
+              (url || '').toLowerCase().includes('/auth/login');
+            if (response.status === 403 && !isAuthLogin) {
               // eslint-disable-next-line no-console
               console.warn('Access denied for this request', {
                 url,
@@ -147,12 +150,18 @@ export const api = {
                     ? rawPayload.error
                     : rawPayload?.error?.message) || rawPayload?.message,
               });
-              // Return null so callers can treat "no access" as "no data"
               return null;
             }
+            if (response.status === 403 && isAuthLogin) {
+              const msg =
+                (typeof rawPayload?.message === 'string' && rawPayload.message) ||
+                (typeof rawPayload?.error === 'string' ? rawPayload.error : rawPayload?.error?.message) ||
+                'Account is deactivated. Contact your owner.';
+              throw new Error(msg);
+            }
             const errorMessage =
+              (typeof rawPayload?.message === 'string' && rawPayload.message) ||
               (typeof rawPayload?.error === 'string' ? rawPayload.error : rawPayload?.error?.message) ||
-              rawPayload?.message ||
               `HTTP error! status: ${response.status}`;
             throw new Error(errorMessage);
           }
@@ -543,6 +552,16 @@ export const api = {
       api.request(`/staffs/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
     deleteStaff: (id: string) =>
       api.request(`/staffs/${id}`, { method: 'DELETE' }),
+  },
+
+  // User listing and status (owner: managers + staff; manager: staff in branch only; activate/deactivate)
+  users: {
+    getStaff: () => api.request('/users/staff'),
+    updateStatus: (userId: string, data: { isActive: boolean }) =>
+      api.request(`/users/${userId}/status`, {
+        method: 'PATCH',
+        body: JSON.stringify(data),
+      }),
   },
 
   // Membership Prices endpoints

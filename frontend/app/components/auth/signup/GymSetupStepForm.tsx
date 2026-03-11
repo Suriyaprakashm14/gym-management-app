@@ -97,14 +97,14 @@ export function GymSetupStepForm({
         initialValues={{ gymName: initialGymName }}
       >
         <Form.Item
-          label="Gym Name"
+          label="Gym Name(optional)"
           name="gymName"
           rules={[]}
         >
           <Input placeholder="Enter your gym name" />
         </Form.Item>
 
-        <Form.Item label="Gym Logo" style={{ marginBottom: 16 }}>
+        <Form.Item label="Gym Logo(optional)" style={{ marginBottom: 16 }}>
           <input
             ref={fileInputRef}
             type="file"
@@ -170,11 +170,6 @@ export function GymSetupStepForm({
         <Form.Item style={{ marginBottom: 12 }}>
           <Button block onClick={onBack} disabled={loading}>
             Back
-          </Button>
-        </Form.Item>
-        <Form.Item style={{ marginBottom: 0 }}>
-          <Button type="link" block onClick={onSkip} disabled={loading} style={{ padding: 0 }}>
-            Skip For Now
           </Button>
         </Form.Item>
       </Form>

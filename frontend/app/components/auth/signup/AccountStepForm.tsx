@@ -1,10 +1,11 @@
 'use client';
 
 import { useEffect } from 'react';
-import { Form, Input, Button } from 'antd';
+import { Form, Input, Button, Row, Col } from 'antd';
 
 export interface AccountFormValues {
-  name: string;
+  firstName: string;
+  lastName: string;
   email: string;
   password: string;
 }
@@ -21,12 +22,13 @@ export function AccountStepForm({ initialValues, onFinish, loading }: AccountSte
   useEffect(() => {
     if (initialValues) {
       form.setFieldsValue({
-        name: initialValues.name ?? '',
+        firstName: initialValues.firstName ?? '',
+        lastName: initialValues.lastName ?? '',
         email: initialValues.email ?? '',
         password: initialValues.password ?? '',
       });
     }
-  }, [form, initialValues?.name, initialValues?.email, initialValues?.password]);
+  }, [form, initialValues?.firstName, initialValues?.lastName, initialValues?.email, initialValues?.password]);
 
   return (
     <Form
@@ -34,7 +36,8 @@ export function AccountStepForm({ initialValues, onFinish, loading }: AccountSte
       name="account"
       layout="vertical"
       initialValues={{
-        name: initialValues?.name ?? '',
+        firstName: initialValues?.firstName ?? '',
+        lastName: initialValues?.lastName ?? '',
         email: initialValues?.email ?? '',
         password: initialValues?.password ?? '',
       }}
@@ -42,13 +45,26 @@ export function AccountStepForm({ initialValues, onFinish, loading }: AccountSte
       requiredMark={false}
       size="large"
     >
-      <Form.Item
-        label="User Name"
-        name="name"
-        rules={[{ required: true, message: 'Please enter your name!' }]}
-      >
-        <Input placeholder="Enter your name" />
-      </Form.Item>
+      <Row gutter={16}>
+        <Col span={12}>
+          <Form.Item
+            label="First Name"
+            name="firstName"
+            rules={[{ required: true, message: 'Please enter your first name' }]}
+          >
+            <Input placeholder="Enter first name" />
+          </Form.Item>
+        </Col>
+        <Col span={12}>
+          <Form.Item
+            label="Last Name"
+            name="lastName"
+            rules={[{ required: true, message: 'Please enter your last name' }]}
+          >
+            <Input placeholder="Enter last name" />
+          </Form.Item>
+        </Col>
+      </Row>
       <Form.Item
         label="Email"
         name="email"
