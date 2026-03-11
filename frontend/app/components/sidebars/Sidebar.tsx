@@ -2,7 +2,7 @@
 
 import React, { useState, useRef } from 'react';
 import Link from 'next/link';
-import { Layout, Menu, Button, Typography, App, Modal, Form, Input } from 'antd';
+import { Layout, Menu, Button, Typography, App, Modal, Form, Input, Space } from 'antd';
 import { useRouter, usePathname } from 'next/navigation';
 import {
   DashboardOutlined,
@@ -11,6 +11,7 @@ import {
   BankOutlined,
   TeamOutlined,
   EditOutlined,
+  DeleteOutlined,
 } from '@ant-design/icons';
 import { useAuth } from '../../contexts/AuthContext';
 import { api } from '../../utils/api';
@@ -200,6 +201,24 @@ const Sidebar: React.FC<SidebarProps> = ({ collapsed, onCollapse }) => {
     e.target.value = '';
   };
 
+  const handleRemoveGymLogo = async () => {
+    if (!currentUser.gymId) return;
+    try {
+      setEditGymLoading(true);
+      await api.gyms.removeLogo();
+      setEditGymLogoFile(null);
+      setEditGymLogoPreview(null);
+      updateUser({
+        gymLogo: null,
+      });
+      message.success('Gym logo removed');
+    } catch (err: any) {
+      message.error(err?.message || 'Failed to remove gym logo');
+    } finally {
+      setEditGymLoading(false);
+    }
+  };
+
   const handleEditGymSave = async () => {
     if (!currentUser.gymId) return;
     try {
@@ -304,32 +323,44 @@ const Sidebar: React.FC<SidebarProps> = ({ collapsed, onCollapse }) => {
         />
         <Form form={editGymForm} layout="vertical" style={{ marginTop: 16 }}>
           <Form.Item label="Gym logo" help="Click the box to change logo">
-            <div
-              role="button"
-              onClick={handleEditGymLogoClick}
-              style={{
-                width: 80,
-                height: 80,
-                borderRadius: 12,
-                border: '2px dashed #d9d9d9',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                overflow: 'hidden',
-                cursor: 'pointer',
-                background: '#fafafa',
-              }}
-            >
-              {(editGymLogoPreview || currentUser.gymLogo) ? (
-                <img
-                  src={editGymLogoPreview || currentUser.gymLogo || ''}
-                  alt="Gym logo"
-                  style={{ width: '100%', height: '100%', objectFit: 'cover' }}
-                />
-              ) : (
-                <span style={{ color: '#999', fontSize: 12 }}>Click to upload</span>
+            <Space align="start">
+              <div
+                role="button"
+                onClick={handleEditGymLogoClick}
+                style={{
+                  width: 80,
+                  height: 80,
+                  borderRadius: 12,
+                  border: '2px dashed #d9d9d9',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  overflow: 'hidden',
+                  cursor: 'pointer',
+                  background: '#fafafa',
+                }}
+              >
+                {(editGymLogoPreview || currentUser.gymLogo) ? (
+                  <img
+                    src={editGymLogoPreview || currentUser.gymLogo || ''}
+                    alt="Gym logo"
+                    style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                  />
+                ) : (
+                  <span style={{ color: '#999', fontSize: 12 }}>Click to upload</span>
+                )}
+              </div>
+              {(editGymLogoPreview || currentUser.gymLogo) && (
+                <Button
+                  danger
+                  icon={<DeleteOutlined />}
+                  onClick={handleRemoveGymLogo}
+                  loading={editGymLoading}
+                >
+                  Remove logo
+                </Button>
               )}
-            </div>
+            </Space>
           </Form.Item>
           <Form.Item
             name="gymName"

@@ -492,7 +492,6 @@ export default function AddMemberForm({ visible = true, onSuccess, onCancel }: A
                 style={{ width: '100%' }}
                 min={1}
                 max={12}
-                addonAfter="periods"
               />
             </Form.Item>
           </Col>
@@ -557,7 +556,6 @@ export default function AddMemberForm({ visible = true, onSuccess, onCancel }: A
             style={{ width: '100%' }}
             placeholder="Enter amount (max shown above)"
             min={0}
-            addonBefore="₹"
           />
         </Form.Item>
       </Card>

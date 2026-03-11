@@ -79,11 +79,42 @@ exports.markAttendanceWithFace = async (req, res) => {
     // Match using uuid
     const match = matches.find(f => f.uuid === member.personId);
 
+    console.log("Face match result:", match || null);
+
     if (match) {
       console.log("Match found with confidence:", match.confidence || 95);
-      await Attendance.create({
-        memberId,
-        attendanceDate: new Date(), // allow multiple entries per day
+
+      const now = new Date();
+      const oneMinuteAgo = new Date(now.getTime() - 60 * 1000);
+
+      const existing = await Attendance.findOne({
+        memberId: member._id,
+        attendanceDate: { $gte: oneMinuteAgo, $lte: now },
+        status: "Present",
+        authMethod: "face_recognition"
+      });
+
+      if (existing) {
+        console.log("Recent attendance already exists for member:", member._id, "attendanceId:", existing._id);
+        return res.json({
+          success: true,
+          message: "Attendance already marked recently",
+          data: {
+            memberId: member._id,
+            memberName: `${member.firstName} ${member.lastName}`,
+            authMethod: "face_recognition",
+            confidence: match.confidence || 95,
+            attendanceDate: existing.attendanceDate,
+            attendanceId: existing._id,
+            alreadyMarked: true
+          }
+        });
+      }
+
+      const attendance = await Attendance.create({
+        gymId: member.gymId,
+        memberId: member._id,
+        attendanceDate: now,
         status: "Present",
         authMethod: "face_recognition",
         authData: {
@@ -99,7 +130,7 @@ exports.markAttendanceWithFace = async (req, res) => {
           deviceId: "face_recognition_camera"
         }
       });
-      console.log("Attendance record created successfully.");
+      console.log("Attendance record created successfully for member:", member._id, "attendanceId:", attendance._id);
       return res.json({ 
         success: true, 
         message: "Attendance marked successfully with face recognition",
@@ -108,7 +139,8 @@ exports.markAttendanceWithFace = async (req, res) => {
           memberName: `${member.firstName} ${member.lastName}`,
           authMethod: "face_recognition",
           confidence: match.confidence || 95,
-          attendanceDate: new Date()
+          attendanceDate: attendance.attendanceDate,
+          attendanceId: attendance._id
         }
       });
     } else {

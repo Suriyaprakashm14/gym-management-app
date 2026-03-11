@@ -654,20 +654,15 @@ exports.signup = async (req, res) => {
   try {
     const { gymName, firstName, lastName, email, password, gymIcon } = req.body;
 
-    if (!gymName || !firstName || !lastName || !email || !password) {
+    // Gym name/logo are optional; default gym will be created if not provided
+    if (!firstName || !lastName || !email || !password) {
       return res.status(400).json({
         error: 'Missing required fields',
-        message: 'gymName, firstName, lastName, email, and password are required'
+        message: 'firstName, lastName, email, and password are required'
       });
     }
 
-    const trimmedGymName = String(gymName).trim();
-    if (!trimmedGymName) {
-      return res.status(400).json({
-        error: 'Invalid gym name',
-        message: 'Gym name is required'
-      });
-    }
+    const trimmedGymName = (gymName && String(gymName).trim()) || 'My Gym';
 
     if (String(password).length < 6) {
       return res.status(400).json({

@@ -243,6 +243,53 @@ exports.updateGym = async (req, res) => {
   }
 };
 
+// Remove gym logo for current user's gym
+exports.removeLogo = async (req, res) => {
+  try {
+    const user = req.currentUser || req.user;
+
+    if (!user || !user.gymId) {
+      return res.status(400).json({
+        error: 'Gym ID missing',
+        message: 'Current user is not associated with a gym'
+      });
+    }
+
+    const gymId = user.gymId.toString();
+    const gym = await Gym.findById(gymId);
+    if (!gym) {
+      return res.status(404).json({
+        error: 'Gym not found',
+        message: 'The specified gym does not exist'
+      });
+    }
+
+    // Clear logo
+    gym.logoUrl = null;
+    if (req.user?.id) {
+      gym.lastModifiedBy = req.user.id;
+    }
+    await gym.save();
+
+    return res.json({
+      success: true,
+      message: 'Gym logo removed',
+      data: {
+        id: gym._id,
+        name: gym.name,
+        logoUrl: gym.logoUrl,
+        updatedAt: gym.updatedAt
+      }
+    });
+  } catch (error) {
+    console.error('Remove gym logo error:', error);
+    return res.status(500).json({
+      error: 'Server error while removing gym logo',
+      message: error.message
+    });
+  }
+};
+
 // Freeze gym (Admin only)
 exports.freezeGym = async (req, res) => {
   try {
