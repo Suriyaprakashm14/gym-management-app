@@ -10,6 +10,21 @@ const { checkMembershipStatus } = require("../middleware/membershipValidation");
 
 const LUXAND_TOKEN = process.env.LUXAND_TOKEN;
 
+/**
+ * Resolve effective branch scope for the current user.
+ * - gym_owner (and other higher roles) see all branches (no branch filter).
+ * - manager/staff are restricted to their own branch.
+ */
+function getEffectiveBranchId(req) {
+  const user = req.user;
+  if (!user || !user.role) return null;
+  if ((user.role === "manager" || user.role === "staff") && user.branchId) {
+    return String(user.branchId);
+  }
+  // gym_owner or other roles: no branch restriction at controller level
+  return null;
+}
+
 // Multer middleware for image upload
 const upload = multer({ storage: multer.memoryStorage() });
 exports.uploadMiddleware = upload.single('image');
@@ -469,6 +484,7 @@ exports.markAttendanceDualAuth = async (req, res) => {
 
     // Both authentications successful - mark attendance
     await Attendance.create({
+      gymId: member.gymId,
       memberId,
       attendanceDate: new Date(),
       status: "Present",
@@ -700,7 +716,10 @@ exports.checkMembershipStatus = async (req, res) => {
 // GET attendance report with present/absent members and counts
 exports.getAttendanceReport = async (req, res) => {
   try {
-    const { period = 'day', branchId, date } = req.query;
+    const { period = 'day', branchId: queryBranchId, date } = req.query;
+    const roleBranchId = getEffectiveBranchId(req);
+    // For managers/staff, always scope to their own branch; gym_owner may optionally pass branchId
+    const effectiveBranchId = roleBranchId || (queryBranchId || null);
     
     // Calculate date range based on period
     let startDate, endDate;
@@ -739,8 +758,8 @@ exports.getAttendanceReport = async (req, res) => {
       attendanceDate: { $gte: startDate, $lte: endDate }
     };
     
-    if (branchId) {
-      attendanceQuery['location.branchId'] = branchId;
+    if (effectiveBranchId) {
+      attendanceQuery['location.branchId'] = effectiveBranchId;
     }
 
     // Get all attendance records for the period
@@ -751,11 +770,12 @@ exports.getAttendanceReport = async (req, res) => {
 
     console.log(`Found ${attendanceRecords.length} attendance records for period ${period}`);
 
-    // Get all members for the branch (to identify absent members)
-    const memberQuery = branchId ? { branchId } : {};
+    // Get all members for the branch (to identify absent members). Exclude upcoming and inactive from check-in list.
+    const memberQuery = effectiveBranchId ? { branchId: effectiveBranchId } : {};
+    memberQuery.status = { $nin: ['inactive', 'long term inactive', 'upcoming'] };
     const allMembers = await Member.find(memberQuery)
       .populate('branchId', 'name')
-      .select('firstName lastName branchId');
+      .select('firstName lastName branchId status');
 
 
     // Process attendance data
@@ -895,7 +915,7 @@ exports.getAttendanceReport = async (req, res) => {
 // Weekly Attendance Report - Dedicated endpoint
 exports.getWeeklyAttendanceReport = async (req, res) => {
   try {
-    const { weekStart, branchId } = req.query;
+    const { weekStart, branchId: queryBranchId } = req.query;
     
     let startDate, endDate;
     
@@ -925,9 +945,12 @@ exports.getWeeklyAttendanceReport = async (req, res) => {
       }
     };
     
+    const roleBranchId = getEffectiveBranchId(req);
+    const effectiveBranchId = roleBranchId || (queryBranchId || null);
+    
     // Add branch filter if specified
-    if (branchId) {
-      query.branchId = branchId;
+    if (effectiveBranchId) {
+      query['location.branchId'] = effectiveBranchId;
     }
     
     // Get all attendance records for the week
@@ -937,8 +960,8 @@ exports.getWeeklyAttendanceReport = async (req, res) => {
     
     // Get all members for comparison
     let memberQuery = { role: 'member' };
-    if (branchId) {
-      memberQuery.branchId = branchId;
+    if (effectiveBranchId) {
+      memberQuery.branchId = effectiveBranchId;
     }
     const allMembers = await Member.find(memberQuery);
     

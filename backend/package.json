@@ -3,16 +3,10 @@
   "version": "1.0.0",
   "main": "index.js",
   "scripts": {
-    "start": "nodemon index.js",
+    "start": "node index.js",
     "dev": "nodemon index.js",
     "test": "jest --runInBand",
-    "test:watch": "jest --watch",
-    "seed:recently-expired": "node scripts/seedRecentlyExpiredMembers.js",
-    "seed:users": "node scripts/seedUsers.js",
-    "seed:membership-prices": "node scripts/seedMembershipPrices.js",
-    "seed:members": "node scripts/seedMembers.js",
-    "seed:members:elite": "node scripts/seedMembers.js elite@mukesh.com",
-    "seed:all": "npm run seed:users && npm run seed:membership-prices && npm run seed:recently-expired && npm run seed:members"
+    "test:watch": "jest --watch"
   },
   "keywords": [],
   "author": "",

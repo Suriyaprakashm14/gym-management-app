@@ -1,6 +1,5 @@
 'use client';
 
-
 import { App as AntApp, ConfigProvider } from 'antd';
 import { Provider } from 'react-redux';
 import { store } from './redux/store';

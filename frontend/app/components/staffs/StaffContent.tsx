@@ -266,7 +266,7 @@ export default function StaffContent() {
       dataIndex: 'createdAt',
       key: 'createdAt',
       width: 120,
-      render: (v: string) => (v ? dayjs(v).format('DD MMM YYYY') : '—'),
+      render: (v: string) => (v ? dayjs(v).format('DD-MM-YYYY') : '—'),
     },
     {
       title: 'Actions',

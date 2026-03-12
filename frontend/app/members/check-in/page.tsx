@@ -33,6 +33,7 @@ import {
 } from '@ant-design/icons';
 import type { ColumnsType } from 'antd/es/table';
 import { api } from '../../utils/api';
+import { useAuth } from '../../contexts/AuthContext';
 import dayjs from 'dayjs';
 
 interface AttendanceData {
@@ -88,6 +89,7 @@ interface AttendanceMember {
 
 export default function CheckInPage() {
   const { message } = App.useApp();
+  const { user } = useAuth();
   const [attendanceData, setAttendanceData] = useState<AttendanceData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -101,9 +103,14 @@ export default function CheckInPage() {
     try {
       setLoading(true);
       setError(null);
+      const branchId =
+        user && user.role !== 'gym_owner'
+          ? user.branchId
+          : undefined;
       const response = await api.attendance.getReport({
         period: selectedPeriod,
         ...(selectedPeriod === 'day' && { date: selectedDate.format('YYYY-MM-DD') }),
+        ...(branchId ? { branchId } : {}),
       });
       setAttendanceData(response);
       if (showSuccessMessage) message.success('Attendance data refreshed successfully');
@@ -309,7 +316,7 @@ export default function CheckInPage() {
             <Col>
               <Space direction="vertical" size={4}>
                 <Text strong>Date</Text>
-                <DatePicker value={selectedDate} onChange={(date) => setSelectedDate(date || dayjs())} style={{ width: 150 }} />
+                <DatePicker value={selectedDate} onChange={(date) => setSelectedDate(date || dayjs())} style={{ width: 150 }} format="DD-MM-YYYY" />
               </Space>
             </Col>
           )}
@@ -394,7 +401,7 @@ export default function CheckInPage() {
                 {selectedMember.lastAttendance && (
                   <div>
                     <Text type="secondary">Last check-in: </Text>
-                    <Text strong>{dayjs(selectedMember.lastAttendance).format('MMM D, YYYY h:mm A')}</Text>
+                    <Text strong>{dayjs(selectedMember.lastAttendance).format('DD-MM-YYYY h:mm A')}</Text>
                   </div>
                 )}
                 {(selectedMember.attendanceDetails?.length ?? 0) > 0 ? (
@@ -407,7 +414,7 @@ export default function CheckInPage() {
                         <List.Item key={index}>
                           <Space>
                             <ClockCircleOutlined />
-                            <Text>{item.date && item.time ? dayjs(`${item.date}T${item.time}`).format('MMM D, h:mm A') : item.date || (item as any).attendanceDate || '—'}</Text>
+                            <Text>{item.date && item.time ? dayjs(`${item.date}T${item.time}`).format('DD-MM-YYYY h:mm A') : item.date || (item as any).attendanceDate || '—'}</Text>
                             {item.authMethod && <Tag>{getAuthMethodText(item.authMethod)}</Tag>}
                           </Space>
                         </List.Item>

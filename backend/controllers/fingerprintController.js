@@ -187,12 +187,17 @@ exports.verifyFingerprint = async (req, res) => {
     };
 
     if (verificationResult.success && verificationResult.match) {
-      // Mark attendance
+      // Mark attendance with branch scoping
       await Attendance.create({
+        gymId: member.gymId,
         memberId,
         attendanceDate: new Date(),
         status: 'Present',
-        authMethod: 'fingerprint'
+        authMethod: 'fingerprint',
+        location: {
+          branchId: member.branchId,
+          deviceId: 'fingerprint_scanner'
+        }
       });
 
       res.json({

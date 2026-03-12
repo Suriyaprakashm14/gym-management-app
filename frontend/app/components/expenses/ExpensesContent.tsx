@@ -202,7 +202,7 @@ export default function ExpensesContent() {
 
   const columns: ColumnsType<ExpenseRecord> = [
     { title: 'Amount', dataIndex: 'amount', key: 'amount', width: 120, render: (v: number) => `₹ ${Number(v).toLocaleString('en-IN')}` },
-    { title: 'Date', dataIndex: 'date', key: 'date', width: 120, render: (v: string) => (v ? dayjs(v).format('DD MMM YYYY') : '—') },
+    { title: 'Date', dataIndex: 'date', key: 'date', width: 120, render: (v: string) => (v ? dayjs(v).format('DD-MM-YYYY') : '—') },
     ...(isOwner
       ? [{ title: 'Branch', key: 'branch', width: 140, render: (_: unknown, r: ExpenseRecord) => branchIdToName[r.branchId as string] || r.branchName || r.branchId || '—' }]
       : []),

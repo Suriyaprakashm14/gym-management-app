@@ -6,10 +6,8 @@ import {
   Tag,
   Space,
   Button,
-  Avatar,
   Tooltip,
   Typography,
-  Popconfirm,
   App,
   Empty,
   Modal,
@@ -50,13 +48,13 @@ function getAvatarSrc(image: string | undefined | null): string | undefined {
   return `data:image/jpeg;base64,${image}`;
 }
 
-function formatDateDDMMYY(value: string | undefined | null): string {
+function formatDateDDMMYYYY(value: string | undefined | null): string {
   if (value == null || value === '') return EMPTY;
   const d = new Date(value);
   if (Number.isNaN(d.getTime())) return EMPTY;
   const day = String(d.getDate()).padStart(2, '0');
   const month = String(d.getMonth() + 1).padStart(2, '0');
-  const year = String(d.getFullYear()).slice(-2);
+  const year = String(d.getFullYear());
   return `${day}-${month}-${year}`;
 }
 
@@ -87,6 +85,16 @@ interface Member {
 }
 
 const PAGE_SIZE = 10;
+
+/** Ant Design CSS-in-JS registers cleanup after unmount in Table cells (known issue with React 18/Next.js). Suppress the harmless warning in dev. */
+if (typeof window !== 'undefined' && process.env.NODE_ENV === 'development') {
+  const originalError = console.error;
+  console.error = (...args: unknown[]) => {
+    const msg = typeof args[0] === 'string' ? args[0] : String(args[0] ?? '');
+    if (msg.includes('registering a cleanup function after unmount') && msg.includes('Ant Design CSS-in-JS')) return;
+    originalError.apply(console, args);
+  };
+}
 
 const MemberTable: React.FC = () => {
   const { message } = App.useApp();
@@ -141,16 +149,22 @@ const MemberTable: React.FC = () => {
     loadPage(pageToLoad, pageSize);
   }, [filter, page, pageSize]); // eslint-disable-line react-hooks/exhaustive-deps -- loadPage from filter/page/pageSize
 
-  const handleEdit = (record: Member) => {
-    const originalMember = members.find((m: any) => m.id === record.key);
-    const memberToEdit = originalMember && originalMember.id ? { ...originalMember } : null;
-    if (memberToEdit) {
-      setSelectedMember(memberToEdit);
-      setEditModalVisible(true);
-    } else {
-      message.warning('Member data not available. Please refresh and try again.');
-    }
-  };
+  const membersRef = useRef(members);
+  membersRef.current = members;
+
+  const handleEdit = useCallback(
+    (record: Member) => {
+      const originalMember = membersRef.current.find((m: any) => m.id === record.key);
+      const memberToEdit = originalMember && originalMember.id ? { ...originalMember } : null;
+      if (memberToEdit) {
+        setSelectedMember(memberToEdit);
+        setEditModalVisible(true);
+      } else {
+        message.warning('Member data not available. Please refresh and try again.');
+      }
+    },
+    [message]
+  );
 
   // When Renew modal opens: show Redux plans immediately (prompt render), then refresh from API
   useEffect(() => {
@@ -189,11 +203,11 @@ const MemberTable: React.FC = () => {
     fetchPlans();
   }, [renewModalVisible, message, reduxPlans]);
 
-  const handleOpenRenew = (record: Member) => {
+  const handleOpenRenew = useCallback((record: Member) => {
     setRenewMember(record);
     renewForm.setFieldsValue({ membership: undefined, planQuantity: 1, paidAmount: 0 });
     setRenewModalVisible(true);
-  };
+  }, [renewForm]);
 
   const handleRenewModalClose = () => {
     setRenewModalVisible(false);
@@ -227,25 +241,35 @@ const MemberTable: React.FC = () => {
     setSelectedMember(null);
   };
 
-  const handleRowClick = (record: Member) => {
+  const handleRowClick = useCallback((record: Member) => {
     setSelectedMemberId(record.key);
     setDetailsModalVisible(true);
-  };
+  }, []);
 
   const handleDetailsModalClose = () => {
     setDetailsModalVisible(false);
     setSelectedMemberId(null);
   };
 
-  const handleDelete = async (record: Member) => {
-    try {
-      await api.members.delete(record.key);
-      message.success('Member removed');
-      loadPage(page, pageSize);
-    } catch (err: any) {
-      message.error(err?.message || 'Failed to remove member');
-    }
-  };
+  const loadPageRef = useRef(loadPage);
+  const pageRef = useRef(page);
+  const pageSizeRef = useRef(pageSize);
+  loadPageRef.current = loadPage;
+  pageRef.current = page;
+  pageSizeRef.current = pageSize;
+
+  const handleDelete = useCallback(
+    async (record: Member) => {
+      try {
+        await api.members.delete(record.key);
+        message.success('Member removed');
+        loadPageRef.current(pageRef.current, pageSizeRef.current);
+      } catch (err: any) {
+        message.error(err?.message || 'Failed to remove member');
+      }
+    },
+    [message]
+  );
 
   const dataSource: Member[] = useMemo(() => {
     return (members as StoreMember[]).map((m) => {
@@ -273,7 +297,8 @@ const MemberTable: React.FC = () => {
     });
   }, [members]);
 
-  const columns: ColumnsType<Member> = [
+  const columns: ColumnsType<Member> = useMemo(
+    () => [
     {
       title: 'Member',
       dataIndex: 'name',
@@ -281,39 +306,56 @@ const MemberTable: React.FC = () => {
       width: 220,
       render: (text: string, record: Member) => {
         const avatarSrc = getAvatarSrc(record.image);
+        const initials = !avatarSrc && text && text !== EMPTY ? text.split(' ').map((n) => n[0]).join('') || '?' : '?';
+        const tagColor =
+          record.status === 'upcoming'
+            ? { bg: '#e6f4ff', border: '#91caff', color: '#1677ff' }
+            : record.status === 'inactive' || record.status === 'long term inactive'
+              ? { bg: '#fafafa', border: '#d9d9d9', color: '#8c8c8c' }
+              : { bg: '#f6ffed', border: '#b7eb8f', color: '#52c41a' };
         return (
-        <Space>
-          <Avatar
-            size={40}
-            src={avatarSrc}
-            style={{
-              backgroundColor: avatarSrc ? 'transparent' : '#1890ff',
-              verticalAlign: 'middle',
-            }}
-          >
-            {!avatarSrc && (text && text !== EMPTY ? text.split(' ').map((n) => n[0]).join('') || '?' : '?')}
-          </Avatar>
-          <div>
+          <Space>
             <div
               style={{
-                fontWeight: 500,
-                color: '#1f1f1f',
+                width: 40,
+                height: 40,
+                borderRadius: '50%',
+                overflow: 'hidden',
+                backgroundColor: avatarSrc ? 'transparent' : '#1890ff',
+                display: 'inline-flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                color: '#fff',
+                fontSize: 14,
+                flexShrink: 0,
               }}
             >
-              {text}
+              {avatarSrc ? (
+                <img src={avatarSrc} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+              ) : (
+                initials
+              )}
             </div>
-            <Tag
-              color={record.status === 'upcoming' ? 'blue' : record.status === 'inactive' || record.status === 'long term inactive' ? 'default' : 'success'}
-              style={{
-                marginTop: 4,
-                ...(record.status === 'inactive' || record.status === 'long term inactive' ? { color: '#8c8c8c', borderColor: '#d9d9d9' } : {}),
-              }}
-            >
-              {record.status === 'upcoming' ? 'UPCOMING' : record.status.toUpperCase()}
-            </Tag>
-          </div>
-        </Space>
-      );
+            <div>
+              <div style={{ fontWeight: 500, color: '#1f1f1f' }}>{text}</div>
+              <span
+                style={{
+                  display: 'inline-block',
+                  marginTop: 4,
+                  padding: '0 7px',
+                  fontSize: 12,
+                  lineHeight: '20px',
+                  borderRadius: 4,
+                  backgroundColor: tagColor.bg,
+                  border: `1px solid ${tagColor.border}`,
+                  color: tagColor.color,
+                }}
+              >
+                {record.status === 'upcoming' ? 'UPCOMING' : record.status.toUpperCase()}
+              </span>
+            </div>
+          </Space>
+        );
       },
     },
     {
@@ -356,7 +398,7 @@ const MemberTable: React.FC = () => {
         <Space direction="vertical" size={4}>
           <Text>{record.membership === EMPTY ? EMPTY : record.membership}</Text>
           {record.expiryInfo && record.expiryInfo !== EMPTY && (
-            <Text type="secondary" style={{ fontSize: 12 }}>{formatDateDDMMYY(record.expiryInfo)}</Text>
+            <Text type="secondary" style={{ fontSize: 12 }}>{formatDateDDMMYYYY(record.expiryInfo)}</Text>
           )}
           {record.isFamilyAccount && (
             <Tag color="blue">FAMILY ACCOUNT</Tag>
@@ -370,7 +412,7 @@ const MemberTable: React.FC = () => {
       key: 'lastVisit',
       width: 120,
       render: (text: string) => (
-        <Text type="secondary">{text === EMPTY ? EMPTY : formatDateDDMMYY(text)}</Text>
+        <Text type="secondary">{text === EMPTY ? EMPTY : formatDateDDMMYYYY(text)}</Text>
       ),
     },
     {
@@ -398,7 +440,7 @@ const MemberTable: React.FC = () => {
               <Space direction="vertical" size={0}>
                 <Text strong style={{ color: '#52c41a' }}>{record.billingAmount}</Text>
                 <Text type="secondary" style={{ fontSize: 12 }}>
-                  {record.billingDate === EMPTY ? EMPTY : formatDateDDMMYY(record.billingDate)}
+                  {record.billingDate === EMPTY ? EMPTY : formatDateDDMMYYYY(record.billingDate)}
                 </Text>
               </Space>
             </Space>
@@ -416,7 +458,7 @@ const MemberTable: React.FC = () => {
                 </Text>
                 {record.billingDate && record.billingDate !== EMPTY && (
                   <Text type="secondary" style={{ fontSize: 12 }}>
-                    {formatDateDDMMYY(record.billingDate)}
+                    {formatDateDDMMYYYY(record.billingDate)}
                   </Text>
                 )}
               </Space>
@@ -435,7 +477,7 @@ const MemberTable: React.FC = () => {
                 </Text>
                 {record.billingDate && record.billingDate !== EMPTY && (
                   <Text type="secondary" style={{ fontSize: 12 }}>
-                    {formatDateDDMMYY(record.billingDate)}
+                    {formatDateDDMMYYYY(record.billingDate)}
                   </Text>
                 )}
               </Space>
@@ -482,20 +524,27 @@ const MemberTable: React.FC = () => {
               onClick={() => handleEdit(record)}
             />
           </Tooltip>
-          <Popconfirm
-            title="Remove this member?"
-            onConfirm={() => handleDelete(record)}
-            okText="Yes"
-            cancelText="No"
-          >
-            <Tooltip title="Delete">
-              <Button type="text" danger icon={<DeleteOutlined />} />
-            </Tooltip>
-          </Popconfirm>
+          <Tooltip title="Delete">
+            <Button
+              type="text"
+              danger
+              icon={<DeleteOutlined />}
+              onClick={() => {
+                Modal.confirm({
+                  title: 'Remove this member?',
+                  okText: 'Yes',
+                  cancelText: 'No',
+                  onOk: () => handleDelete(record),
+                });
+              }}
+            />
+          </Tooltip>
         </Space>
       ),
     },
-  ];
+  ],
+    [handleEdit, handleOpenRenew, handleRowClick, handleDelete]
+  );
 
   const rowSelection = {
     selectedRowKeys,
@@ -538,7 +587,7 @@ const MemberTable: React.FC = () => {
           ),
         }}
         sticky
-        scroll={{ x: 1200, y: 500 }}
+        scroll={{ x: 1200 }}
         style={{ background: '#fff' }}
       />
       
@@ -587,7 +636,7 @@ const MemberTable: React.FC = () => {
             <InputNumber min={1} style={{ width: '100%' }} />
           </Form.Item>
           <Form.Item name="membershipStartDate" label="Start date" tooltip="Membership period starts from this date. Leave empty for today.">
-            <DatePicker style={{ width: '100%' }} />
+            <DatePicker style={{ width: '100%' }} format="DD-MM-YYYY" />
           </Form.Item>
           <Form.Item
             name="paidAmount"

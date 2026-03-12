@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useEffect, useState } from 'react';
+import { formatDisplayDate } from '../../constants/dateFormat';
 import {
   Modal,
   Descriptions,
@@ -245,8 +246,8 @@ const MemberDetailsModal: React.FC<MemberDetailsModalProps> = ({
                 {personalDetails?.phoneNumber || memberDetails.phone || 'N/A'}
               </Descriptions.Item>
               <Descriptions.Item label={<><CalendarOutlined /> Date of Birth</>}>
-                {personalDetails?.dateOfBirth ? 
-                  new Date(personalDetails.dateOfBirth).toLocaleDateString() 
+{personalDetails?.dateOfBirth ? 
+                  formatDisplayDate(personalDetails.dateOfBirth)
                   : (memberDetails.dob || 'N/A')
                 }
               </Descriptions.Item>
@@ -273,7 +274,7 @@ const MemberDetailsModal: React.FC<MemberDetailsModalProps> = ({
               </Descriptions.Item>
               <Descriptions.Item label="Start Date">
                 {personalDetails?.membership_start_date
-                  ? new Date(personalDetails.membership_start_date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
+                  ? formatDisplayDate(personalDetails.membership_start_date)
                   : 'N/A'}
               </Descriptions.Item>
               <Descriptions.Item
@@ -296,7 +297,7 @@ const MemberDetailsModal: React.FC<MemberDetailsModalProps> = ({
                 }
               >
                 {(personalDetails?.membership_end_date || memberDetails.expires)
-                  ? new Date((personalDetails?.membership_end_date || memberDetails.expires) as string).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
+                  ? formatDisplayDate((personalDetails?.membership_end_date || memberDetails.expires) as string)
                   : 'N/A'}
               </Descriptions.Item>
               <Descriptions.Item label="Paid Amount (₹)">

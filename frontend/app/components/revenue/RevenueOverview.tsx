@@ -21,6 +21,7 @@ import {
 } from 'recharts'
 import { useAuth } from '../../contexts/AuthContext'
 import { api } from '../../utils/api'
+import { formatDisplayDate } from '../../constants/dateFormat'
 
 interface AnalyticsData {
   period: {
@@ -290,11 +291,12 @@ const BillingOverview: React.FC = () => {
   }
 
   const formatDate = (dateString: string): string => {
-    return new Date(dateString).toLocaleDateString('en-IN', {
-      day: '2-digit',
-      month: '2-digit',
-      year: 'numeric'
-    })
+    const d = new Date(dateString);
+    if (Number.isNaN(d.getTime())) return '—';
+    const day = String(d.getDate()).padStart(2, '0');
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const year = String(d.getFullYear());
+    return `${day}-${month}-${year}`;
   }
 
   const CircularProgress = ({ 
@@ -685,7 +687,7 @@ const BillingOverview: React.FC = () => {
                     padding: '0.75rem',
                     boxShadow: '0 4px 12px rgba(0, 0, 0, 0.1)'
                   }}
-                  formatter={(value: number) => [formatCurrency(value), 'Revenue']}
+                  formatter={(value) => [formatCurrency(Number(value ?? 0)), 'Revenue']}
                   cursor={{ fill: 'rgba(59, 130, 246, 0.05)' }}
                 />
                 <Bar 
@@ -954,7 +956,7 @@ const BillingOverview: React.FC = () => {
                         color: '#64748B',
                         fontSize: '0.75rem'
                       }}>
-                        {member.paymentDate ? new Date(member.paymentDate).toLocaleDateString() : 'Recent'}
+                        {member.paymentDate ? formatDisplayDate(member.paymentDate) : 'Recent'}
                       </p>
                     </div>
                   </div>
@@ -1129,7 +1131,7 @@ const BillingOverview: React.FC = () => {
                         color: '#64748B',
                         fontSize: '0.75rem'
                       }}>
-                        Due: {member.dueDate ? new Date(member.dueDate).toLocaleDateString() : 'Overdue'}
+                        Due: {member.dueDate ? formatDisplayDate(member.dueDate) : 'Overdue'}
                       </p>
                     </div>
                   </div>

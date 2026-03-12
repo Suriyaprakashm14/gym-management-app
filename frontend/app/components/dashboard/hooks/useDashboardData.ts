@@ -192,6 +192,7 @@ export function useDashboardData(user: DashboardUser | null) {
       const isGymOwner = role === 'gym_owner';
       const isManager = role === 'manager';
       const isStaff = role === 'staff';
+      const branchId = !isGymOwner ? user.branchId : undefined;
 
       // Role-aware API requests:
       // - gym_owner: full analytics (gym-level), expenses, pending across gym
@@ -207,14 +208,15 @@ export function useDashboardData(user: DashboardUser | null) {
         expensesTotalPromise = api.expenses.getTotal(startDate, endDate).catch(() => ({ total: 0 }));
       } else if (isManager) {
         paymentsPromise = api.payments.getBranchManagerAnalytics({ startDate, endDate });
-        pendingPromise = user.branchId
-          ? api.payments.getPendingByBranchId(user.branchId)
+        pendingPromise = branchId
+          ? api.payments.getPendingByBranchId(branchId)
           : Promise.resolve({ members: [] });
         expensesTotalPromise = api.expenses.getTotal(startDate, endDate).catch(() => ({ total: 0 }));
       } else if (isStaff) {
-        paymentsPromise = Promise.resolve(null);
-        pendingPromise = user.branchId
-          ? api.payments.getPendingByBranchId(user.branchId)
+        // Staff can view their branch dashboard (revenue, pending, attendance)
+        paymentsPromise = api.payments.getBranchManagerAnalytics({ startDate, endDate });
+        pendingPromise = branchId
+          ? api.payments.getPendingByBranchId(branchId)
           : Promise.resolve({ members: [] });
         // Staff are not allowed to access expenses endpoints
         expensesTotalPromise = Promise.resolve({ total: 0 });
@@ -225,20 +227,25 @@ export function useDashboardData(user: DashboardUser | null) {
         expensesTotalPromise = Promise.resolve({ total: 0 });
       }
 
+      const weeklyUrl = branchId
+        ? `/attendance/report/weekly?branchId=${encodeURIComponent(branchId)}`
+        : '/attendance/report/weekly';
+
       const [paymentsRes, weeklyRes, todayRes, pendingRes, expensesTotalRes] = await Promise.allSettled([
         paymentsPromise,
-        api.request('/attendance/report/weekly'),
-        api.attendance.getReport({ period: 'day' }),
+        api.request(weeklyUrl),
+        api.attendance.getReport(branchId ? { period: 'day', branchId } : { period: 'day' }),
         pendingPromise,
         expensesTotalPromise,
       ]);
 
       if (isCancelled) return;
 
-      const paymentsKpis =
-        paymentsRes.status === 'fulfilled' && paymentsRes.value
-          ? parsePayments(paymentsRes.value)
-          : { ...EMPTY_KPIS, expensesAmount: 0 };
+      const paymentsPayload =
+        paymentsRes.status === 'fulfilled' && paymentsRes.value && (paymentsRes.value as { success?: boolean }).success !== false
+          ? paymentsRes.value
+          : null;
+      const paymentsKpis = paymentsPayload ? parsePayments(paymentsPayload) : { ...EMPTY_KPIS, expensesAmount: 0 };
       const trackedExpensesTotal =
         expensesTotalRes.status === 'fulfilled' && expensesTotalRes.value
           ? toNumber((expensesTotalRes.value as { total?: number; data?: { total?: number } }).total ?? (expensesTotalRes.value as any).data?.total)
@@ -247,18 +254,21 @@ export function useDashboardData(user: DashboardUser | null) {
         ...paymentsKpis,
         expensesAmount: trackedExpensesTotal,
       };
-      const attendanceBars =
-        weeklyRes.status === 'fulfilled' && weeklyRes.value
-          ? parseAttendanceWeekly(weeklyRes.value)
-          : [];
-      const todayCheckIns =
-        todayRes.status === 'fulfilled' && todayRes.value
-          ? parseTodayCheckIns(todayRes.value)
-          : [];
-      const pendingMembers =
-        pendingRes.status === 'fulfilled' && pendingRes.value
-          ? parsePendingMembers(pendingRes.value)
-          : [];
+      const weeklyPayload =
+        weeklyRes.status === 'fulfilled' && weeklyRes.value && (weeklyRes.value as { success?: boolean }).success !== false
+          ? weeklyRes.value
+          : null;
+      const todayPayload =
+        todayRes.status === 'fulfilled' && todayRes.value && (todayRes.value as { success?: boolean }).success !== false
+          ? todayRes.value
+          : null;
+      const pendingPayload =
+        pendingRes.status === 'fulfilled' && pendingRes.value && (pendingRes.value as { success?: boolean }).success !== false
+          ? pendingRes.value
+          : null;
+      const attendanceBars = weeklyPayload ? parseAttendanceWeekly(weeklyPayload) : [];
+      const todayCheckIns = todayPayload ? parseTodayCheckIns(todayPayload) : [];
+      const pendingMembers = pendingPayload ? parsePendingMembers(pendingPayload) : [];
 
       const nextModel: DashboardViewModel = {
         kpis,

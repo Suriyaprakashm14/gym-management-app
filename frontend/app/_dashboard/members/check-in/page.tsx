@@ -31,6 +31,7 @@ import {
 } from '@ant-design/icons';
 import type { ColumnsType } from 'antd/es/table';
 import { api } from '../../../utils/api';
+import { useAuth } from '../../../contexts/AuthContext';
 import dayjs from 'dayjs';
 
 
@@ -94,14 +95,20 @@ export default function CheckInPage() {
   const [selectedDate, setSelectedDate] = useState(dayjs());
   const [viewMode, setViewMode] = useState<'all' | 'present' | 'absent'>('all');
   const { message } = App.useApp();
+  const { user } = useAuth();
 
   const fetchAttendanceReport = async () => {
     try {
       setLoading(true);
       setError(null);
+      const branchId =
+        user && user.role !== 'gym_owner'
+          ? user.branchId
+          : undefined;
       const response = await api.attendance.getReport({
         period: selectedPeriod,
         ...(selectedPeriod === 'day' && { date: selectedDate.format('YYYY-MM-DD') }),
+        ...(branchId ? { branchId } : {}),
       });
       setAttendanceData(response);
       message.success('Attendance data refreshed successfully');
@@ -300,7 +307,7 @@ export default function CheckInPage() {
             <Col>
               <Space direction="vertical" size={4}>
                 <Text strong>Date</Text>
-                <DatePicker value={selectedDate} onChange={(date) => setSelectedDate(date || dayjs())} style={{ width: 150 }} />
+                <DatePicker value={selectedDate} onChange={(date) => setSelectedDate(date || dayjs())} style={{ width: 150 }} format="DD-MM-YYYY" />
               </Space>
             </Col>
           )}

@@ -167,32 +167,27 @@ export const api = {
                 (typeof rawPayload?.message === 'string' && rawPayload.message) ||
                 (typeof rawPayload?.error === 'string' ? rawPayload.error : rawPayload?.error?.message) ||
                 'Account is deactivated. Contact your owner.';
-              throw new Error(msg);
+              return { success: false, error: msg, status: response.status };
             }
-            let errorMessage =
+            const errorMessage =
               (typeof rawPayload?.message === 'string' && rawPayload.message) ||
               (typeof rawPayload?.error === 'string' ? rawPayload.error : rawPayload?.error?.message) ||
+              (typeof rawPayload?.error === 'object' && rawPayload?.error?.message) ||
               `HTTP error! status: ${response.status}`;
 
             // Friendly message for payload too large / entity too large
-            if (
+            const friendlyMessage =
               response.status === 413 ||
-              errorMessage.toLowerCase().includes('entity too large') ||
-              errorMessage.toLowerCase().includes('payload too large')
-            ) {
-              errorMessage = 'File too large. Please upload a smaller image or reduce the payload size.';
-            }
+              (String(errorMessage).toLowerCase().includes('entity too large') ||
+                String(errorMessage).toLowerCase().includes('payload too large'))
+                ? 'File too large. Please upload a smaller image or reduce the payload size.'
+                : errorMessage;
 
-            // eslint-disable-next-line no-console
-            console.error('[api] request failed', {
-              url,
+            return {
+              success: false,
+              error: typeof friendlyMessage === 'string' ? friendlyMessage : 'Request failed',
               status: response.status,
-              message: errorMessage,
-            });
-
-            const error = new Error(errorMessage) as Error & { status?: number };
-            error.status = response.status;
-            throw error;
+            };
           }
 
           let payload: any = rawPayload;
@@ -247,7 +242,8 @@ export const api = {
             isAbortError ||
             (fetchError instanceof Error && fetchError.message === 'Failed to fetch');
           if (!isNetworkError) {
-            throw fetchError;
+            const errMsg = fetchError instanceof Error ? fetchError.message : String(fetchError);
+            return { success: false, error: errMsg, status: 0 };
           }
         } finally {
           clearTimeout(timeoutId);
@@ -260,14 +256,18 @@ export const api = {
         (err instanceof Error && (err.message === 'Failed to fetch' || err.message.includes('fetch'))) ||
         (err instanceof DOMException && err.name === 'AbortError');
       if (isConnectionError) {
-        throw new Error(
-          'Unable to reach the server. Check that the backend is running (e.g. run "npm run dev" in the backend folder) and that the API URL is correct.'
-        );
+        return {
+          success: false,
+          error:
+            'Unable to reach the server. Check that the backend is running (e.g. run "npm run dev" in the backend folder) and that the API URL is correct.',
+          status: 0,
+        };
       }
-      throw err || new Error('Unable to connect to API server');
+      const fallbackMsg = err instanceof Error ? err.message : 'Unable to connect to API server';
+      return { success: false, error: fallbackMsg, status: 0 };
     } catch (error) {
-      console.error('API request failed:', error);
-      throw error;
+      const errMsg = error instanceof Error ? error.message : String(error);
+      return { success: false, error: errMsg, status: 0 };
     }
   },
 

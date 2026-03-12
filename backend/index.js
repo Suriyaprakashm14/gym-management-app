@@ -45,7 +45,13 @@ app.use(
     crossOriginResourcePolicy: false,
   })
 );
-app.use(cors());
+app.use(cors({
+  origin: [
+    "http://localhost:3000",
+    /\.vercel\.app$/
+  ],
+  credentials: true
+}));
 // Allow moderately large payloads for JSON and urlencoded bodies (e.g. images/base64),
 // while still protecting against excessively large requests.
 app.use(express.json({ limit: '15mb' }));

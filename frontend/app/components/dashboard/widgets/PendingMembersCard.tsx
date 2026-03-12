@@ -1,6 +1,7 @@
 'use client';
 
 import { Card, Empty, List, Tag, Typography } from 'antd';
+import { formatDisplayDate } from '../../../constants/dateFormat';
 import { ClockCircleOutlined } from '@ant-design/icons';
 import { PendingMemberItem } from '../types';
 
@@ -62,7 +63,7 @@ export default function PendingMembersCard({ items }: PendingMembersCardProps) {
                 </div>
                 <div style={{ marginTop: 6, display: 'flex', gap: 8, flexWrap: 'wrap', minWidth: 0 }}>
                   {item.membership ? <Tag>{item.membership}</Tag> : null}
-                  {item.dueDate ? <Tag color="default">Due {new Date(item.dueDate).toLocaleDateString()}</Tag> : null}
+                  {item.dueDate ? <Tag color="default">Due {formatDisplayDate(item.dueDate)}</Tag> : null}
                 </div>
               </div>
             </List.Item>

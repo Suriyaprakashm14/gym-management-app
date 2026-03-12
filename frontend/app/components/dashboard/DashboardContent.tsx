@@ -121,6 +121,7 @@ export default function DashboardContent() {
           onChange={(dates) => handleCustomRange(dates)}
           allowClear={false}
           style={{ width: "100%" }}
+          format="DD-MM-YYYY"
           placement="bottomLeft"
           classNames={{ popup: { root: 'dashboard-range-picker-dropdown' } }}
           styles={{ popup: { root: { zIndex: 2147483647 } } }}
@@ -180,7 +181,7 @@ export default function DashboardContent() {
               <span>
                 <CalendarOutlined style={{ marginRight: 8 }} />
                 {dateFilter === "custom" && customRange
-                  ? `${dayjs(customRange.startDate).format("MMM D, YYYY")} – ${dayjs(customRange.endDate).format("MMM D, YYYY")}`
+                  ? `${dayjs(customRange.startDate).format("DD-MM-YYYY")} – ${dayjs(customRange.endDate).format("DD-MM-YYYY")}`
                   : FILTER_LABELS[dateFilter]}
               </span>
               <DownOutlined style={{ fontSize: 10, marginLeft: 8 }} />

@@ -1,6 +1,7 @@
 'use client';
 
 import { Card, Empty, List, Tag, Typography } from 'antd';
+import { formatDisplayDate } from '../../../constants/dateFormat';
 import { AlertOutlined } from '@ant-design/icons';
 import { OverdueItem } from '../types';
 
@@ -62,7 +63,7 @@ export default function OverduePaymentsCard({ items }: OverduePaymentsCardProps)
                 </div>
                 <div style={{ marginTop: 6, display: 'flex', gap: 8, flexWrap: 'wrap', minWidth: 0 }}>
                   {item.membership ? <Tag>{item.membership}</Tag> : null}
-                  {item.dueDate ? <Tag color="warning">Due {new Date(item.dueDate).toLocaleDateString()}</Tag> : null}
+                  {item.dueDate ? <Tag color="warning">Due {formatDisplayDate(item.dueDate)}</Tag> : null}
                 </div>
               </div>
             </List.Item>

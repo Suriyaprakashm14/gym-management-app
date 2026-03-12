@@ -209,7 +209,7 @@ export default function MemberCreationPage() {
             </Col>
           </Row>
           <Form.Item label="Date of Birth" name="dateOfBirth">
-            <DatePicker style={{ width: '100%' }} placeholder="Select date of birth" />
+            <DatePicker style={{ width: '100%' }} placeholder="Select date of birth" format="DD-MM-YYYY" />
           </Form.Item>
           <Form.Item label="Street Address" name="streetAddress">
             <Input prefix={<HomeOutlined />} placeholder="Enter street address" />

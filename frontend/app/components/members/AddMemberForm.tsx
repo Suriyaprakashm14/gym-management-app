@@ -266,13 +266,20 @@ export default function AddMemberForm({ visible = true, onSuccess, onCancel }: A
     try {
       await form.validateFields(['firstName', 'lastName', 'email', 'branchId']);
       setFaceScanning(true);
-      const response = await api.biometrics.createFacePerson(blob);
-      const successFlag = (response as any)?.success;
-      const personId = (response as any)?.personId ?? (response as any)?.data?.personId;
-      if (successFlag === false || !personId) {
-        throw new Error(
-          (response as any)?.error?.message || (response as any)?.message || 'Face registration failed'
-        );
+      const result = await api.biometrics.createFacePerson(blob);
+      if (result && typeof result === 'object' && (result as { success?: boolean }).success === false) {
+        const errMsg = (result as { error?: string }).error || 'Face registration failed';
+        if (String(errMsg).toLowerCase().includes('face')) {
+          message.warning('Face not detected clearly. Please retake the photo.');
+        } else {
+          message.error(errMsg);
+        }
+        return;
+      }
+      const personId = (result as any)?.personId ?? (result as any)?.data?.personId;
+      if (!personId) {
+        message.error('Face registration failed');
+        return;
       }
       setFacePersonId(String(personId));
       setFaceRegistered(true);
@@ -406,7 +413,7 @@ export default function AddMemberForm({ visible = true, onSuccess, onCancel }: A
         name="dateOfBirth"
         
       >
-        <DatePicker style={{ width: '100%' }} placeholder="Select date of birth" />
+        <DatePicker style={{ width: '100%' }} placeholder="Select date of birth" format="DD-MM-YYYY" />
       </Form.Item>
       <Form.Item label="Street Address" name="streetAddress">
         <Input prefix={<HomeOutlined />} placeholder="Enter street address" />
@@ -485,7 +492,7 @@ export default function AddMemberForm({ visible = true, onSuccess, onCancel }: A
           tooltip="Membership period starts from this date. Used for calculations and renewal."
           initialValue={undefined}
         >
-          <DatePicker style={{ width: '100%' }} />
+          <DatePicker style={{ width: '100%' }} format="DD-MM-YYYY" />
         </Form.Item>
         <Form.Item
           noStyle
