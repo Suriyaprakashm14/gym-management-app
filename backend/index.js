@@ -45,11 +45,22 @@ app.use(
     crossOriginResourcePolicy: false,
   })
 );
+// CORS: allow localhost, Vercel, and production frontend via FRONTEND_URL or ALLOWED_ORIGINS
+const corsOrigins = [
+  'http://localhost:3000',
+  /\.vercel\.app$/
+];
+if (process.env.FRONTEND_URL) {
+  corsOrigins.push(process.env.FRONTEND_URL.trim());
+}
+if (process.env.ALLOWED_ORIGINS) {
+  process.env.ALLOWED_ORIGINS.split(',').forEach((o) => {
+    const trimmed = o.trim();
+    if (trimmed) corsOrigins.push(trimmed);
+  });
+}
 app.use(cors({
-  origin: [
-    "http://localhost:3000",
-    /\.vercel\.app$/
-  ],
+  origin: corsOrigins,
   credentials: true
 }));
 // Allow moderately large payloads for JSON and urlencoded bodies (e.g. images/base64),

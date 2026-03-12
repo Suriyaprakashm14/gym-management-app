@@ -1,0 +1,19 @@
+# Render Blueprint: gym-management-app backend
+# Dashboard: New → Blueprint, connect repo. Set MONGODB_URI and JWTSECRET in Environment.
+services:
+  - type: web
+    name: gym-backend
+    runtime: node
+    rootDir: backend
+    buildCommand: npm install
+    startCommand: npm start
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: MONGODB_URI
+        sync: false
+      - key: JWTSECRET
+        sync: false
+      - key: FRONTEND_URL
+        sync: false
