@@ -1,11 +1,10 @@
-# Render Blueprint: gym-management-app backend
-# Dashboard: New → Blueprint, connect repo. Set MONGODB_URI and JWTSECRET in Environment.
+# Render Blueprint: backend only. Connect repo with Root Directory = backend, or use a repo that contains only this backend.
+# Set MONGODB_URI, JWTSECRET, FRONTEND_URL in Render Environment.
 services:
   - type: web
     name: gym-backend
     runtime: node
-    rootDir: backend
-    buildCommand: npm install
+    buildCommand: npm ci
     startCommand: npm start
     healthCheckPath: /api/health
     envVars:
