@@ -1,6 +1,11 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 const DEFAULT_LOCAL_API_PORT = '5000';
-const ENV_API_BASE_URL = process.env.NEXT_PUBLIC_API_URL;
+const RAW_API_BASE = process.env.NEXT_PUBLIC_API_URL;
+// Backend mounts routes at /api (e.g. /api/auth/signup). Ensure base URL ends with /api.
+const ENV_API_BASE_URL =
+  RAW_API_BASE && RAW_API_BASE.trim().length > 0
+    ? RAW_API_BASE.trim().replace(/\/api\/?$/, '') + '/api'
+    : undefined;
 const DEFAULT_API_TIMEOUT_MS = Number(process.env.NEXT_PUBLIC_API_TIMEOUT_MS || '5000');
 const IS_DEV = process.env.NODE_ENV !== 'production';
 
