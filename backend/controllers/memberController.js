@@ -90,9 +90,9 @@ exports.create = async (req, res) => {
     return res.status(401).json({ error: "Authentication required" });
   }
 
-  const allowedRoles = ['gym_owner', 'manager'];
+  const allowedRoles = ['gym_owner', 'manager', 'staff'];
   if (!allowedRoles.includes(req.user.role)) {
-    return res.status(403).json({ error: "Access denied. Only gym_owner or manager can create members." });
+    return res.status(403).json({ error: "Access denied. Only gym_owner, staff or manager can create members." });
   }
 
   // For managers, ensure they can only create members in their branch
@@ -139,10 +139,14 @@ exports.create = async (req, res) => {
   }
 
   try {
-    let personId = null;
+    // Pre-enrolled face from add-member flow (biometric-first): use provided personId
+    const facePersonId = req.body.facePersonId ? String(req.body.facePersonId).trim() : null;
+    const fingerprintRegistered = req.body.fingerprintRegistered === true || req.body.fingerprintRegistered === 'true';
+
+    let personId = facePersonId;
     
-    // Try to register with Luxand face recognition (optional)
-    if (LUXAND_TOKEN && req.file) {
+    // If no pre-enrolled personId, try to register with Luxand from uploaded image (optional)
+    if (!personId && LUXAND_TOKEN && req.file) {
       try {
         console.log("Attempting to register face with Luxand...");
         console.log("Luxand Token:", LUXAND_TOKEN ? "Present" : "Missing");
@@ -215,13 +219,18 @@ exports.create = async (req, res) => {
 
     const member = new Member({
       branchId,
-      gymId, // Add gymId to member creation
+      gymId,
       firstName,
       lastName,
       email: email ? email.toLowerCase() : undefined,
       role,
-      image: req.file ? req.file.buffer.toString('base64') : undefined, // optional: store image as base64
-      personId,
+      image: req.file ? req.file.buffer.toString('base64') : undefined,
+      personId: personId || undefined,
+      hasFingerprint: !!fingerprintRegistered,
+      authMethods: {
+        faceRecognition: !!personId,
+        fingerprint: !!fingerprintRegistered,
+      },
       ...rest,
     });
 
@@ -344,7 +353,7 @@ exports.getAll = async (req, res) => {
           : null;
 
         if (periodInfo) {
-          // Active only when now is within [periodStart, periodEnd]. Inactive before first period starts or after last period ends.
+          // Active only when now is within [periodStart, periodEnd]. Upcoming before start; inactive/expired after end.
           m.membership.startDate = periodInfo.periodStart;
           m.membership.endDate = periodInfo.periodEnd;
           m.membership.isActive = periodInfo.isActive;
@@ -355,7 +364,7 @@ exports.getAll = async (req, res) => {
             if (now > periodInfo.periodEnd) {
               m.status = periodInfo.periodEnd < ninetyDaysAgo ? 'long term inactive' : 'inactive';
             } else {
-              m.status = 'inactive'; // not yet started (now < periodStart)
+              m.status = 'upcoming'; // not yet started (now < periodStart)
             }
           }
           await Details.findOneAndUpdate(
@@ -373,13 +382,17 @@ exports.getAll = async (req, res) => {
           // No subscription periods: use membership_start_date / membership_end_date as before
           if (details.membership_start_date != null) m.membership.startDate = details.membership_start_date;
           if (details.membership_end_date != null) m.membership.endDate = details.membership_end_date;
+          const effectiveStart = details.membership_start_date ? new Date(details.membership_start_date) : null;
           const effectiveEndRaw = details.membership_end_date ?? m.membership?.endDate;
           const effectiveEnd = effectiveEndRaw ? new Date(effectiveEndRaw) : null;
           const isExpired = effectiveEnd && effectiveEnd < now;
-          const newStatus = isExpired
-            ? (effectiveEnd < ninetyDaysAgo ? 'long term inactive' : 'inactive')
-            : (String(m.status) === 'suspended' ? 'suspended' : 'active');
-          m.membership.isActive = !isExpired;
+          const notStarted = effectiveStart && now < effectiveStart;
+          const newStatus = notStarted
+            ? 'upcoming'
+            : isExpired
+              ? (effectiveEnd < ninetyDaysAgo ? 'long term inactive' : 'inactive')
+              : (String(m.status) === 'suspended' ? 'suspended' : 'active');
+          m.membership.isActive = !isExpired && !notStarted;
           m.status = newStatus;
           await Member.findByIdAndUpdate(m._id, {
             'membership.type': details.membership || m.membership?.type,
@@ -534,7 +547,7 @@ exports.update = async (req, res) => {
     }
 
     const updated = await Member.findByIdAndUpdate(req.params.id, req.body, { new: true });
-    res.json(updated);
+    res.json({ success: true, data: updated });
   } catch (err) {
     res.status(400).json({ error: err.message });
   }
@@ -582,7 +595,7 @@ exports.patch = async (req, res) => {
     }
 
     const updated = await Member.findByIdAndUpdate(req.params.id, { $set: updateData }, { new: true, runValidators: true });
-    res.json(updated);
+    res.json({ success: true, data: updated });
   } catch (err) {
     res.status(400).json({ error: err.message });
   }

@@ -35,7 +35,13 @@ exports.create = async (req, res) => {
       return res.status(400).json({ error: `Category "${name}" already exists` });
     }
     const category = await ExpenseCategory.create({ gymId, name, isActive: true });
-    res.status(201).json(category);
+    res.status(201).json({
+      success: true,
+      data: {
+        id: category._id,
+        name: category.name
+      }
+    });
   } catch (err) {
     res.status(400).json({ error: err.message });
   }

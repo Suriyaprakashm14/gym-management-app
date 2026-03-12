@@ -51,6 +51,16 @@ exports.markAttendanceWithFace = async (req, res) => {
       });
     }
 
+    const todayFace = new Date();
+    todayFace.setHours(0, 0, 0, 0);
+    if (member.membership?.startDate) {
+      const startDate = new Date(member.membership.startDate);
+      startDate.setHours(0, 0, 0, 0);
+      if (todayFace < startDate) {
+        return res.status(400).json({ success: false, message: "Membership not started yet" });
+      }
+    }
+
     console.log("Member found:", member.firstName, member.lastName);
     console.log("Stored member.personId:", member.personId);
 
@@ -181,6 +191,66 @@ exports.checkMemberReference = async (req, res) => {
   } catch (error) {
     console.error("Error checking member reference:", error);
     res.status(500).json({ error: "Server error while checking member reference" });
+  }
+};
+
+// Pre-enroll: create Luxand person only (no member). Returns personId for later member creation.
+exports.enrollFacePre = async (req, res) => {
+  if (!req.file) {
+    return res.status(400).json({ error: "Image file is required" });
+  }
+
+  if (!LUXAND_TOKEN) {
+    return res.status(503).json({
+      error: "Face recognition not configured",
+      message: "LUXAND_TOKEN is not set. Face pre-enrollment is unavailable.",
+    });
+  }
+
+  try {
+    const formData = new FormData();
+    formData.append("photo", req.file.buffer, { filename: req.file.originalname || "face.jpg" });
+    formData.append("name", "pending-member");
+    formData.append("store", "1");
+
+    const response = await axios.post(
+      "https://api.luxand.cloud/person",
+      formData,
+      {
+        headers: {
+          token: LUXAND_TOKEN,
+          ...formData.getHeaders(),
+        },
+      }
+    );
+
+    const personData = response.data;
+    const personId = personData.uuid || personData.id;
+
+    if (!personId) {
+      return res.status(400).json({
+        error: personData?.message || "Failed to create person in face recognition system",
+        details: personData,
+      });
+    }
+
+    return res.json({
+      success: true,
+      message: "Face registered successfully",
+      personId: String(personId),
+    });
+  } catch (error) {
+    console.error("Face pre-enrollment error:", error.response?.data || error.message);
+    if (error.response?.status === 401) {
+      return res.status(401).json({
+        error: "Invalid API token",
+        message: "Face recognition service is not properly configured.",
+      });
+    }
+    return res.status(500).json({
+      error: "Server error during face registration",
+      message: error.message || "An error occurred while registering the face.",
+    });
   }
 };
 
@@ -335,6 +405,16 @@ exports.markAttendanceDualAuth = async (req, res) => {
         error: "Fingerprint not available",
         details: `Member ${member.firstName} ${member.lastName} does not have fingerprint enrolled.`
       });
+    }
+
+    const todayDual = new Date();
+    todayDual.setHours(0, 0, 0, 0);
+    if (member.membership?.startDate) {
+      const startDateDual = new Date(member.membership.startDate);
+      startDateDual.setHours(0, 0, 0, 0);
+      if (todayDual < startDateDual) {
+        return res.status(400).json({ success: false, message: "Membership not started yet" });
+      }
     }
 
     // Step 1: Face Recognition

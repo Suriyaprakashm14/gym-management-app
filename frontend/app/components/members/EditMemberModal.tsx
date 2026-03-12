@@ -388,7 +388,7 @@ const EditMemberModal: React.FC<EditMemberModalProps> = ({
               <Form.Item
                 label="Date of Birth"
                 name="dateOfBirth"
-                rules={[{ validator: dobValidator() }]}
+                
               >
                 <Input
                   type="date"

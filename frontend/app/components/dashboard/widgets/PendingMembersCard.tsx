@@ -15,7 +15,7 @@ export default function PendingMembersCard({ items }: PendingMembersCardProps) {
     <Card
       title={
         <span style={{ color: '#1f1f1f' }}>
-          <ClockCircleOutlined /> Pending Payments
+          <ClockCircleOutlined /> Overdue Payments
         </span>
       }
       style={{

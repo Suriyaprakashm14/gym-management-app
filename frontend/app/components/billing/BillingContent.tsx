@@ -152,7 +152,7 @@ export default function BillingContent() {
         <div style={{ marginBottom: '1.5rem' }}>
           <Title level={2} style={{ margin: 0, display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
             <ClockCircleOutlined style={{ color: '#F59E0B' }} />
-            Pending Payments
+            Overdue Payments
           </Title>
           <p style={{ color: '#64748B', margin: '0.5rem 0 0 0' }}>Manage pending payments and add new payments for members</p>
         </div>

@@ -570,32 +570,6 @@ const BillingOverview: React.FC = () => {
                   </option>
                 ))}
               </select>
-              
-              <button 
-                onClick={fetchAnalyticsData}
-                style={{
-                  background: 'linear-gradient(135deg, #3B82F6 0%, #1D4ED8 100%)',
-                  color: 'white',
-                  fontSize: 'clamp(0.875rem, 2vw, 1rem)',
-                  fontWeight: '600',
-                  padding: 'clamp(0.5rem, 2vw, 0.75rem) clamp(1rem, 3vw, 1.5rem)',
-                  borderRadius: '0.5rem',
-                  border: 'none',
-                  cursor: 'pointer',
-                  boxShadow: '0 4px 12px rgba(59, 130, 246, 0.3)',
-                  transition: 'all 0.3s ease',
-                  whiteSpace: 'nowrap'
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.transform = 'translateY(-2px)';
-                  e.currentTarget.style.boxShadow = '0 6px 16px rgba(59, 130, 246, 0.4)';
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.transform = 'translateY(0)';
-                  e.currentTarget.style.boxShadow = '0 4px 12px rgba(59, 130, 246, 0.3)';
-                }}>
-                Refresh
-              </button>
             </div>
           </div>
 

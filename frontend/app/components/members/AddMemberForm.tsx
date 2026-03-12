@@ -59,11 +59,10 @@ export default function AddMemberForm({ visible = true, onSuccess, onCancel }: A
   const [membershipTypesLoading, setMembershipTypesLoading] = useState(false);
   const [fingerprintRegistered, setFingerprintRegistered] = useState(false);
   const [faceRegistered, setFaceRegistered] = useState(false);
+  const [facePersonId, setFacePersonId] = useState<string | null>(null);
   const [fingerprintLoading, setFingerprintLoading] = useState(false);
   const [faceScanning, setFaceScanning] = useState(false);
   const [faceModalOpen, setFaceModalOpen] = useState(false);
-  const [createdMemberId, setCreatedMemberId] = useState<string | null>(null);
-  const [createdMember, setCreatedMember] = useState<any | null>(null);
   const { user } = useAuth();
   const dispatch = useAppDispatch();
   const reduxPlans = useAppSelector((s) => s.membershipPrices.items);
@@ -154,44 +153,33 @@ export default function AddMemberForm({ visible = true, onSuccess, onCancel }: A
     }
   }, [user?.gymId, user?.role, form]);
 
-  const createMemberIfNeeded = async (values: any) => {
-    if (createdMemberId && createdMember) {
-      return { memberId: createdMemberId, memberObj: createdMember };
-    }
-
-    const formData = new FormData();
-    formData.append('firstName', values.firstName);
-    formData.append('lastName', values.lastName);
-    formData.append('email', values.email);
-    formData.append('role', values.role ?? 'member');
-    formData.append('branchId', values.branchId);
-    if (values.dateOfBirth) {
-      const d = values.dateOfBirth instanceof Date ? values.dateOfBirth : new Date(values.dateOfBirth);
-      if (!Number.isNaN(d.getTime())) {
-        formData.append('dateOfBirth', d.toISOString().split('T')[0]);
-      }
-    }
-    if (fileList.length > 0 && fileList[0].originFileObj) {
-      formData.append('image', fileList[0].originFileObj);
-    }
-
-    const memberResponse = await api.members.create(formData);
-    const raw = (memberResponse as any)?.data ?? memberResponse;
-    const memberObj = raw?.member ?? raw;
-    let memberId: string | null = memberObj?.id ?? memberObj?._id;
-    if (memberId != null && typeof memberId !== 'string') memberId = String(memberId);
-    if (!memberId) throw new Error('Failed to get member ID from response');
-
-    setCreatedMemberId(memberId);
-    setCreatedMember(memberObj);
-
-    return { memberId, memberObj };
-  };
-
   const handleSubmit = async (values: any) => {
     setLoading(true);
     try {
-      const { memberId, memberObj } = await createMemberIfNeeded(values);
+      const formData = new FormData();
+      formData.append('firstName', values.firstName);
+      formData.append('lastName', values.lastName);
+      formData.append('email', values.email);
+      formData.append('role', values.role ?? 'member');
+      formData.append('branchId', values.branchId);
+      formData.append('fingerprintRegistered', String(fingerprintRegistered));
+      if (facePersonId) formData.append('facePersonId', facePersonId);
+      if (values.dateOfBirth) {
+        const d = values.dateOfBirth instanceof Date ? values.dateOfBirth : new Date(values.dateOfBirth);
+        if (!Number.isNaN(d.getTime())) {
+          formData.append('dateOfBirth', d.toISOString().split('T')[0]);
+        }
+      }
+      if (fileList.length > 0 && fileList[0].originFileObj) {
+        formData.append('image', fileList[0].originFileObj);
+      }
+
+      const memberResponse = await api.members.create(formData);
+      const raw = (memberResponse as any)?.data ?? memberResponse;
+      const memberObj = raw?.member ?? raw;
+      let memberId: string | null = memberObj?.id ?? memberObj?._id;
+      if (memberId != null && typeof memberId !== 'string') memberId = String(memberId);
+      if (!memberId) throw new Error('Failed to get member ID from response');
 
       const gender = values.personalGender === 'other' ? 'others' : values.personalGender;
       try {
@@ -242,10 +230,9 @@ export default function AddMemberForm({ visible = true, onSuccess, onCancel }: A
       message.success('Member created successfully');
       form.resetFields();
       setFileList([]);
-      setCreatedMemberId(null);
-      setCreatedMember(null);
       setFingerprintRegistered(false);
       setFaceRegistered(false);
+      setFacePersonId(null);
       onSuccess?.();
     } catch (err: any) {
       message.error(err?.message || 'Failed to create member');
@@ -256,14 +243,9 @@ export default function AddMemberForm({ visible = true, onSuccess, onCancel }: A
 
   const handleEnrollFingerprint = async () => {
     try {
-      const values = await form.validateFields();
+      await form.validateFields(['firstName', 'lastName', 'email', 'branchId']);
       setFingerprintLoading(true);
-      const { memberId } = await createMemberIfNeeded(values);
-      const branchIdForAccess = values.branchId || user?.branchId;
-      const response = await api.biometrics.enrollFingerprint(memberId, branchIdForAccess);
-      // Debug log for verification
-      // eslint-disable-next-line no-console
-      console.log('Fingerprint enrollment response:', response);
+      const response = await api.biometrics.simulateEnroll();
       const successFlag = (response as any)?.success;
       if (successFlag === false) {
         throw new Error(
@@ -271,10 +253,10 @@ export default function AddMemberForm({ visible = true, onSuccess, onCancel }: A
         );
       }
       setFingerprintRegistered(true);
-      message.success('Fingerprint enrolled successfully');
+      message.success('Fingerprint captured successfully (simulation)');
     } catch (err: any) {
       if (err?.errorFields) return;
-      message.error(err?.message || 'Failed to enroll fingerprint');
+      message.error(err?.message || 'Failed to capture fingerprint');
     } finally {
       setFingerprintLoading(false);
     }
@@ -282,25 +264,23 @@ export default function AddMemberForm({ visible = true, onSuccess, onCancel }: A
 
   const handleFaceCaptured = async (blob: Blob) => {
     try {
-      const values = await form.validateFields();
+      await form.validateFields(['firstName', 'lastName', 'email', 'branchId']);
       setFaceScanning(true);
-      const { memberId } = await createMemberIfNeeded(values);
-      const response = await api.biometrics.enrollFace(memberId, blob);
-      // Debug log for verification (shown in dev tools / terminal depending on environment)
-      // eslint-disable-next-line no-console
-      console.log('Face enrollment response:', response);
+      const response = await api.biometrics.createFacePerson(blob);
       const successFlag = (response as any)?.success;
-      if (successFlag === false) {
+      const personId = (response as any)?.personId ?? (response as any)?.data?.personId;
+      if (successFlag === false || !personId) {
         throw new Error(
-          (response as any)?.error?.message || 'Face enrollment failed'
+          (response as any)?.error?.message || (response as any)?.message || 'Face registration failed'
         );
       }
+      setFacePersonId(String(personId));
       setFaceRegistered(true);
       setFaceModalOpen(false);
-      message.success('Face enrolled successfully');
+      message.success('Face registered successfully');
     } catch (err: any) {
       if (err?.errorFields) return;
-      message.error(err?.message || 'Failed to enroll face');
+      message.error(err?.message || 'Failed to register face');
     } finally {
       setFaceScanning(false);
     }
@@ -399,9 +379,12 @@ export default function AddMemberForm({ visible = true, onSuccess, onCancel }: A
           <Form.Item
             label="Phone Number"
             name="phoneNumber"
-            rules={[mobileRequiredRule, mobilePatternRule()]}
+            rules={[
+              mobileRequiredRule,
+              { pattern: /^[0-9]{10}$/, message: 'Enter a valid 10 digit phone number' },
+            ]}
           >
-            <Input prefix={<PhoneOutlined />} placeholder="Enter phone number" />
+            <Input prefix={<PhoneOutlined />} placeholder="Enter phone number" inputMode="numeric" />
           </Form.Item>
         </Col>
         <Col span={12}>
@@ -421,7 +404,7 @@ export default function AddMemberForm({ visible = true, onSuccess, onCancel }: A
       <Form.Item
         label="Date of Birth"
         name="dateOfBirth"
-        rules={[{ validator: dobValidator() }]}
+        
       >
         <DatePicker style={{ width: '100%' }} placeholder="Select date of birth" />
       </Form.Item>

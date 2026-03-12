@@ -13,6 +13,8 @@ router.post('/photo-only', attendanceController.uploadMiddleware, attendanceCont
 // POST route to mark attendance via dual authentication (face + fingerprint)
 router.post('/dual-auth', attendanceController.uploadMiddleware, validateMembership, attendanceController.markAttendanceDualAuth);
 
+// POST create Luxand person only (no member). Returns personId for add-member flow.
+router.post('/enroll-face-pre', attendanceController.uploadMiddleware, attendanceController.enrollFacePre);
 // POST route to enroll/register a member's face for recognition
 router.post('/enroll-face', attendanceController.uploadMiddleware, attendanceController.enrollMemberFace);
 

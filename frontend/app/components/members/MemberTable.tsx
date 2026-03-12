@@ -83,7 +83,7 @@ interface Member {
   billingStatus: 'paid' | 'overdue' | 'pending';
   hasPaymentCard: boolean;
   isFamilyAccount: boolean;
-  status: 'active' | 'inactive' | 'long term inactive';
+  status: 'active' | 'inactive' | 'long term inactive' | 'upcoming';
 }
 
 const PAGE_SIZE = 10;
@@ -267,7 +267,7 @@ const MemberTable: React.FC = () => {
         billingStatus: ((m.billingStatus as string) || 'pending') as 'paid' | 'overdue' | 'pending',
         hasPaymentCard: true,
         isFamilyAccount: false,
-        status: ((m.status as string) === 'inactive' || (m.status as string) === 'long term inactive' ? (m.status as string) : 'active') as Member['status'],
+        status: ((m.status as string) === 'inactive' || (m.status as string) === 'long term inactive' || (m.status as string) === 'upcoming' ? (m.status as string) : 'active') as Member['status'],
         image: (m as any).image,
       };
     });
@@ -303,13 +303,13 @@ const MemberTable: React.FC = () => {
               {text}
             </div>
             <Tag
-              color={record.status === 'inactive' || record.status === 'long term inactive' ? 'default' : 'success'}
+              color={record.status === 'upcoming' ? 'blue' : record.status === 'inactive' || record.status === 'long term inactive' ? 'default' : 'success'}
               style={{
                 marginTop: 4,
                 ...(record.status === 'inactive' || record.status === 'long term inactive' ? { color: '#8c8c8c', borderColor: '#d9d9d9' } : {}),
               }}
             >
-              {record.status.toUpperCase()}
+              {record.status === 'upcoming' ? 'UPCOMING' : record.status.toUpperCase()}
             </Tag>
           </div>
         </Space>
@@ -461,6 +461,11 @@ const MemberTable: React.FC = () => {
               onClick={() => handleRowClick(record)}
             />
           </Tooltip>
+          {record.status === 'upcoming' && (
+            <Tooltip title="Upcoming plan">
+              <Button type="text" icon={<ClockCircleOutlined style={{ color: '#1890ff' }} />} disabled />
+            </Tooltip>
+          )}
           {(record.status === 'inactive' || record.status === 'long term inactive') && (
             <Tooltip title="Renew">
               <Button

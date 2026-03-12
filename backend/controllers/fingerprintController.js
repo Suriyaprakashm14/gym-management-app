@@ -54,6 +54,16 @@ exports.testConnection = async (req, res) => {
 };
 
 /**
+ * Simulate fingerprint enrollment (no member created). Used in add-member flow before member exists.
+ */
+exports.simulateEnroll = async (req, res) => {
+  return res.json({
+    success: true,
+    message: 'Fingerprint captured successfully (simulation)',
+  });
+};
+
+/**
  * Enroll member fingerprint
  */
 exports.enrollFingerprint = async (req, res) => {

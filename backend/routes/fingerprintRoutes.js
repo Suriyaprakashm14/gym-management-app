@@ -8,6 +8,9 @@ const branchManagerAccess = require('../middleware/branchManagerAccess');
 // Test ZKFinger device connection
 router.get('/test-connection', authMiddleware, fingerprintController.testConnection);
 
+// Simulate fingerprint enrollment (no memberId). For add-member flow before member is created.
+router.post('/simulate-enroll', authMiddleware, fingerprintController.simulateEnroll);
+
 // Enroll member fingerprint
 router.post('/enroll', authMiddleware, branchManagerAccess, fingerprintController.enrollFingerprint);
 

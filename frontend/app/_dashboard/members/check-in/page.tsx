@@ -18,8 +18,6 @@ import {
   DatePicker,
   Spin,
   Alert,
-  message,
-  App,
 } from 'antd';
 import {
   UserOutlined,
@@ -97,7 +95,6 @@ export default function CheckInPage() {
   const [viewMode, setViewMode] = useState<'all' | 'present' | 'absent'>('all');
   const { message } = App.useApp();
 
-  const { message } = App.useApp();
   const fetchAttendanceReport = async () => {
     try {
       setLoading(true);

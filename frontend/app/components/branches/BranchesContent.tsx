@@ -375,7 +375,10 @@ export default function BranchesContent() {
             <Col span={8}><Form.Item name="address.country" label="Country" rules={[{ required: true }]}><Input placeholder="Country" /></Form.Item></Col>
           </Row>
           <Title level={5}>Contact</Title>
-          <Form.Item name="contactInfo.phone" label="Phone" rules={[mobileRequiredRule, mobilePatternRule()]}><Input placeholder="Phone" /></Form.Item>
+          <Form.Item name="contactInfo.phone" label="Phone" rules={[
+              mobileRequiredRule,
+              { pattern: /^[0-9]{10}$/, message: 'Enter a valid 10 digit phone number' },
+            ]}><Input placeholder="Phone" /></Form.Item>
         </Form>
       </Modal>
       <Modal title={`Create Manager for ${selectedBranch?.name || 'Branch'}`} open={managerModalVisible} onCancel={() => { setManagerModalVisible(false); managerForm.resetFields(); }} onOk={() => managerForm.submit()} okText="Create Manager" cancelText="Cancel" width={500}>

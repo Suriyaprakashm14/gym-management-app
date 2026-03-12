@@ -271,13 +271,58 @@ export const api = {
     }
   },
 
-  // Auth endpoints
+  // Auth endpoints - login returns structured error on failure (no throw)
   auth: {
-    login: (credentials: { email: string; password: string }) =>
-      api.request('/auth/login', {
+    async login(credentials: { email: string; password: string }) {
+      const endpoint = '/auth/login';
+      const opts: RequestInit = {
         method: 'POST',
         body: JSON.stringify(credentials),
-      }),
+      };
+      const baseUrls = resolveApiBaseUrls();
+      const urlList = Array.isArray(baseUrls) && baseUrls.length > 0 ? baseUrls : [api.baseURL];
+      for (const baseUrl of urlList) {
+        const url = `${baseUrl}${endpoint}`;
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), DEFAULT_API_TIMEOUT_MS);
+        try {
+          const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+          const response = await fetch(url, { ...opts, headers, signal: controller.signal });
+          const contentType = response.headers.get('content-type') || '';
+          const isJson = contentType.includes('application/json');
+          let rawPayload: ApiEnvelope | any = null;
+          if (isJson) {
+            try {
+              rawPayload = await response.json();
+            } catch {
+              rawPayload = null;
+            }
+          }
+          clearTimeout(timeoutId);
+          if (!response.ok) {
+            return {
+              success: false,
+              message: (typeof rawPayload?.message === 'string' ? rawPayload.message : null) || 'Invalid credentials',
+            };
+          }
+          if (!rawPayload || typeof rawPayload !== 'object') {
+            return { success: false, message: 'Invalid credentials' };
+          }
+          // Backend may return { data: { token, user } } or { token, user } at top level
+          const data = rawPayload.data && typeof rawPayload.data === 'object' ? rawPayload.data : rawPayload;
+          const token = data.token ?? rawPayload.token;
+          const user = data.user ?? rawPayload.user;
+          if (!token || !user) {
+            return { success: false, message: 'Invalid credentials' };
+          }
+          return { success: true, token, user };
+        } catch (err) {
+          clearTimeout(timeoutId);
+          if (urlList.indexOf(baseUrl) === urlList.length - 1) throw err;
+        }
+      }
+      return { success: false, message: 'Invalid credentials' };
+    },
 
     signup: (data: { gymName: string; firstName: string; lastName: string; email: string; password: string; gymIcon?: string }) =>
       api.request('/auth/signup', {
@@ -516,12 +561,29 @@ export const api = {
 
   // Biometric enrollment helpers
   biometrics: {
+    /** Simulate fingerprint enrollment (no member). For add-member flow before member is created. */
+    simulateEnroll: () =>
+      api.request('/fingerprints/simulate-enroll', {
+        method: 'POST',
+        body: JSON.stringify({}),
+      }),
+
+    /** Create Luxand person only; returns personId. For add-member flow before member is created. */
+    createFacePerson: (image: Blob) => {
+      const formData = new FormData();
+      formData.append('image', image, 'face-capture.jpg');
+      return api.request('/attendance/enroll-face-pre', {
+        method: 'POST',
+        body: formData,
+        headers: {},
+      });
+    },
+
     enrollFingerprint: (memberId: string, branchId?: string) => {
       const payload: any = { memberId };
       if (branchId) {
         payload.branchId = branchId;
       }
-      // Returns the backend response data (already unwrapped by api.request)
       return api.request('/fingerprints/enroll', {
         method: 'POST',
         body: JSON.stringify(payload),
@@ -531,14 +593,11 @@ export const api = {
     enrollFace: (memberId: string, image: Blob) => {
       const formData = new FormData();
       formData.append('memberId', memberId);
-      // Backend multer middleware expects field name "image"
       formData.append('image', image, 'face-capture.jpg');
-
-      // Returns the backend response data (already unwrapped by api.request)
       return api.request('/attendance/enroll-face', {
         method: 'POST',
         body: formData,
-        headers: {}, // Let browser set Content-Type for FormData
+        headers: {},
       });
     },
   },

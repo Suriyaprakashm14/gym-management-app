@@ -306,15 +306,30 @@ exports.getGymOwnerAnalytics = async (req, res) => {
       monthlyBreakdown: monthlyData
     };
 
+    const todayForOverdue = new Date();
+    todayForOverdue.setHours(0, 0, 0, 0);
     if (isGymLevel && branches && branches.length > 0) {
-      response.branches = branches.map(branch => ({
-        branchId: branch._id,
-        branchName: branch.name,
-        totalPaid: payments
-          .filter(p => p.branchId.toString() === branch._id.toString())
-          .reduce((sum, p) => sum + p.paidAmount, 0),
-        paymentCount: payments.filter(p => p.branchId.toString() === branch._id.toString()).length
-      }));
+      response.branches = branches.map(branch => {
+        const branchMemberIds = members
+          .filter(m => m.branchId && m.branchId.toString() === branch._id.toString())
+          .map(m => m._id);
+        const branchDetails = personalDetails.filter(d =>
+          branchMemberIds.some(id => d.memberId && d.memberId.toString() === id.toString())
+        );
+        const overdue = branchDetails
+          .filter(d => d.membership_end_date && new Date(d.membership_end_date) < todayForOverdue)
+          .reduce((sum, d) => sum + Math.max(0, (d.totalAmount || 0) - (d.paidAmount || 0)), 0);
+        return {
+          branchId: branch._id,
+          branchName: branch.name,
+          totalPaid: payments
+            .filter(p => p.branchId.toString() === branch._id.toString())
+            .reduce((sum, p) => sum + p.paidAmount, 0),
+          paymentCount: payments.filter(p => p.branchId.toString() === branch._id.toString()).length,
+          overdueAmount: overdue,
+          totalOverdueAmount: overdue
+        };
+      });
     } else if (req.user.role === 'manager') {
       response.branch = {
         branchId: branches[0]._id,

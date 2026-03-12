@@ -12,6 +12,7 @@ import {
   TeamOutlined,
   EditOutlined,
   DeleteOutlined,
+  CreditCardOutlined,
 } from '@ant-design/icons';
 import { useAuth } from '../../contexts/AuthContext';
 import { api } from '../../utils/api';
@@ -97,7 +98,7 @@ const Sidebar: React.FC<SidebarProps> = ({ collapsed, onCollapse }) => {
 
   const expensesMenuItem = {
     key: '/expenses',
-    icon: <span style={{ fontWeight: 600, fontSize: '1em' }}>₹</span>,
+    icon: <CreditCardOutlined />,
     label: <Link href="/expenses" prefetch>Expenses</Link>,
   };
 
@@ -165,22 +166,13 @@ const Sidebar: React.FC<SidebarProps> = ({ collapsed, onCollapse }) => {
     try {
       await api.request('/auth/logout', { method: 'POST' });
       message.success('Logged out successfully');
-
-      // Clear local auth state
-      logout();
-      
-      // Redirect to login page
-      router.push('/login');
-    } catch (error) {
-      console.error('Logout error:', error);
+    } catch {
       message.error('Logout failed, but clearing local session');
-      
-      // Still clear local session and redirect even if API fails
-      logout();
-      router.push('/login');
     } finally {
       setLogoutLoading(false);
     }
+    // Clear local auth state and redirect (logout() in AuthContext does router.replace('/login'))
+    logout();
   };
 
   const openEditGymModal = () => {

@@ -28,20 +28,21 @@ export default function LoginPage() {
     setLoading(true);
     setErrorMessage('');
     try {
-      const data = await api.auth.login(values);
-      if (!data?.token) {
+      const response = await api.auth.login(values);
+      if (!response?.success) {
+        const msg = response?.message || 'Invalid credentials';
+        setErrorMessage(msg);
+        message.error(msg);
+        return;
+      }
+      if (!response?.token || !response?.user) {
         message.error('Account is deactivated. Contact your owner.');
         return;
       }
-      login(data.token, data.user);
-      setTokenCookie(data.token);
+      login(response.token, response.user);
+      setTokenCookie(response.token);
       message.success('Login successful!');
-      router.push('/dashboard');
-    } catch (error: unknown) {
-      const errorMsg =
-        (error instanceof Error && error.message?.trim()) || 'Something went wrong. Please try again.';
-      setErrorMessage(errorMsg);
-      message.error(errorMsg);
+      router.replace('/dashboard');
     } finally {
       setLoading(false);
     }
@@ -73,7 +74,14 @@ export default function LoginPage() {
               Account created. Please log in.
             </div>
           )}
-          <Form.Item label="Email" name="email" rules={[{ required: true, message: 'Please enter your email!' }]}>
+          <Form.Item
+            label="Email"
+            name="email"
+            rules={[
+              { required: true, message: 'Please enter your email!' },
+              { type: 'email', message: 'Enter a valid email address' },
+            ]}
+          >
             <Input placeholder="Enter your email" />
           </Form.Item>
           <Form.Item label="Password" name="password" rules={[{ required: true, message: 'Please enter your password!' }]}>

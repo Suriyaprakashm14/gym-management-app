@@ -131,6 +131,7 @@ export const updateMember = createAsyncThunk(
   async ({ id, data }: { id: string; data: Partial<Member> | FormData }, { rejectWithValue }) => {
     try {
       const res = await api.members.update(id, data);
+      // API normalizes { success, data } to data; res is the updated member
       return { id, member: res as Member };
     } catch (err: any) {
       return rejectWithValue(err?.message || 'Failed to update member');

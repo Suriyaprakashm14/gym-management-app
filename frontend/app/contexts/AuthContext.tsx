@@ -1,6 +1,7 @@
 'use client';
 
 import React, { createContext, useContext, useState, useEffect, useCallback, ReactNode } from 'react';
+import { useRouter } from 'next/navigation';
 import { setTokenCookie, clearTokenCookie } from '../utils/authCookie';
 
 interface User {
@@ -40,6 +41,7 @@ interface AuthProviderProps {
 }
 
 export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
+  const router = useRouter();
   const [user, setUser] = useState<User | null>(null);
   const [token, setToken] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -50,7 +52,8 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     localStorage.removeItem('token');
     localStorage.removeItem('user');
     clearTokenCookie();
-  }, []);
+    router.replace('/login');
+  }, [router]);
 
   useEffect(() => {
     const storedToken = localStorage.getItem('token');
@@ -75,9 +78,6 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   useEffect(() => {
     const handleAuthLogout = () => {
       logout();
-      if (typeof window !== 'undefined') {
-        window.location.href = '/login';
-      }
     };
     window.addEventListener('auth:logout', handleAuthLogout);
     return () => window.removeEventListener('auth:logout', handleAuthLogout);

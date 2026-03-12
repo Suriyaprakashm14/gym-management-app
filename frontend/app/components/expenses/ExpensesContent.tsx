@@ -377,10 +377,12 @@ function ManageCategoriesModal({ open, onClose, onSaved, categories, setCategori
     try {
       const res = await api.expenseCategories.create({ name });
       const raw = (res as any)?.data ?? res;
+      const id = raw?.id ?? raw?._id ?? '';
+      const label = typeof raw?.name === 'string' ? raw.name : name;
       const plain: ExpenseCategoryItem = {
-        _id: raw?._id ?? raw?.id ?? '',
-        name: typeof raw?.name === 'string' ? raw.name : name,
-        isActive: raw?.isActive !== false,
+        _id: id,
+        name: label,
+        isActive: true,
       };
       setFullList((prev) => [...prev, plain]);
       setCategories((prev) => [...prev.filter((c) => c.name !== name), plain]);

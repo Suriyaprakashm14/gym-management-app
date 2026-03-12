@@ -67,6 +67,21 @@ const validateMembership = async (req, res, next) => {
       });
     }
 
+    // Check if membership has not started yet
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const startDate = member.membership.startDate ? new Date(member.membership.startDate) : null;
+    if (startDate) {
+      startDate.setHours(0, 0, 0, 0);
+      if (today < startDate) {
+        return res.status(400).json({
+          success: false,
+          error: 'Membership not started',
+          message: 'Membership not started yet'
+        });
+      }
+    }
+
     // Check if membership has expired
     if (member.membership.endDate && member.membership.endDate < new Date()) {
       return res.status(403).json({
@@ -171,6 +186,21 @@ const validateMembershipForFaceRecognition = async (req, res, next) => {
       });
     }
 
+    // Check if membership has not started yet
+    const todayForFace = new Date();
+    todayForFace.setHours(0, 0, 0, 0);
+    const startDateFace = member.membership.startDate ? new Date(member.membership.startDate) : null;
+    if (startDateFace) {
+      startDateFace.setHours(0, 0, 0, 0);
+      if (todayForFace < startDateFace) {
+        return res.status(400).json({
+          success: false,
+          error: 'Membership not started',
+          message: 'Membership not started yet'
+        });
+      }
+    }
+
     // Check if membership has expired
     if (member.membership.endDate && member.membership.endDate < new Date()) {
       return res.status(403).json({
@@ -270,6 +300,27 @@ const checkMembershipStatus = async (memberId) => {
           membershipEndDate: member.membership.endDate
         }
       };
+    }
+
+    const todayCheck = new Date();
+    todayCheck.setHours(0, 0, 0, 0);
+    const startDateCheck = member.membership.startDate ? new Date(member.membership.startDate) : null;
+    if (startDateCheck) {
+      startDateCheck.setHours(0, 0, 0, 0);
+      if (todayCheck < startDateCheck) {
+        return {
+          isValid: false,
+          error: 'Membership not started',
+          message: 'Membership not started yet',
+          data: {
+            memberId: member._id,
+            memberName: `${member.firstName} ${member.lastName}`,
+            membershipStatus: 'upcoming',
+            membershipStartDate: member.membership.startDate,
+            membershipEndDate: member.membership.endDate
+          }
+        };
+      }
     }
 
     if (member.membership.endDate && member.membership.endDate < new Date()) {

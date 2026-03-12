@@ -208,7 +208,7 @@ export default function MemberCreationPage() {
               </Form.Item>
             </Col>
           </Row>
-          <Form.Item label="Date of Birth" name="dateOfBirth" rules={[{ validator: dobValidator() }]}>
+          <Form.Item label="Date of Birth" name="dateOfBirth">
             <DatePicker style={{ width: '100%' }} placeholder="Select date of birth" />
           </Form.Item>
           <Form.Item label="Street Address" name="streetAddress">

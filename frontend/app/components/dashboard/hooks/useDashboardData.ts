@@ -179,6 +179,11 @@ export function useDashboardData(user: DashboardUser | null) {
         setModel(EMPTY_MODEL);
         return;
       }
+      if (typeof window !== 'undefined' && !localStorage.getItem('token')) {
+        setLoading(false);
+        setModel(EMPTY_MODEL);
+        return;
+      }
 
       setLoading(true);
       setError(null);
