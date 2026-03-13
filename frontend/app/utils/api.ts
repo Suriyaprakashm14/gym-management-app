@@ -1,6 +1,11 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 const DEFAULT_LOCAL_API_PORT = '5000';
-const ENV_API_BASE_URL = process.env.NEXT_PUBLIC_API_URL;
+const RAW_API_BASE = process.env.NEXT_PUBLIC_API_URL;
+// Backend mounts routes at /api (e.g. /api/auth/signup). Ensure base URL ends with /api.
+const ENV_API_BASE_URL =
+  RAW_API_BASE && RAW_API_BASE.trim().length > 0
+    ? RAW_API_BASE.trim().replace(/\/api\/?$/, '') + '/api'
+    : undefined;
 const DEFAULT_API_TIMEOUT_MS = Number(process.env.NEXT_PUBLIC_API_TIMEOUT_MS || '5000');
 const IS_DEV = process.env.NODE_ENV !== 'production';
 
@@ -237,9 +242,15 @@ export const api = {
           lastError = fetchError;
           const isAbortError =
             fetchError instanceof DOMException && fetchError.name === 'AbortError';
+          if (isAbortError) {
+            if (IS_DEV) {
+              // eslint-disable-next-line no-console
+              console.warn('[api] request aborted', { url, method });
+            }
+            return { success: false, aborted: true, status: 0 };
+          }
           const isNetworkError =
             fetchError instanceof TypeError ||
-            isAbortError ||
             (fetchError instanceof Error && fetchError.message === 'Failed to fetch');
           if (!isNetworkError) {
             const errMsg = fetchError instanceof Error ? fetchError.message : String(fetchError);
@@ -273,7 +284,13 @@ export const api = {
 
   // Auth endpoints - login returns structured error on failure (no throw)
   auth: {
-    async login(credentials: { email: string; password: string }) {
+    async login(credentials: { email: string; password: string }): Promise<{
+      success: boolean;
+      token?: string;
+      user?: any;
+      message?: string;
+      aborted?: boolean;
+    }> {
       const endpoint = '/auth/login';
       const opts: RequestInit = {
         method: 'POST',
@@ -318,7 +335,29 @@ export const api = {
           return { success: true, token, user };
         } catch (err) {
           clearTimeout(timeoutId);
-          if (urlList.indexOf(baseUrl) === urlList.length - 1) throw err;
+          const isAbortError =
+            (err instanceof DOMException && err.name === 'AbortError') ||
+            (err instanceof Error && err.name === 'AbortError');
+          if (isAbortError) {
+            if (IS_DEV) {
+              // eslint-disable-next-line no-console
+              console.warn('[api.auth.login] request aborted', { url });
+            }
+            return { success: false, aborted: true, message: 'Request aborted' };
+          }
+          const isNetworkError =
+            err instanceof TypeError ||
+            (err instanceof Error &&
+              (err.message === 'Failed to fetch' || err.message.toLowerCase().includes('network'))) ||
+            (err instanceof Error && err.name === 'TypeError');
+          if (urlList.indexOf(baseUrl) === urlList.length - 1 || !isNetworkError) {
+            if (IS_DEV) {
+              // eslint-disable-next-line no-console
+              console.error('[api.auth.login] request failed', err);
+            }
+            const msg = err instanceof Error ? err.message : 'Network error';
+            return { success: false, message: msg || 'Network error' };
+          }
         }
       }
       return { success: false, message: 'Invalid credentials' };

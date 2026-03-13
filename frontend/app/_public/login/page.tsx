@@ -22,10 +22,14 @@ export default function LoginPage() {
   const { message } = App.useApp();
 
   const onFinish = async (values: LoginFormValues) => {
+    if (loading) return;
     setLoading(true);
     setErrorMessage('');
     try {
       const data = await api.auth.login(values);
+      if (!data || data.aborted) {
+        return;
+      }
       if (!data?.token) {
         message.error('Account is deactivated. Contact your owner.');
         return;

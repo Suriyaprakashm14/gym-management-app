@@ -25,10 +25,14 @@ export default function LoginPage() {
   const signedUp = searchParams.get('signedup') === '1';
 
   const onFinish = async (values: LoginFormValues) => {
+    if (loading) return;
     setLoading(true);
     setErrorMessage('');
     try {
       const response = await api.auth.login(values);
+      if (!response || response.aborted) {
+        return;
+      }
       if (!response?.success) {
         const msg = response?.message || 'Invalid credentials';
         setErrorMessage(msg);
