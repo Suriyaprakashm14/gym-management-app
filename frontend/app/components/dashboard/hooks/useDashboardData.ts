@@ -10,6 +10,7 @@ import {
   KpiSummary,
   PendingMemberItem,
 } from '../types';
+import { useBranchContext } from '../../../contexts/BranchContext';
 
 const EMPTY_KPIS: KpiSummary = {
   revenueThisMonth: 0,
@@ -100,6 +101,8 @@ function parsePayments(payload: unknown): Omit<KpiSummary, 'expensesAmount'> {
         summary?: {
           totalPaidAmount?: number;
           totalPendingAmount?: number;
+          // Some older responses may use totalPending instead of totalPendingAmount
+          totalPending?: number;
           totalPayments?: number;
           totalMembers?: number;
         };
@@ -162,6 +165,7 @@ export function useDashboardData(user: DashboardUser | null) {
   const [error, setError] = useState<string | null>(null);
   const [dateFilter, setDateFilter] = useState<DashboardDateFilter>('currentMonth');
   const [customRange, setCustomRange] = useState<{ startDate: string; endDate: string } | null>(null);
+  const { selectedBranch } = useBranchContext();
 
   const { startDate, endDate } = getDateRangeForFilter(
     dateFilter,
@@ -192,7 +196,11 @@ export function useDashboardData(user: DashboardUser | null) {
       const isGymOwner = role === 'gym_owner';
       const isManager = role === 'manager';
       const isStaff = role === 'staff';
-      const branchId = !isGymOwner ? user.branchId : undefined;
+
+      // For managers/staff: always use their own branch.
+      // For owners: when a branch is selected in the sidebar, behave like branch manager for that branch.
+      const ownerSelectedBranchId = isGymOwner && selectedBranch ? selectedBranch : undefined;
+      const branchId = !isGymOwner ? user.branchId : ownerSelectedBranchId;
 
       // Role-aware API requests:
       // - gym_owner: full analytics (gym-level), expenses, pending across gym
@@ -202,12 +210,18 @@ export function useDashboardData(user: DashboardUser | null) {
       let pendingPromise: Promise<unknown>;
       let expensesTotalPromise: Promise<unknown>;
 
-      if (isGymOwner) {
+      const ownerBranchScoped = isGymOwner && !!ownerSelectedBranchId;
+
+      if (isGymOwner && !ownerBranchScoped) {
+        // Owner overall (all branches)
         paymentsPromise = api.payments.getGymOwnerAnalytics({ startDate, endDate });
         pendingPromise = api.request('/payments/pending');
         expensesTotalPromise = api.expenses.getTotal(startDate, endDate).catch(() => ({ total: 0 }));
-      } else if (isManager) {
-        paymentsPromise = api.payments.getBranchManagerAnalytics({ startDate, endDate });
+      } else if (isManager || ownerBranchScoped) {
+        // Manager, or owner viewing a specific branch behaves like branch manager
+        const params: { startDate: string; endDate: string; branchId?: string } = { startDate, endDate };
+        if (branchId) params.branchId = branchId;
+        paymentsPromise = api.payments.getBranchManagerAnalytics(params);
         pendingPromise = branchId
           ? api.payments.getPendingByBranchId(branchId)
           : Promise.resolve({ members: [] });

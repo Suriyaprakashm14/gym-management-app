@@ -5,3 +5,21 @@ body {
   font-family: sans-serif;
   background-color: #f5f5f5;
 }
+
+.sidebar-branch-select .ant-select-selector {
+  background: transparent !important;
+  border: none !important;
+  color: #fff !important;
+}
+
+.sidebar-branch-select .ant-select-selection-item {
+  color: #fff !important;
+}
+
+.sidebar-branch-select .ant-select-arrow {
+  color: #fff !important;
+}
+
+.sidebar-branch-select {
+  margin-bottom: 12px;
+}

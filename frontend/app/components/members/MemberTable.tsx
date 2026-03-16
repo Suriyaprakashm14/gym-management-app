@@ -387,7 +387,7 @@ const MemberTable: React.FC = () => {
       key: 'age',
       width: 100,
       render: (_: unknown, record: Member) => (
-        <Text strong>{record.age || EMPTY}</Text>
+        <Text strong>{record.age || record.age == 0 ? record.age : EMPTY}</Text>
       ),
     },
     {

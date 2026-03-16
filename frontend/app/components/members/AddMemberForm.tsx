@@ -16,6 +16,7 @@ import {
   Card,
   Typography,
 } from 'antd';
+import dayjs from 'dayjs';
 import {
   UploadOutlined,
   HomeOutlined,
@@ -492,7 +493,7 @@ export default function AddMemberForm({ visible = true, onSuccess, onCancel }: A
           tooltip="Membership period starts from this date. Used for calculations and renewal."
           initialValue={undefined}
         >
-          <DatePicker style={{ width: '100%' }} format="DD-MM-YYYY" />
+          <DatePicker style={{ width: '100%' }} format="DD-MM-YYYY" disabledDate={(current) => current && current < dayjs().startOf('day')} />
         </Form.Item>
         <Form.Item
           noStyle

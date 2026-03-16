@@ -303,14 +303,17 @@ const BillingOverview: React.FC = () => {
     value, 
     label, 
     color,
-    icon: Icon
+    icon: Icon,
+    percent,
   }: { 
-    value: number
-    label: string
-    color: string
-    icon: React.ElementType
+    value: number;
+    label: string;
+    color: string;
+    icon: React.ElementType;
+    /** Optional percentage for the circular fill; falls back to 75 if not provided */
+    percent?: number;
   }) => {
-    const percentage = 75
+    const percentage = typeof percent === 'number' ? percent : 75;
     
     return (
       <div style={{
@@ -587,17 +590,20 @@ const BillingOverview: React.FC = () => {
               label="Revenue" 
               color="#22C55E"
               icon={TrendingUp}
+              percent={analyticsData?.summary?.totalPaidAmount ? (analyticsData?.summary?.totalPaidAmount / (analyticsData?.summary?.totalPaidAmount + analyticsData?.summary?.totalPendingAmount)) * 100 : 0}
             />
             <CircularProgress 
               value={analyticsData?.summary?.totalPendingAmount || 0} 
               label="Overdue Amount" 
               color="#F59E0B"
+              percent={analyticsData?.summary?.totalPendingAmount ? (analyticsData?.summary?.totalPendingAmount / (analyticsData?.summary?.totalPaidAmount + analyticsData?.summary?.totalPendingAmount)) * 100 : 0}
               icon={Clock}
             />
             <CircularProgress 
               value={analyticsData?.expensesAmount ?? 0} 
               label="Expenses" 
               color="#EF4444"
+              percent={analyticsData?.expensesAmount ? (analyticsData?.expensesAmount / (analyticsData?.summary?.totalPaidAmount + analyticsData?.summary?.totalPendingAmount)) * 100 : 0}
               icon={Receipt}
             />
           </div>

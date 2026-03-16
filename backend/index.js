@@ -59,10 +59,7 @@ if (process.env.ALLOWED_ORIGINS) {
     if (trimmed) corsOrigins.push(trimmed);
   });
 }
-app.use(cors({
-  origin: corsOrigins,
-  credentials: true
-}));
+app.use(cors());
 // Allow moderately large payloads for JSON and urlencoded bodies (e.g. images/base64),
 // while still protecting against excessively large requests.
 app.use(express.json({ limit: '15mb' }));

@@ -466,6 +466,9 @@ exports.getBranchManagerAnalytics = async (req, res) => {
       }))
       .sort((a, b) => b.totalPaid - a.totalPaid);
 
+      const isStaff = req.user.role === "staff";
+
+
     res.json({
       branch: {
         branchId: branch._id,
@@ -479,14 +482,24 @@ exports.getBranchManagerAnalytics = async (req, res) => {
         month: month || new Date().getMonth() + 1
       },
       summary: {
-        totalPaidAmount,
-        totalPendingAmount,
+        totalPendingAmount, // staff can see pending
         totalMembers: members.length,
-        totalPayments: payments.length,
-        averagePayment: payments.length > 0 ? totalPaidAmount / payments.length : 0
+        ...(isStaff
+          ? {}
+          : {
+              totalPaidAmount,
+              totalPayments: payments.length,
+              averagePayment:
+                payments.length > 0 ? totalPaidAmount / payments.length : 0
+            })
       },
-      monthlyBreakdown: monthlyData,
-      topMembers: topMembers.slice(0, 10)
+      monthlyBreakdown: isStaff ? {} : monthlyData,
+      topMembers: isStaff
+      ? topMembers.map(member => ({
+          memberId: member.memberId,
+          pendingAmount: member.pendingAmount
+        }))
+      : topMembers.slice(0, 10)
     });
   } catch (err) {
     res.status(500).json({ error: err.message });

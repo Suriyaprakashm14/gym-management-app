@@ -1,8 +1,8 @@
 'use client';
 
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import Link from 'next/link';
-import { Layout, Menu, Button, Typography, App, Modal, Form, Input, Space } from 'antd';
+import { Layout, Menu, Button, Typography, App, Modal, Form, Input, Space, Select } from 'antd';
 import { useRouter, usePathname } from 'next/navigation';
 import {
   DashboardOutlined,
@@ -15,6 +15,7 @@ import {
   CreditCardOutlined,
 } from '@ant-design/icons';
 import { useAuth } from '../../contexts/AuthContext';
+import { useBranchContext } from '../../contexts/BranchContext';
 import { api } from '../../utils/api';
 
 const { Sider } = Layout;
@@ -47,6 +48,9 @@ const Sidebar: React.FC<SidebarProps> = ({ collapsed, onCollapse }) => {
   const [editGymLogoPreview, setEditGymLogoPreview] = useState<string | null>(null);
   const logoInputRef = useRef<HTMLInputElement>(null);
   const [editGymForm] = Form.useForm();
+  const { selectedBranch, setSelectedBranch } = useBranchContext();
+  const [branches, setBranches] = useState<Array<{ _id: string; name: string }>>([]);
+  const [branchesLoading, setBranchesLoading] = useState(false);
   
   // Use actual user data or fallback to mock for demo
   const currentUser = user ?? {
@@ -65,6 +69,51 @@ const Sidebar: React.FC<SidebarProps> = ({ collapsed, onCollapse }) => {
   const isGymOwner = normalizedRole === 'gym_owner';
   const isManager = normalizedRole === 'manager';
   const isStaff = normalizedRole === 'staff';
+
+  // Owner-only: fetch branches for branch selector
+  useEffect(() => {
+    if (!isGymOwner || !currentUser.gymId) {
+      setBranches([]);
+      return;
+    }
+    const gymId = currentUser.gymId;
+    let cancelled = false;
+    const fetchBranches = async () => {
+      try {
+        setBranchesLoading(true);
+        const response = await api.branches.getByGym(gymId);
+        const branchList = Array.isArray(response)
+          ? response
+          : (response as any)?.data?.branches ?? (response as any)?.branches ?? [];
+        if (cancelled) return;
+        let mapped = (branchList as any[]).map((b: any) => ({
+          _id: b._id ?? b.id,
+          name: b.name ?? 'Branch',
+        }));
+
+        // If backend has restricted owner branches, only show branches they can actually access
+        const ownerBranches = (currentUser as any)?.branches as string[] | undefined;
+        if (Array.isArray(ownerBranches) && ownerBranches.length > 0) {
+          const allowedSet = new Set(ownerBranches.map((id) => id && id.toString()));
+          mapped = mapped.filter((b) => allowedSet.has(b._id && b._id.toString()));
+        }
+
+        setBranches(mapped);
+      } catch {
+        if (!cancelled) {
+          setBranches([]);
+        }
+      } finally {
+        if (!cancelled) {
+          setBranchesLoading(false);
+        }
+      }
+    };
+    fetchBranches();
+    return () => {
+      cancelled = true;
+    };
+  }, [isGymOwner, currentUser.gymId]);
 
   const baseDashboardItem = {
     key: '/dashboard',
@@ -293,11 +342,7 @@ const Sidebar: React.FC<SidebarProps> = ({ collapsed, onCollapse }) => {
             alt=""
             style={{ width: collapsed ? 32 : 36, height: collapsed ? 32 : 36, borderRadius: 8, objectFit: 'contain', flexShrink: 0 }}
           />
-        ) : (
-          <div style={{ width: collapsed ? 32 : 36, height: collapsed ? 32 : 36, borderRadius: 8, background: 'rgba(255,255,255,0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, fontSize: collapsed ? 14 : 18 }}>
-            {collapsed ? 'G' : 'Gym'}
-          </div>
-        )}
+        ) : null}
         {!collapsed && (
           <>
             <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>
@@ -351,7 +396,20 @@ const Sidebar: React.FC<SidebarProps> = ({ collapsed, onCollapse }) => {
                     style={{ width: '100%', height: '100%', objectFit: 'cover' }}
                   />
                 ) : (
-                  <span style={{ color: '#999', fontSize: 12 }}>Click to upload</span>
+                  <span
+                    style={{
+                      color: '#999',
+                      fontSize: 12,
+                      textAlign: 'center',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      width: '100%',
+                      height: '100%',
+                    }}
+                  >
+                    Click to upload
+                  </span>
                 )}
               </div>
               {(editGymLogoPreview || currentUser.gymLogo) && (
@@ -378,8 +436,33 @@ const Sidebar: React.FC<SidebarProps> = ({ collapsed, onCollapse }) => {
       
       <div style={{ 
         height: 'calc(100vh - 150px)',
-        overflowY: 'auto'
+        overflowY: 'auto',
+        padding: '0 8px'
       }}>
+        {isGymOwner && (
+          <div style={{ padding: collapsed ? '0 4px 12px' : '0 8px 12px' }}>
+            <Select
+              size="small"
+              className="sidebar-branch-select"
+              value={selectedBranch || 'overall'}
+              onChange={(value) => {
+                if (!setSelectedBranch) return;
+                if (value === 'overall') {
+                  setSelectedBranch(null);
+                } else {
+                  setSelectedBranch(String(value));
+                }
+              }}
+              loading={branchesLoading}
+              style={{ width: '100%' }}
+              dropdownStyle={{ background: '#141414' }}
+              options={[
+                { label: 'Overall', value: 'overall' },
+                ...branches.map((b) => ({ label: b.name, value: b._id })),
+              ]}
+            />
+          </div>
+        )}
         <Menu
           theme="dark"
           mode="inline"
