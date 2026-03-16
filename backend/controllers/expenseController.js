@@ -43,7 +43,11 @@ exports.getTotalForRange = async (req, res) => {
 
     let match = {};
     if (req.user.role === 'gym_owner') {
-      match.gymId = normalizeId(req.user.gymId) || req.user.gymId;
+      const gymId = normalizeId(req.user.gymId) || req.user.gymId;
+      if (!gymId) {
+        return res.json({ total: 0 });
+      }
+      match.gymId = gymId;
     } else if (req.user.role === 'manager') {
       match.branchId = normalizeId(req.user.branchId) || req.user.branchId;
     } else {

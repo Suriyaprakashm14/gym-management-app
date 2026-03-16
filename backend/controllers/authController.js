@@ -350,32 +350,22 @@ exports.forgotPassword = async (req, res) => {
 
     console.log('Forgot password request for email:', email);
 
-    // Check if email exists in the system (try User model first, then Member model)
-    let user = await User.findOne({ email: email.toLowerCase(), isActive: true });
-    let isLegacyUser = false;
-    
+    // Forgot password is for gym owners only (owner login)
+    const user = await User.findOne({ email: email.toLowerCase(), isActive: true });
     if (!user) {
-      // Check legacy Member model
-      const member = await Member.findOne({ email: email.toLowerCase() });
-      if (member) {
-        // Only allow manager role from legacy system
-        const allowedRoles = ['manager'];
-        if (!allowedRoles.includes(member.role)) {
-          return res.status(403).json({ 
-            error: 'Password reset is only available for manager accounts' 
-          });
-        }
-        isLegacyUser = true;
-        user = member; // Use member for the rest of the function
-      }
-    }
-
-    if (!user) {
-      console.log('No user found for email:', email);
-      return res.status(404).json({ 
-        error: 'No account found with this email address' 
+      console.log('No owner found for email:', email);
+      return res.status(404).json({
+        success: false,
+        error: 'Owner account not found'
       });
     }
+    if (user.role !== 'gym_owner') {
+      return res.status(404).json({
+        success: false,
+        error: 'Owner account not found'
+      });
+    }
+    const isLegacyUser = false;
 
     // For RBAC users, check if account is frozen
     if (!isLegacyUser) {
@@ -564,31 +554,21 @@ exports.resendOTP = async (req, res) => {
 
     console.log('Resend OTP request for email:', email);
 
-    // Check if email exists (try User model first, then Member model)
-    let user = await User.findOne({ email: email.toLowerCase(), isActive: true });
-    let isLegacyUser = false;
-    
+    // Resend OTP is for gym owners only (same flow as forgot password)
+    const user = await User.findOne({ email: email.toLowerCase(), isActive: true });
     if (!user) {
-      // Check legacy Member model
-      const member = await Member.findOne({ email: email.toLowerCase() });
-      if (member) {
-        // Only allow manager role from legacy system
-        const allowedRoles = ['manager'];
-        if (!allowedRoles.includes(member.role)) {
-          return res.status(403).json({ 
-            error: 'OTP resend is only available for manager accounts' 
-          });
-        }
-        isLegacyUser = true;
-        user = member;
-      }
-    }
-
-    if (!user) {
-      return res.status(404).json({ 
-        error: 'No account found with this email address' 
+      return res.status(404).json({
+        success: false,
+        error: 'Owner account not found'
       });
     }
+    if (user.role !== 'gym_owner') {
+      return res.status(404).json({
+        success: false,
+        error: 'Owner account not found'
+      });
+    }
+    const isLegacyUser = false;
 
     // For RBAC users, check if account is frozen
     if (!isLegacyUser) {
@@ -651,6 +631,74 @@ exports.resendOTP = async (req, res) => {
     res.status(500).json({ 
       error: 'Server error during OTP resend',
       details: error.message 
+    });
+  }
+};
+
+// Owner resets password for manager or staff (authenticated, owner only)
+exports.resetUserPassword = async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const { newPassword } = req.body;
+
+    if (!newPassword || typeof newPassword !== 'string' || newPassword.length < 6) {
+      return res.status(400).json({
+        success: false,
+        error: 'New password must be at least 6 characters'
+      });
+    }
+
+    const user = await User.findById(userId);
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        error: 'User not found'
+      });
+    }
+
+    if (user.role === 'gym_owner') {
+      return res.status(403).json({
+        success: false,
+        error: 'Cannot reset owner password here'
+      });
+    }
+
+    // Owner can only reset users in their gym
+    if (req.user.role === 'gym_owner' && req.user.gymId) {
+      const targetGymId = (user.gymId && user.gymId._id) ? user.gymId._id.toString() : (user.gymId && user.gymId.toString()) || '';
+      const ownerGymId = (req.user.gymId && req.user.gymId._id) ? req.user.gymId._id.toString() : (req.user.gymId && req.user.gymId.toString()) || '';
+      if (targetGymId !== ownerGymId) {
+        return res.status(403).json({
+          success: false,
+          error: 'You can only reset password for users in your gym'
+        });
+      }
+    }
+
+    const hashedPassword = await bcrypt.hash(newPassword, 10);
+    const updateResult = await User.updateOne(
+      { _id: user._id },
+      { $set: { password: hashedPassword } }
+    );
+    if (updateResult.matchedCount === 0) {
+      return res.status(500).json({
+        success: false,
+        error: 'Failed to update password',
+        message: 'User document could not be updated'
+      });
+    }
+    console.log('Password reset successfully for user:', user.email);
+
+    res.json({
+      success: true,
+      message: 'Password reset successfully'
+    });
+  } catch (error) {
+    console.error('Reset user password error:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Server error during password reset',
+      details: error.message
     });
   }
 };

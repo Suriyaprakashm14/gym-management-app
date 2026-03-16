@@ -610,8 +610,6 @@ const MemberTable: React.FC = () => {
         onOk={handleRenewSubmit}
         confirmLoading={renewLoading}
         okText="Renew"
-        destroyOnHidden
-
       >
         {renewMember && (
           <p style={{ marginBottom: 16 }}>

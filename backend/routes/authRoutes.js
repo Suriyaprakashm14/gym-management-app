@@ -42,5 +42,6 @@ router.post('/logout', (req, res) => {
 // ========== RBAC USER MANAGEMENT ROUTES ==========
 
 router.post('/create-manager', gymOwnerOrAdmin, authController.createManager);
+router.put('/reset-user-password/:userId', gymOwnerOrAdmin, authController.resetUserPassword);
 
 module.exports = router;

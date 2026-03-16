@@ -217,6 +217,27 @@ exports.getGymOwnerAnalytics = async (req, res) => {
     const isGymLevel = req.user.role === 'gym_owner';
     let branches, branchIds, members, memberIds, personalDetails, payments;
 
+    // Gym owner with no gymId: return valid empty cumulative response so dashboard does not throw
+    if (isGymLevel && !req.user.gymId) {
+      return res.json({
+        period: {
+          startDate,
+          endDate,
+          year: year || new Date().getFullYear(),
+          month: month || new Date().getMonth() + 1
+        },
+        summary: {
+          totalPaidAmount: 0,
+          totalPendingAmount: 0,
+          totalMembers: 0,
+          totalPayments: 0,
+          averagePayment: 0
+        },
+        monthlyBreakdown: {},
+        branches: []
+      });
+    }
+
     if (isGymLevel && req.user.gymId) {
       // Gym Owner: Get all branches for this gym
       const Branch = require('../models/branch');
@@ -699,6 +720,26 @@ exports.getMembersWithPendingPayments = async (req, res) => {
     if (req.user.role === 'manager') {
       memberQuery.branchId = req.user.branchId;
     } else if (req.user.role === 'gym_owner') {
+      if (!req.user.gymId) {
+        // Owner with no gymId: return empty pending structure (do not query Branch.find({}) which would return all branches)
+        return res.json({
+          summary: {
+            totalMembers: 0,
+            totalPendingAmount: 0,
+            averagePending: 0
+          },
+          filters: {
+            branchId: 'All Branches',
+            membership: membership || 'All Types',
+            minAmount: minAmount || 'No Minimum',
+            maxAmount: maxAmount || 'No Maximum'
+          },
+          pendingByMembership: [],
+          pendingByBranch: [],
+          members: [],
+          generatedAt: new Date().toISOString()
+        });
+      }
       if (branchId) {
         memberQuery.branchId = branchId;
       } else {

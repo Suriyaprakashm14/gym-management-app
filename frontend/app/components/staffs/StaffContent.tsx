@@ -24,6 +24,7 @@ import {
   StopOutlined,
   UserAddOutlined,
   CheckCircleOutlined,
+  KeyOutlined,
 } from '@ant-design/icons';
 import type { ColumnsType } from 'antd/es/table';
 import { api } from '../../utils/api';
@@ -66,8 +67,12 @@ export default function StaffContent() {
   const [submitLoading, setSubmitLoading] = useState(false);
   const [statusLoadingId, setStatusLoadingId] = useState<string | null>(null);
   const [roleFilter, setRoleFilter] = useState<'all' | 'managers' | 'staff'>('all');
+  const [resetPasswordModalOpen, setResetPasswordModalOpen] = useState(false);
+  const [resetPasswordStaff, setResetPasswordStaff] = useState<StaffRecord | null>(null);
+  const [resetPasswordLoading, setResetPasswordLoading] = useState(false);
   const [form] = Form.useForm();
   const [editForm] = Form.useForm();
+  const [resetPasswordForm] = Form.useForm();
 
   const isOwner = user?.role === 'gym_owner';
   const isManager = user?.role === 'manager';
@@ -226,6 +231,49 @@ export default function StaffContent() {
     }
   };
 
+  const handleOpenResetPassword = (record: StaffRecord) => {
+    setResetPasswordStaff(record);
+    resetPasswordForm.resetFields();
+    setResetPasswordModalOpen(true);
+  };
+
+  const handleResetPasswordSubmit = async () => {
+    if (!resetPasswordStaff) return;
+    try {
+      const values = await resetPasswordForm.validateFields();
+      if (values.newPassword !== values.confirmPassword) {
+        message.error('Passwords do not match');
+        return;
+      }
+      setResetPasswordLoading(true);
+      const res = await api.auth.resetUserPassword(resetPasswordStaff._id, {
+        newPassword: values.newPassword,
+      });
+      const data = res as { success?: boolean; error?: string; message?: string; data?: unknown };
+      const success = data?.success === true;
+      const errMsg =
+        (typeof data?.error === 'string'
+          ? data.error
+          : (data?.error && typeof data.error === 'object' && 'message' in data.error
+              ? (data.error as { message?: string }).message
+              : undefined)) ||
+        data?.message;
+      if (success) {
+        message.success('Password reset successfully');
+        setResetPasswordModalOpen(false);
+        setResetPasswordStaff(null);
+        resetPasswordForm.resetFields();
+      } else {
+        message.error(errMsg || 'Failed to reset password');
+      }
+    } catch (err: any) {
+      if (err?.errorFields) return;
+      message.error(err?.message ?? 'Failed to reset password');
+    } finally {
+      setResetPasswordLoading(false);
+    }
+  };
+
   const columns: ColumnsType<StaffRecord> = [
     {
       title: 'Name',
@@ -278,6 +326,16 @@ export default function StaffContent() {
           <Button type="link" size="small" icon={<EditOutlined />} onClick={() => handleEdit(record)}>
             Edit
           </Button>
+          {isOwner && (
+            <Button
+              type="link"
+              size="small"
+              icon={<KeyOutlined />}
+              onClick={() => handleOpenResetPassword(record)}
+            >
+              Reset Password
+            </Button>
+          )}
           {record.isActive ? (
             <Button
               type="link"
@@ -542,6 +600,58 @@ export default function StaffContent() {
               </Form.Item>
             )
           )}
+        </Form>
+      </Modal>
+
+      <Modal
+        title="Reset Password"
+        open={resetPasswordModalOpen}
+        onOk={() => resetPasswordForm.submit()}
+        onCancel={() => {
+          setResetPasswordModalOpen(false);
+          setResetPasswordStaff(null);
+          resetPasswordForm.resetFields();
+        }}
+        confirmLoading={resetPasswordLoading}
+        okText="Reset Password"
+        width={400}
+      >
+        {resetPasswordStaff && (
+          <p style={{ marginBottom: 16 }}>
+            Set a new password for{' '}
+            <strong>
+              {resetPasswordStaff.firstName} {resetPasswordStaff.lastName}
+            </strong>{' '}
+            ({resetPasswordStaff.email}).
+          </p>
+        )}
+        <Form form={resetPasswordForm} layout="vertical" onFinish={handleResetPasswordSubmit}>
+          <Form.Item
+            name="newPassword"
+            label="New Password"
+            rules={[
+              { required: true, message: 'Enter new password' },
+              { min: 6, message: 'At least 6 characters' },
+            ]}
+          >
+            <Input.Password placeholder="New password" />
+          </Form.Item>
+          <Form.Item
+            name="confirmPassword"
+            label="Confirm Password"
+            dependencies={['newPassword']}
+            rules={[
+              { required: true, message: 'Confirm password' },
+              ({ getFieldValue }) => ({
+                validator(_, value) {
+                  if (!value || getFieldValue('newPassword') === value) return Promise.resolve();
+                  return Promise.reject(new Error('Passwords do not match'));
+                },
+              }),
+            ]}
+          >
+            <Input.Password placeholder="Confirm password" />
+          </Form.Item>
         </Form>
       </Modal>
     </div>

@@ -1085,7 +1085,7 @@ exports.getWeeklyAttendanceReport = async (req, res) => {
       },
       dailyBreakdown: Object.values(dailyAttendance),
       topAttendees: topAttendees,
-      branchId: branchId || 'All Branches'
+      branchId: effectiveBranchId || queryBranchId || 'All Branches'
     });
   } catch (error) {
     console.error('Error getting weekly attendance report:', error);

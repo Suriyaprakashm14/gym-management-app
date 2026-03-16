@@ -203,9 +203,20 @@ export const api = {
           if (payload && typeof payload === 'object') {
             const hasSuccessFlag = 'success' in payload;
             const hasDataField = 'data' in payload;
+            const dataVal = (payload as ApiEnvelope).data;
+            const isEmptyData =
+              dataVal !== undefined &&
+              typeof dataVal === 'object' &&
+              dataVal !== null &&
+              !Array.isArray(dataVal) &&
+              Object.keys(dataVal).length === 0;
 
-            if (hasDataField && (hasSuccessFlag ? (payload as ApiEnvelope).success !== false : true)) {
-              payload = (payload as ApiEnvelope).data;
+            if (
+              hasDataField &&
+              (hasSuccessFlag ? (payload as ApiEnvelope).success !== false : true) &&
+              !isEmptyData
+            ) {
+              payload = dataVal;
             }
           }
 
@@ -373,6 +384,36 @@ export const api = {
       api.request('/auth/create-manager', {
         method: 'POST',
         body: JSON.stringify(managerData),
+      }),
+
+    forgotPassword: (email: string) =>
+      api.request('/auth/forgot-password', {
+        method: 'POST',
+        body: JSON.stringify({ email: email.toLowerCase() }),
+      }),
+
+    verifyOtp: (email: string, otp: string) =>
+      api.request('/auth/verify-otp', {
+        method: 'POST',
+        body: JSON.stringify({ email: email.toLowerCase(), otp }),
+      }),
+
+    resetPassword: (email: string, otp: string, newPassword: string) =>
+      api.request('/auth/reset-password', {
+        method: 'POST',
+        body: JSON.stringify({ email: email.toLowerCase(), otp, newPassword }),
+      }),
+
+    resendOtp: (email: string) =>
+      api.request('/auth/resend-otp', {
+        method: 'POST',
+        body: JSON.stringify({ email: email.toLowerCase() }),
+      }),
+
+    resetUserPassword: (userId: string, body: { newPassword: string }) =>
+      api.request(`/auth/reset-user-password/${encodeURIComponent(userId)}`, {
+        method: 'PUT',
+        body: JSON.stringify(body),
       }),
   },
 
