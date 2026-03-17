@@ -33,6 +33,8 @@ import { useAppDispatch, useAppSelector } from '../../redux/hooks';
 import { fetchMembers, Member as StoreMember } from '../../redux/membersSlice';
 import { fetchMembershipPrices } from '../../redux/membershipsSlice';
 import { useMemberFilter } from '../../contexts/MemberFilterContext';
+import { useBranchContext } from '../../contexts/BranchContext';
+import { useAuth } from '../../contexts/AuthContext';
 import { api } from '../../utils/api';
 import EditMemberModal from './EditMemberModal';
 import MemberDetailsModal from './MemberDetailsModal';
@@ -125,6 +127,11 @@ const MemberTable: React.FC = () => {
   const { members, total, loading, error: membersError } = useAppSelector((s) => s.members);
   const reduxPlans = useAppSelector((s) => s.membershipPrices.items);
   const { filter } = useMemberFilter();
+  const { selectedBranch } = useBranchContext();
+  const { user } = useAuth();
+
+  const isOwner = user?.role === 'gym_owner';
+  const branchIdParam = isOwner && selectedBranch ? { branchId: selectedBranch } : {};
 
   const loadPage = useCallback(
     (p: number, size: number) => {
@@ -133,10 +140,11 @@ const MemberTable: React.FC = () => {
           page: p,
           limit: size,
           status: filter,
+          ...branchIdParam,
         })
       );
     },
-    [dispatch, filter]
+    [dispatch, filter, selectedBranch]
   );
 
   const prevFilterRef = useRef(filter);
@@ -147,7 +155,7 @@ const MemberTable: React.FC = () => {
       setPage(1);
     }
     loadPage(pageToLoad, pageSize);
-  }, [filter, page, pageSize]); // eslint-disable-line react-hooks/exhaustive-deps -- loadPage from filter/page/pageSize
+  }, [filter, page, pageSize, selectedBranch]); // eslint-disable-line react-hooks/exhaustive-deps -- loadPage from filter/page/pageSize/selectedBranch
 
   const membersRef = useRef(members);
   membersRef.current = members;
@@ -228,7 +236,7 @@ const MemberTable: React.FC = () => {
       });
       message.success('Member renewed successfully');
       handleRenewModalClose();
-      dispatch(fetchMembers({ page, limit: pageSize, status: filter }));
+      dispatch(fetchMembers({ page, limit: pageSize, status: filter, ...branchIdParam }));
     } catch (err: any) {
       message.error(err?.message || 'Failed to renew member');
     } finally {

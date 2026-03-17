@@ -368,17 +368,28 @@ exports.getGymOwnerAnalytics = async (req, res) => {
 };
 
 // Branch Manager Analytics - Branch Revenue and Pending Payments
+// gym_owner may pass req.query.branchId to view a specific branch (validated against their gym)
 exports.getBranchManagerAnalytics = async (req, res) => {
   try {
-    const allowedRoles = ['manager', 'staff'];
+    const allowedRoles = ['manager', 'staff', 'gym_owner'];
     if (!allowedRoles.includes(req.user.role)) {
-      return res.status(403).json({ error: "Access denied. Only manager or staff can view branch analytics." });
+      return res.status(403).json({ error: "Access denied. Only manager, staff, or gym owner can view branch analytics." });
     }
 
-    const targetBranchId =
-      false
-        ? (req.query.branchId || req.user.branchId)
-        : req.user.branchId;
+    let targetBranchId;
+    if (req.user.role === 'gym_owner' && req.query.branchId) {
+      const Branch = require('../models/branch');
+      const gymId = req.user.gymId?._id || req.user.gymId;
+      const branch = await Branch.findOne({ _id: req.query.branchId, gymId });
+      if (!branch) {
+        return res.status(403).json({ error: "Access denied. Branch not found or not in your gym." });
+      }
+      targetBranchId = req.query.branchId;
+    } else if (req.user.role === 'manager' || req.user.role === 'staff') {
+      targetBranchId = req.user.branchId;
+    } else {
+      targetBranchId = null;
+    }
 
     if (!targetBranchId) {
       return res.status(400).json({
@@ -506,7 +517,7 @@ exports.getBranchManagerAnalytics = async (req, res) => {
   }
 };
 
-// Gym Owner Overdue Analytics - All Branches
+// Gym Owner Overdue Analytics - All Branches (optional branchId scopes to one branch)
 exports.getGymOwnerOverdueAnalytics = async (req, res) => {
   try {
     const allowedRoles = ['gym_owner'];
@@ -514,10 +525,19 @@ exports.getGymOwnerOverdueAnalytics = async (req, res) => {
       return res.status(403).json({ error: "Access denied. Only gym_owner can view gym overdue analytics." });
     }
 
-    // Get all branches for this gym
     const Branch = require('../models/branch');
-    const branches = await Branch.find({ gymId: req.user.gymId });
-    const branchIds = branches.map(branch => branch._id);
+    const gymId = req.user.gymId?._id || req.user.gymId;
+    let branches;
+
+    if (req.query.branchId) {
+      const branch = await Branch.findOne({ _id: req.query.branchId, gymId });
+      if (!branch) {
+        return res.status(403).json({ error: "Access denied. Branch not found or not in your gym." });
+      }
+      branches = [branch];
+    } else {
+      branches = await Branch.find({ gymId });
+    }
 
     // Get all members with personal details to calculate overdue amounts
     const members = await Member.find({ 

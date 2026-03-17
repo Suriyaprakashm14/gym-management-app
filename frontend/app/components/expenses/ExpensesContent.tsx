@@ -21,6 +21,7 @@ import { PlusOutlined, EditOutlined, DeleteOutlined, SettingOutlined } from '@an
 import type { ColumnsType } from 'antd/es/table';
 import { api } from '../../utils/api';
 import { useAuth } from '../../contexts/AuthContext';
+import { useBranchContext } from '../../contexts/BranchContext';
 import dayjs from 'dayjs';
 
 const ADD_CATEGORY_VALUE = '__add_category__';
@@ -52,6 +53,7 @@ interface BranchItem {
 export default function ExpensesContent() {
   const { message } = App.useApp();
   const { user } = useAuth();
+  const { selectedBranch } = useBranchContext();
   const isOwner = user?.role === 'gym_owner';
   const [list, setList] = useState<ExpenseRecord[]>([]);
   const [categories, setCategories] = useState<ExpenseCategoryItem[]>([]);
@@ -93,7 +95,9 @@ export default function ExpensesContent() {
   const fetchList = async () => {
     try {
       setLoading(true);
-      const response = await api.expenses.list({});
+      const params: { branchId?: string } = {};
+      if (isOwner && selectedBranch) params.branchId = selectedBranch;
+      const response = await api.expenses.list(params);
       const data = Array.isArray(response) ? response : (response as any)?.data ?? [];
       setList(
         (data as any[]).map((e: any) => ({
@@ -128,7 +132,7 @@ export default function ExpensesContent() {
 
   useEffect(() => {
     fetchList();
-  }, []);
+  }, [selectedBranch]);
 
   useEffect(() => {
     fetchCategories();

@@ -20,6 +20,7 @@ import {
   ResponsiveContainer 
 } from 'recharts'
 import { useAuth } from '../../contexts/AuthContext'
+import { useBranchContext } from '../../contexts/BranchContext'
 import { api } from '../../utils/api'
 import { formatDisplayDate } from '../../constants/dateFormat'
 
@@ -75,6 +76,7 @@ interface AnalyticsData {
 
 const BillingOverview: React.FC = () => {
   const { user } = useAuth()
+  const { selectedBranch } = useBranchContext()
   const [dateRange, setDateRange] = useState('01/04/2021 - 30/04/2021')
   const [analyticsData, setAnalyticsData] = useState<AnalyticsData | null>(null)
   const [loading, setLoading] = useState(true)
@@ -85,7 +87,7 @@ const BillingOverview: React.FC = () => {
   // Fetch analytics data
   useEffect(() => {
     fetchAnalyticsData()
-  }, [selectedYear, selectedMonth, user])
+  }, [selectedYear, selectedMonth, user, selectedBranch])
 
   const fetchAnalyticsData = async () => {
     try {
@@ -97,9 +99,18 @@ const BillingOverview: React.FC = () => {
         return
       }
       
-      const params = selectedMonth ? { year: selectedYear, month: selectedMonth } : { year: selectedYear }
-      const useGymAnalytics = user?.role === 'gym_owner'
-      const response = useGymAnalytics
+      const params: { year: number; month?: number; branchId?: string } = selectedMonth
+        ? { year: selectedYear, month: selectedMonth }
+        : { year: selectedYear }
+
+      const isOwner = user.role === 'gym_owner'
+      const branchScoped = isOwner && selectedBranch
+
+      if (branchScoped) {
+        params.branchId = selectedBranch as string
+      }
+
+      const response = isOwner && !branchScoped
         ? await api.payments.getGymOwnerAnalytics(params)
         : await api.payments.getBranchManagerAnalytics(params)
 
@@ -114,7 +125,8 @@ const BillingOverview: React.FC = () => {
           : new Date(selectedYear, 11, 31)
         const startDate = start.toISOString().slice(0, 10)
         const endDate = end.toISOString().slice(0, 10)
-        const expensesRes = await api.expenses.getTotal(startDate, endDate)
+        const expensesBranchId = branchScoped ? (selectedBranch as string) : undefined
+        const expensesRes = await api.expenses.getTotal(startDate, endDate, expensesBranchId)
         const data = expensesRes as { total?: number; data?: { total?: number } }
         expensesAmount = Number(data?.total ?? data?.data?.total) || 0
       } catch {
@@ -130,10 +142,16 @@ const BillingOverview: React.FC = () => {
         
         // Use different API based on user role
         let paidResponse
-        if (user?.role === 'gym_owner') {
+        const isOwner = user?.role === 'gym_owner'
+        const isManagerLike = user?.role === 'manager' || user?.role === 'branch_manager'
+
+        if (isOwner && selectedBranch) {
+          // Owner viewing a specific branch
+          paidResponse = await api.payments.getByBranchId(selectedBranch)
+        } else if (isOwner) {
           const gymId = user.gymId || user.id
           paidResponse = await api.payments.getByGymId(gymId)
-        } else if (user?.role === 'manager' || user?.role === 'branch_manager') {
+        } else if (isManagerLike) {
           const branchId = user.branchId || user.id
           paidResponse = await api.payments.getByBranchId(branchId)
         } else {
@@ -175,9 +193,15 @@ const BillingOverview: React.FC = () => {
       let pendingResponse = null
       try {
         // Use different API based on user role for pending payments
-        if (user?.role === 'gym_owner') {
+        const isOwner = user?.role === 'gym_owner'
+        const isManagerLike = user?.role === 'manager' || user?.role === 'branch_manager'
+
+        if (isOwner && selectedBranch) {
+          // Owner viewing a specific branch: reuse branch pending logic
+          pendingResponse = await api.payments.getPendingByBranchId(selectedBranch)
+        } else if (isOwner) {
           pendingResponse = await api.request('/payments/analytics/overdue/gym-owner')
-        } else if (user?.role === 'manager' || user?.role === 'branch_manager') {
+        } else if (isManagerLike) {
           const branchId = user.branchId || user.id
           pendingResponse = await api.payments.getPendingByBranchId(branchId)
         } else {

@@ -4,14 +4,26 @@ const Branch = require('../models/branch');
 /**
  * GET /api/users/staff
  * List managers and staff for owner; list only staff (same branch) for manager.
- * Owner: role in [manager, staff], same gymId. Manager: role = staff, same branchId (manager does NOT see themselves).
+ * Owner: role in [manager, staff], same gymId. Optional req.query.branchId scopes to that branch when valid for owner's gym.
+ * Manager: role = staff, same branchId (manager does NOT see themselves).
  */
 function getStaffListFilter(req) {
   const user = req.currentUser || req.user;
   if (!user) return null;
   if (user.role === 'gym_owner') {
     const gymId = user.gymId?._id || user.gymId;
-    return gymId ? { gymId, role: { $in: ['manager', 'staff'] } } : null;
+    if (!gymId) return null;
+    const filter = { gymId, role: { $in: ['manager', 'staff'] } };
+    const queryBranchId = req.query && req.query.branchId ? String(req.query.branchId).trim() : null;
+    if (queryBranchId) {
+      if (user.branches && user.branches.length > 0) {
+        const allowed = user.branches.some(b => b && String(b._id || b) === queryBranchId);
+        if (allowed) filter.branchId = queryBranchId;
+      } else {
+        filter.branchId = queryBranchId;
+      }
+    }
+    return filter;
   }
   if (user.role === 'manager') {
     const branchId = user.branchId?._id || user.branchId;
@@ -37,13 +49,29 @@ function getAssignableBranchesForStaff(req) {
 
 exports.getStaff = async (req, res) => {
   try {
-    const filter = getStaffListFilter(req);
+    let filter = getStaffListFilter(req);
     if (filter === null) {
       return res.status(403).json({
         success: false,
         error: 'Access denied',
         message: 'You do not have permission to view staff.'
       });
+    }
+
+    const user = req.currentUser || req.user;
+    if (user && user.role === 'gym_owner' && filter.branchId) {
+      const gymId = user.gymId?._id || user.gymId;
+      const hasAllowedBranches = user.branches && user.branches.length > 0;
+      if (!hasAllowedBranches && gymId) {
+        const branch = await Branch.findById(filter.branchId).lean();
+        if (!branch || String(branch.gymId) !== String(gymId)) {
+          return res.status(403).json({
+            success: false,
+            error: 'Access denied',
+            message: 'You do not have permission to view staff for this branch.'
+          });
+        }
+      }
     }
 
     const staffList = await User.find(filter)

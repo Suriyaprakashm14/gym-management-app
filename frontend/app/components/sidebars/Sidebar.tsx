@@ -312,7 +312,9 @@ const Sidebar: React.FC<SidebarProps> = ({ collapsed, onCollapse }) => {
         left: 0,
         top: 0,
         bottom: 0,
-        zIndex: 1000
+        zIndex: 1000,
+        display: 'flex',
+        flexDirection: 'column',
       }}
     >
       <div
@@ -435,7 +437,7 @@ const Sidebar: React.FC<SidebarProps> = ({ collapsed, onCollapse }) => {
       </Modal>
       
       <div style={{ 
-        height: 'calc(100vh - 150px)',
+        flex: 1,
         overflowY: 'auto',
         padding: '0 8px'
       }}>
@@ -444,6 +446,7 @@ const Sidebar: React.FC<SidebarProps> = ({ collapsed, onCollapse }) => {
             <Select
               size="small"
               className="sidebar-branch-select"
+              classNames={{ popup: { root: 'sidebar-branch-dropdown' } }}
               value={selectedBranch || 'overall'}
               onChange={(value) => {
                 if (!setSelectedBranch) return;
@@ -455,7 +458,6 @@ const Sidebar: React.FC<SidebarProps> = ({ collapsed, onCollapse }) => {
               }}
               loading={branchesLoading}
               style={{ width: '100%' }}
-              dropdownStyle={{ background: '#141414' }}
               options={[
                 { label: 'Overall', value: 'overall' },
                 ...branches.map((b) => ({ label: b.name, value: b._id })),
@@ -473,41 +475,24 @@ const Sidebar: React.FC<SidebarProps> = ({ collapsed, onCollapse }) => {
         />
       </div>
       
-      {/* User info and logout button */}
-      <div style={{ 
-        position: 'absolute', 
-        bottom: 0, 
-        left: 0, 
-        right: 0, 
-        padding: '16px',
-        borderTop: '1px solid #404040',
-        background: '#001529'
-      }}>
+      {/* User info (owner/manager/staff) */}
+      <div
+        style={{
+          padding: isGymOwner ? '12px 16px 20px' : '8px 16px 10px',
+          borderTop: '1px solid #404040',
+          background: '#001529',
+        }}
+      >
         {!collapsed && (
-          <div style={{ marginBottom: '12px', color: 'white' }}>
-            <Typography.Text style={{ color: 'white', fontSize: '12px' }}>
+          <div style={{ color: 'white', lineHeight: 1.2 }}>
+            <Typography.Text style={{ color: 'white', fontSize: 11, display: 'block' }}>
               {currentUser.firstName} {currentUser.lastName}
             </Typography.Text>
-            <br />
-            <Typography.Text style={{ color: '#ccc', fontSize: '10px' }}>
-              {currentUser.role.toUpperCase()}
+            <Typography.Text style={{ color: '#ccc', fontSize: 9, display: 'block', marginTop: 2 }}>
+              {currentUser.role.toUpperCase().replace('_', ' ')}
             </Typography.Text>
           </div>
         )}
-        <Button
-          type="text"
-          icon={<LogoutOutlined />}
-          onClick={handleLogout}
-          loading={logoutLoading}
-          style={{ 
-            width: '100%', 
-            color: 'white',
-            border: 'none',
-            background: 'transparent'
-          }}
-        >
-          {!collapsed && 'Logout'}
-        </Button>
       </div>
     </Sider>
   );

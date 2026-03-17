@@ -36,7 +36,7 @@ exports.list = async (req, res) => {
 
 exports.getTotalForRange = async (req, res) => {
   try {
-    const { startDate, endDate } = req.query;
+    const { startDate, endDate, branchId: queryBranchId } = req.query;
     if (!startDate || !endDate) {
       return res.status(400).json({ error: 'startDate and endDate are required' });
     }
@@ -48,6 +48,7 @@ exports.getTotalForRange = async (req, res) => {
         return res.json({ total: 0 });
       }
       match.gymId = gymId;
+      if (queryBranchId) match.branchId = queryBranchId;
     } else if (req.user.role === 'manager') {
       match.branchId = normalizeId(req.user.branchId) || req.user.branchId;
     } else {

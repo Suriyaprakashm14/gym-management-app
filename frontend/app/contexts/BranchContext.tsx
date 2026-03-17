@@ -2,6 +2,18 @@
 
 import React, { createContext, useContext, useState, useCallback, ReactNode } from 'react';
 
+const STORAGE_KEY = 'gym_owner_selected_branch';
+
+function readStoredBranch(): string | null {
+  if (typeof window === 'undefined') return null;
+  try {
+    const s = sessionStorage.getItem(STORAGE_KEY);
+    return s && s.trim() ? s.trim() : null;
+  } catch {
+    return null;
+  }
+}
+
 export type BranchContextValue = {
   selectedBranch: string | null;
   setSelectedBranch: (value: string | null) => void;
@@ -10,9 +22,19 @@ export type BranchContextValue = {
 const BranchContext = createContext<BranchContextValue | null>(null);
 
 export function BranchProvider({ children }: { children: ReactNode }) {
-  const [selectedBranch, setSelectedBranchState] = useState<string | null>(null);
+  const [selectedBranch, setSelectedBranchState] = useState<string | null>(() => readStoredBranch());
+
   const setSelectedBranch = useCallback((value: string | null) => {
-    setSelectedBranchState(value);
+    const next = value && String(value).trim() ? String(value).trim() : null;
+    setSelectedBranchState(next);
+    try {
+      if (typeof window !== 'undefined') {
+        if (next) sessionStorage.setItem(STORAGE_KEY, next);
+        else sessionStorage.removeItem(STORAGE_KEY);
+      }
+    } catch {
+      /* ignore */
+    }
   }, []);
 
   return (

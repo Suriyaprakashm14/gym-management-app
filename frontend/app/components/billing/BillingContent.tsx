@@ -4,6 +4,7 @@ import React, { useState, useEffect } from 'react';
 import { Table, Button, Modal, Form, InputNumber, App, Spin, Card, Typography, Space, Tag } from 'antd';
 import { PlusOutlined, ClockCircleOutlined } from '@ant-design/icons';
 import { useAuth } from '../../contexts/AuthContext';
+import { useBranchContext } from '../../contexts/BranchContext';
 import { api } from '../../utils/api';
 
 const { Title } = Typography;
@@ -22,6 +23,7 @@ interface PendingMember {
 export default function BillingContent() {
   const { message } = App.useApp();
   const { user } = useAuth();
+  const { selectedBranch } = useBranchContext();
   const [pendingMembers, setPendingMembers] = useState<PendingMember[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedMember, setSelectedMember] = useState<PendingMember | null>(null);
@@ -37,7 +39,10 @@ export default function BillingContent() {
     try {
       setLoading(true);
       if (user.role === 'gym_owner') {
-        const response = await api.request('/payments/analytics/overdue/gym-owner');
+        const url = selectedBranch
+          ? `/payments/analytics/overdue/gym-owner?branchId=${encodeURIComponent(selectedBranch)}`
+          : '/payments/analytics/overdue/gym-owner';
+        const response = await api.request(url);
         const list: PendingMember[] = [];
         if ((response as any)?.branches && Array.isArray((response as any).branches)) {
           (response as any).branches.forEach((branch: any) => {
@@ -72,7 +77,7 @@ export default function BillingContent() {
 
   useEffect(() => {
     fetchPendingMembers();
-  }, [user]);
+  }, [user, selectedBranch]);
 
   const handleAddPayment = (member: PendingMember) => {
     setSelectedMember(member);

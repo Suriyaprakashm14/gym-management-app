@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, useRef } from 'react';
 import { api } from '../../../utils/api';
 import {
   AttendanceBar,
@@ -166,6 +166,7 @@ export function useDashboardData(user: DashboardUser | null) {
   const [dateFilter, setDateFilter] = useState<DashboardDateFilter>('currentMonth');
   const [customRange, setCustomRange] = useState<{ startDate: string; endDate: string } | null>(null);
   const { selectedBranch } = useBranchContext();
+  const loadIdRef = useRef(0);
 
   const { startDate, endDate } = getDateRangeForFilter(
     dateFilter,
@@ -175,6 +176,7 @@ export function useDashboardData(user: DashboardUser | null) {
 
   useEffect(() => {
     let isCancelled = false;
+    const thisLoadId = ++loadIdRef.current;
 
     async function load() {
       if (!user) {
@@ -225,7 +227,7 @@ export function useDashboardData(user: DashboardUser | null) {
         pendingPromise = branchId
           ? api.payments.getPendingByBranchId(branchId)
           : Promise.resolve({ members: [] });
-        expensesTotalPromise = api.expenses.getTotal(startDate, endDate).catch(() => ({ total: 0 }));
+        expensesTotalPromise = api.expenses.getTotal(startDate, endDate, branchId || undefined).catch(() => ({ total: 0 }));
       } else if (isStaff) {
         // Staff can view their branch dashboard (revenue, pending, attendance)
         paymentsPromise = api.payments.getBranchManagerAnalytics({ startDate, endDate });
@@ -253,7 +255,7 @@ export function useDashboardData(user: DashboardUser | null) {
         expensesTotalPromise,
       ]);
 
-      if (isCancelled) return;
+      if (isCancelled || thisLoadId !== loadIdRef.current) return;
 
       const paymentsPayload =
         paymentsRes.status === 'fulfilled' && paymentsRes.value && (paymentsRes.value as { success?: boolean }).success !== false
@@ -291,6 +293,7 @@ export function useDashboardData(user: DashboardUser | null) {
         pendingMembers,
       };
 
+      if (thisLoadId !== loadIdRef.current) return;
       setModel(nextModel);
       if (
         paymentsRes.status === 'rejected' &&
@@ -307,7 +310,7 @@ export function useDashboardData(user: DashboardUser | null) {
         // eslint-disable-next-line no-console
         console.error('[dashboard] load() failed', err);
       }
-      if (!isCancelled) {
+      if (!isCancelled && thisLoadId === loadIdRef.current) {
         setError('Failed to load dashboard data');
         setLoading(false);
       }
@@ -316,7 +319,7 @@ export function useDashboardData(user: DashboardUser | null) {
     return () => {
       isCancelled = true;
     };
-  }, [user, startDate, endDate]);
+  }, [user, startDate, endDate, selectedBranch]);
 
   const setFilter = (filter: DashboardDateFilter, custom?: { startDate: string; endDate: string }) => {
     setDateFilter(filter);

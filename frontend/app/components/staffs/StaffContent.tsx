@@ -29,6 +29,7 @@ import {
 import type { ColumnsType } from 'antd/es/table';
 import { api } from '../../utils/api';
 import { useAuth } from '../../contexts/AuthContext';
+import { useBranchContext } from '../../contexts/BranchContext';
 import dayjs from 'dayjs';
 
 const { Title, Text } = Typography;
@@ -58,6 +59,7 @@ const PAGE_SIZE = 10;
 export default function StaffContent() {
   const { message, modal } = App.useApp();
   const { user } = useAuth();
+  const { selectedBranch } = useBranchContext();
   const [staffs, setStaffs] = useState<StaffRecord[]>([]);
   const [assignableBranches, setAssignableBranches] = useState<AssignableBranch[]>([]);
   const [loading, setLoading] = useState(true);
@@ -80,7 +82,8 @@ export default function StaffContent() {
   const fetchStaffs = useCallback(async () => {
     try {
       setLoading(true);
-      const response = await api.users.getStaff();
+      const params = isOwner && selectedBranch ? { branchId: selectedBranch } : undefined;
+      const response = await api.users.getStaff(params);
       const data = (response as any)?.data ?? response;
       const list = Array.isArray(data?.staffs) ? data.staffs : [];
       const branches = Array.isArray(data?.assignableBranches) ? data.assignableBranches : [];
@@ -108,7 +111,7 @@ export default function StaffContent() {
     } finally {
       setLoading(false);
     }
-  }, [message]);
+  }, [message, isOwner, selectedBranch]);
 
   useEffect(() => {
     fetchStaffs();

@@ -590,7 +590,10 @@ const BillingPage = () => {
                     padding: '0.75rem',
                     boxShadow: '0 4px 12px rgba(0, 0, 0, 0.1)'
                   }}
-                  formatter={(value: number) => [formatCurrency(value), 'Revenue']}
+                  formatter={(value) => {
+                    const numeric = typeof value === 'number' ? value : Number(value ?? 0);
+                    return [formatCurrency(numeric), 'Revenue'] as [string, string];
+                  }}
                   cursor={{ fill: 'rgba(59, 130, 246, 0.05)' }}
                 />
                 <Bar 

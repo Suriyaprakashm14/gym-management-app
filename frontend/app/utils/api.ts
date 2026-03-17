@@ -156,15 +156,6 @@ export const api = {
               (endpoint || '').toLowerCase().includes('/auth/login') ||
               (url || '').toLowerCase().includes('/auth/login');
             if (response.status === 403 && !isAuthLogin) {
-              // eslint-disable-next-line no-console
-              console.warn('Access denied for this request', {
-                url,
-                status: response.status,
-                message:
-                  (typeof rawPayload?.error === 'string'
-                    ? rawPayload.error
-                    : rawPayload?.error?.message) || rawPayload?.message,
-              });
               return null;
             }
             if (response.status === 403 && isAuthLogin) {
@@ -523,7 +514,7 @@ export const api = {
         return api.request(`/payments/analytics/gym-owner${queryString}`);
       },
 
-      getBranchManagerAnalytics: (params?: { year?: number; month?: number; startDate?: string; endDate?: string }) => {
+      getBranchManagerAnalytics: (params?: { year?: number; month?: number; startDate?: string; endDate?: string; branchId?: string }) => {
         const queryString = params && Object.keys(params).length
           ? `?${new URLSearchParams(params as Record<string, string>)}`
           : '';
@@ -549,8 +540,11 @@ export const api = {
       const q = params ? `?${new URLSearchParams(params as Record<string, string>)}` : '';
       return api.request(`/expenses${q}`);
     },
-    getTotal: (startDate: string, endDate: string) =>
-      api.request(`/expenses/total?startDate=${encodeURIComponent(startDate)}&endDate=${encodeURIComponent(endDate)}`),
+    getTotal: (startDate: string, endDate: string, branchId?: string) => {
+      const params = new URLSearchParams({ startDate, endDate });
+      if (branchId) params.set('branchId', branchId);
+      return api.request(`/expenses/total?${params.toString()}`);
+    },
     create: (data: { amount: number; date?: string; category?: string; description?: string; branchId?: string }) =>
       api.request('/expenses', { method: 'POST', body: JSON.stringify(data) }),
     update: (id: string, data: { amount?: number; date?: string; category?: string; description?: string }) =>
@@ -724,7 +718,10 @@ export const api = {
 
   // User listing and status (owner: managers + staff; manager: staff in branch only; activate/deactivate)
   users: {
-    getStaff: () => api.request('/users/staff'),
+    getStaff: (params?: { branchId?: string }) => {
+      const queryString = params && params.branchId ? `?branchId=${encodeURIComponent(params.branchId)}` : '';
+      return api.request(`/users/staff${queryString}`);
+    },
     updateStatus: (userId: string, data: { isActive: boolean }) =>
       api.request(`/users/${userId}/status`, {
         method: 'PATCH',
