@@ -51,7 +51,7 @@ export function AuthShell({
   footer,
   sideTitle = (
     <>
-      Welcome to <span style={textGradientStyle}>FitForge</span>
+      <span className="text-foreground">Welcome to </span><span style={textGradientStyle}>FitForge</span>
     </>
   ),
   sideSubtitle = "The all‑in‑one gym business OS for memberships, payments, and growth.",

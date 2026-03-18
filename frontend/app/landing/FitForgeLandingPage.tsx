@@ -61,6 +61,8 @@ const textGradientStyle: React.CSSProperties = {
   WebkitBackgroundClip: "text",
   WebkitTextFillColor: "transparent",
   backgroundClip: "text",
+  textShadow:
+    "0 0 22px hsla(250, 75%, 62%, 0.22), 0 0 34px hsla(165, 70%, 48%, 0.18)",
 };
 const textGradientWarmStyle: React.CSSProperties = {
   background:
@@ -68,6 +70,8 @@ const textGradientWarmStyle: React.CSSProperties = {
   WebkitBackgroundClip: "text",
   WebkitTextFillColor: "transparent",
   backgroundClip: "text",
+  textShadow:
+    "0 0 18px hsla(30, 90%, 58%, 0.18), 0 0 30px hsla(250, 75%, 62%, 0.2)",
 };
 
 const TextGradient: React.FC<{
@@ -97,14 +101,15 @@ const Btn: React.FC<{
   style,
 }) => {
   const base =
-    "inline-flex items-center justify-center rounded-lg font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-primary/50 disabled:opacity-50 cursor-pointer";
+    "inline-flex items-center justify-center rounded-lg font-medium transition-colors disabled:opacity-50 cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/60 focus-visible:ring-offset-2 focus-visible:ring-offset-background";
   const sizes = {
     sm: "h-9 px-4 text-sm",
     md: "h-11 px-6 text-sm",
     lg: "h-13 px-8 text-base",
   };
   const variants = {
-    default: "bg-primary text-primary-foreground hover:bg-primary/90",
+    default:
+      "bg-primary text-primary-foreground hover:bg-primary/90 hover:brightness-[1.02]",
     outline:
       "border border-border bg-transparent hover:bg-secondary text-foreground",
     ghost:
@@ -1408,6 +1413,7 @@ const Pricing = () => {
                 className="w-full h-11 font-semibold group"
                 variant={plan.popular ? "default" : "outline"}
                 style={plan.popular ? glowPrimary : {}}
+                href={plan.cta === "Start Free Trial" ? "/signup" : undefined}
               >
                 {plan.cta}
                 <ArrowRight className="w-4 h-4 ml-1 group-hover:translate-x-0.5 transition-transform" />
@@ -1741,7 +1747,7 @@ const StickyCtaBar = () => {
 
 export default function FitForgeLandingPage() {
   return (
-    <div className="min-h-screen bg-background">
+    <div className="min-h-screen bg-background text-foreground">
       <Navbar />
       <Hero />
       <SocialProof />

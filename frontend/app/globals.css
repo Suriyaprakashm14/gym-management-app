@@ -16,7 +16,8 @@
   --color-secondary: hsl(220 12% 10%);
   --color-secondary-foreground: hsl(210 30% 96%);
   --color-muted: hsl(220 12% 12%);
-  --color-muted-foreground: hsl(215 12% 50%);
+  /* Brighter muted text for WCAG-friendly readability on dark background */
+  --color-muted-foreground: hsl(215 14% 72%);
   --color-accent: hsl(165 70% 48%);
   --color-accent-foreground: hsl(220 16% 3.5%);
   --color-destructive: hsl(0 72% 55%);
@@ -53,10 +54,27 @@
   --background: 220 16% 3.5%;
   --foreground: 210 30% 96%;
   --card: 220 14% 6%;
+  --card-foreground: 210 30% 96%;
+  --popover: 220 14% 6%;
+  --popover-foreground: 210 30% 96%;
   --primary: 250 75% 62%;
+  --primary-foreground: 0 0% 100%;
+  --secondary: 220 12% 10%;
+  --secondary-foreground: 210 30% 96%;
+  --muted: 220 12% 12%;
+  --muted-foreground: 215 14% 72%;
+  --accent: 165 70% 48%;
+  --accent-foreground: 220 16% 3.5%;
+  --destructive: 0 72% 55%;
+  --destructive-foreground: 0 0% 100%;
   --border: 220 12% 12%;
+  --input: 220 12% 14%;
   --ring: 250 75% 62%;
   --radius: 0.75rem;
+  --warm: 30 90% 58%;
+  --warm-foreground: 220 16% 3.5%;
+  --surface: 220 14% 7%;
+  --surface-elevated: 220 14% 9%;
 }
 
 body {
@@ -66,10 +84,13 @@ body {
   color: hsl(var(--foreground));
   font-family: "Inter", system-ui, sans-serif;
   -webkit-font-smoothing: antialiased;
+  color-scheme: dark;
 }
 
 h1, h2, h3, h4, h5, h6 {
   font-family: "Space Grotesk", "Inter", system-ui, sans-serif;
+  /* Ant Design reset sets headings to dark colors — force inherit for dark theme */
+  color: inherit;
 }
 
 html {
@@ -122,6 +143,10 @@ html {
 }
 
 /* Auth pages (scoped) — ensure AntD text is readable on dark glass */
+.ff-auth {
+  color: hsl(var(--foreground));
+}
+
 .ff-auth .ant-form-item-label > label,
 .ff-auth .ant-form-item-label > label > span,
 .ff-auth .ant-typography {
