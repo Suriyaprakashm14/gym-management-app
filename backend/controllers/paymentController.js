@@ -295,8 +295,9 @@ exports.getGymOwnerAnalytics = async (req, res) => {
       return sum + pending;
     }, 0);
 
-    // Monthly breakdown
+    // Monthly breakdown (YYYY-MM) and optional daily breakdown when a single month is selected
     const monthlyData = {};
+    const dailyData = {};
     payments.forEach(payment => {
       const paymentMonth = payment.paidAt.getMonth() + 1;
       const paymentYear = payment.paidAt.getFullYear();
@@ -307,6 +308,17 @@ exports.getGymOwnerAnalytics = async (req, res) => {
       }
       monthlyData[key].totalPaid += payment.paidAmount;
       monthlyData[key].paymentCount += 1;
+
+      // If analytics is scoped to a specific month, also build daily breakdown
+      if (year && month && Number(paymentYear) === Number(year) && paymentMonth === Number(month)) {
+        const day = payment.paidAt.getDate();
+        const dayKey = String(day);
+        if (!dailyData[dayKey]) {
+          dailyData[dayKey] = { totalPaid: 0, paymentCount: 0 };
+        }
+        dailyData[dayKey].totalPaid += payment.paidAmount;
+        dailyData[dayKey].paymentCount += 1;
+      }
     });
 
     // Prepare response based on role
@@ -324,7 +336,9 @@ exports.getGymOwnerAnalytics = async (req, res) => {
         totalPayments: payments.length,
         averagePayment: payments.length > 0 ? totalPaidAmount / payments.length : 0
       },
-      monthlyBreakdown: monthlyData
+      monthlyBreakdown: monthlyData,
+      // Only include dailyBreakdown when a single month is requested
+      ...(year && month ? { dailyBreakdown: dailyData } : {})
     };
 
     const todayForOverdue = new Date();
@@ -444,8 +458,9 @@ exports.getBranchManagerAnalytics = async (req, res) => {
       return sum + pending;
     }, 0);
 
-    // Monthly breakdown
+    // Monthly breakdown (YYYY-MM) and optional daily breakdown when a single month is selected
     const monthlyData = {};
+    const dailyData = {};
     payments.forEach(payment => {
       const paymentMonth = payment.paidAt.getMonth() + 1;
       const paymentYear = payment.paidAt.getFullYear();
@@ -456,6 +471,17 @@ exports.getBranchManagerAnalytics = async (req, res) => {
       }
       monthlyData[key].totalPaid += payment.paidAmount;
       monthlyData[key].paymentCount += 1;
+
+      // If analytics is scoped to a specific month, also build daily breakdown
+      if (year && month && Number(paymentYear) === Number(year) && paymentMonth === Number(month)) {
+        const day = payment.paidAt.getDate();
+        const dayKey = String(day);
+        if (!dailyData[dayKey]) {
+          dailyData[dayKey] = { totalPaid: 0, paymentCount: 0 };
+        }
+        dailyData[dayKey].totalPaid += payment.paidAmount;
+        dailyData[dayKey].paymentCount += 1;
+      }
     });
 
     // Get branch info
@@ -505,6 +531,7 @@ exports.getBranchManagerAnalytics = async (req, res) => {
             })
       },
       monthlyBreakdown: isStaff ? {} : monthlyData,
+      ...(isStaff || !(year && month) ? {} : { dailyBreakdown: dailyData }),
       topMembers: isStaff
       ? topMembers.map(member => ({
           memberId: member.memberId,

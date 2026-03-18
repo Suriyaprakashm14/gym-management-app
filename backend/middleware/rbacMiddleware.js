@@ -228,30 +228,35 @@ const requireBranchAccess = (branchIdParam = 'branchId') => {
         });
       }
 
-      // Gym owner: strict branch ownership — branchId must be in user.branches
+      // Gym owner: allow if branch is in user.branches, or if branch belongs to their gym (user.branches may be empty/out of sync)
       if (user.role === 'gym_owner') {
-        if (user.branches && user.branches.length > 0) {
-          const allowed = user.branches.some(b => b && b.toString() === branchId.toString());
-          if (!allowed) {
+        const gymId = user.gymId?._id || user.gymId;
+        let allowed = user.branches && user.branches.length > 0
+          ? user.branches.some(b => b && b.toString() === branchId.toString())
+          : false;
+        if (!allowed) {
+          const branch = await Branch.findOne({ _id: branchId, gymId });
+          allowed = !!branch;
+        }
+        if (!allowed) {
+          return res.status(403).json({
+            error: 'Access denied',
+            message: 'You do not have permission to access this branch'
+          });
+        }
+        req.currentUser = user;
+        const branch = await Branch.findById(branchId);
+        if (!isLegacyUser && branch) {
+          const isFrozen = await branch.isFrozen();
+          if (isFrozen) {
             return res.status(403).json({
-              error: 'Access denied',
-              message: 'You do not have permission to access this branch'
+              error: 'Branch frozen',
+              message: 'This branch is currently frozen. Please contact your gym owner or manager.'
             });
           }
-          req.currentUser = user;
-          const branch = await Branch.findById(branchId);
-          if (!isLegacyUser && branch) {
-            const isFrozen = await branch.isFrozen();
-            if (isFrozen) {
-              return res.status(403).json({
-                error: 'Branch frozen',
-                message: 'This branch is currently frozen. Please contact your gym owner or manager.'
-              });
-            }
-          }
-          req.currentBranch = branch;
-          return next();
         }
+        req.currentBranch = branch;
+        return next();
       }
 
       // For legacy users (managers), check if they can access the branch

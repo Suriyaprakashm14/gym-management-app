@@ -1,7 +1,7 @@
 'use client';
 
-import { useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { useState, useEffect } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { Button, Card, Form, Input, Steps, Typography, App } from 'antd';
 import { api } from '../utils/api';
@@ -17,10 +17,18 @@ export default function ForgotPasswordPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { message } = App.useApp();
   const [form1] = Form.useForm();
   const [form2] = Form.useForm();
   const [form3] = Form.useForm();
+
+  const emailFromUrl = searchParams.get('email')?.trim() || '';
+  useEffect(() => {
+    if (emailFromUrl) {
+      form1.setFieldsValue({ email: emailFromUrl });
+    }
+  }, [emailFromUrl]);
 
   const handleStep1 = async () => {
     setError('');

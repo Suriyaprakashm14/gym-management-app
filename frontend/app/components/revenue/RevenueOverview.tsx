@@ -11,8 +11,8 @@ import {
   TrendingUp
 } from 'lucide-react'
 import { 
-  BarChart, 
-  Bar, 
+  AreaChart,
+  Area,
   XAxis, 
   YAxis, 
   CartesianGrid, 
@@ -415,18 +415,74 @@ const BillingOverview: React.FC = () => {
   const prepareChartData = () => {
     if (!analyticsData) return []
 
-    return Object.entries(analyticsData.monthlyBreakdown || {}).map(([month, data]) => ({
-      month: month,
-      amount: data.totalPaid
-    }))
+    // Year view (All Months selected): show Jan–Dec
+    if (!selectedMonth) {
+      const monthLabels = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+      const breakdown = analyticsData.monthlyBreakdown || {}
+      const year = analyticsData.period?.year || selectedYear
+
+      return monthLabels.map((label, index) => {
+        const monthNumber = index + 1
+        const monthPadded = monthNumber.toString().padStart(2, '0')
+        const fullKey = `${year}-${monthPadded}`
+
+        let matchedKey: string | undefined
+
+        if (Object.prototype.hasOwnProperty.call(breakdown, fullKey)) {
+          matchedKey = fullKey
+        } else if (Object.prototype.hasOwnProperty.call(breakdown, String(monthNumber))) {
+          matchedKey = String(monthNumber)
+        } else {
+          matchedKey = Object.keys(breakdown).find((key) => {
+            const [kYear, kMonth] = key.split('-')
+            const kMonthNum = Number(kMonth)
+            if (!Number.isNaN(kMonthNum) && Number(kYear) === year && kMonthNum === monthNumber) {
+              return true
+            }
+            const asNumber = Number(key)
+            if (!Number.isNaN(asNumber) && asNumber === monthNumber) return true
+            return key.toLowerCase().startsWith(label.toLowerCase())
+          })
+        }
+
+        const monthData = matchedKey
+          ? (breakdown as Record<string, { totalPaid?: number }>)[matchedKey]
+          : undefined
+
+        return {
+          label,
+          amount: monthData?.totalPaid ?? 0
+        }
+      })
+    }
+
+    // Month view (specific month selected): show days 1..N using dailyBreakdown
+    const year = analyticsData.period?.year || selectedYear
+    const month = selectedMonth
+    const daily = (analyticsData as any).dailyBreakdown || {}
+    const daysInMonth = new Date(year, month, 0).getDate()
+
+    const data = []
+    for (let day = 1; day <= daysInMonth; day += 1) {
+      const key = String(day)
+      const dayData = daily[key] as { totalPaid?: number } | undefined
+      data.push({
+        label: String(day),
+        amount: dayData?.totalPaid ?? 0
+      })
+    }
+    return data
   }
 
-  const monthlyRevenue = prepareChartData()
+  const chartData = prepareChartData()
 
-  // Revenue trend: compare latest month to previous month (from same data as chart)
+  // Revenue trend: compare latest month to previous month (year view only)
   const revenueTrend = (() => {
-    if (!monthlyRevenue || monthlyRevenue.length < 2) return null
-    const sorted = [...monthlyRevenue].sort((a, b) => (a.month < b.month ? -1 : 1))
+    if (!chartData || chartData.length < 2 || selectedMonth) return null
+    const order = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+    const sorted = [...chartData].sort(
+      (a, b) => order.indexOf(a.label) - order.indexOf(b.label)
+    )
     const prev = sorted[sorted.length - 2]?.amount ?? 0
     const curr = sorted[sorted.length - 1]?.amount ?? 0
     if (prev === 0) return curr > 0 ? 100 : 0
@@ -690,16 +746,16 @@ const BillingOverview: React.FC = () => {
               </div>
             </div>
             <ResponsiveContainer width="100%" height={280}>
-              <BarChart data={monthlyRevenue}>
+              <AreaChart data={chartData}>
                 <defs>
                   <linearGradient id="colorAmount" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#3B82F6" stopOpacity={0.8}/>
-                    <stop offset="95%" stopColor="#3B82F6" stopOpacity={0.3}/>
+                    <stop offset="5%" stopColor="#22C55E" stopOpacity={0.35}/>
+                    <stop offset="95%" stopColor="#22C55E" stopOpacity={0.02}/>
                   </linearGradient>
                 </defs>
                 <CartesianGrid strokeDasharray="3 3" stroke="#E2E8F0" />
                 <XAxis 
-                  dataKey="month" 
+                  dataKey="label" 
                   stroke="#64748B" 
                   fontSize={12}
                   tick={{ fill: '#64748B' }}
@@ -718,14 +774,17 @@ const BillingOverview: React.FC = () => {
                     boxShadow: '0 4px 12px rgba(0, 0, 0, 0.1)'
                   }}
                   formatter={(value) => [formatCurrency(Number(value ?? 0)), 'Revenue']}
-                  cursor={{ fill: 'rgba(59, 130, 246, 0.05)' }}
+                  cursor={{ stroke: '#3B82F6', strokeWidth: 1, strokeDasharray: '4 2' }}
                 />
-                <Bar 
-                  dataKey="amount" 
+                <Area
+                  type="monotone"
+                  dataKey="amount"
+                  stroke="#22C55E"
+                  strokeWidth={2.5}
                   fill="url(#colorAmount)"
-                  radius={[8, 8, 0, 0]}
+                  activeDot={{ r: 5, strokeWidth: 0 }}
                 />
-              </BarChart>
+              </AreaChart>
             </ResponsiveContainer>
           </div>
         </div>

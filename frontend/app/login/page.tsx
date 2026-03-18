@@ -23,6 +23,7 @@ export default function LoginPage() {
   const { login } = useAuth();
   const { message } = App.useApp();
   const signedUp = searchParams.get('signedup') === '1';
+  const [form] = Form.useForm<LoginFormValues>();
 
   const onFinish = async (values: LoginFormValues) => {
     if (loading) return;
@@ -53,7 +54,9 @@ export default function LoginPage() {
   };
 
   const handleForgotPasswordClick = () => {
-    router.push('/forgot-password');
+    const emailValue = form.getFieldValue('email')?.trim?.() || '';
+    const url = emailValue ? `/forgot-password?email=${encodeURIComponent(emailValue)}` : '/forgot-password';
+    router.push(url);
   };
 
   return (
@@ -72,7 +75,7 @@ export default function LoginPage() {
             Login
           </Title>
         </div>
-        <Form name="login" layout="vertical" onFinish={onFinish}>
+        <Form form={form} name="login" layout="vertical" onFinish={onFinish}>
           {signedUp && (
             <div style={{ marginBottom: 16, padding: '8px 12px', background: '#f6ffed', border: '1px solid #b7eb8f', borderRadius: 6, color: '#52c41a', fontSize: 13 }}>
               Account created. Please log in.
