@@ -3,6 +3,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { Form, Input, Button } from 'antd';
 import { CameraOutlined } from '@ant-design/icons';
+import { Building2 } from 'lucide-react';
 
 export interface GymSetupFormValues {
   gymName: string;
@@ -97,14 +98,22 @@ export function GymSetupStepForm({
         initialValues={{ gymName: initialGymName }}
       >
         <Form.Item
-          label="Gym Name(optional)"
+          label={<span className="text-sm text-muted-foreground">Gym Name (optional)</span>}
           name="gymName"
           rules={[]}
         >
-          <Input placeholder="Enter your gym name" />
+          <Input
+            placeholder="Gym name (optional)"
+            autoComplete="organization"
+            prefix={<Building2 className="w-4 h-4 text-muted-foreground" />}
+            className="!bg-secondary/40 !border-border/60 !text-foreground placeholder:!text-muted-foreground/70 !rounded-xl"
+          />
         </Form.Item>
 
-        <Form.Item label="Gym Logo(optional)" style={{ marginBottom: 16 }}>
+        <Form.Item
+          label={<span className="text-sm text-muted-foreground">Gym Logo (optional)</span>}
+          style={{ marginBottom: 16 }}
+        >
           <input
             ref={fileInputRef}
             type="file"
@@ -118,18 +127,7 @@ export function GymSetupStepForm({
             tabIndex={0}
             onClick={handleLogoClick}
             onKeyDown={(e) => e.key === 'Enter' && handleLogoClick()}
-            style={{
-              width: 96,
-              height: 96,
-              borderRadius: 12,
-              border: '2px dashed #d9d9d9',
-              background: '#fafafa',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              cursor: 'pointer',
-              overflow: 'hidden',
-            }}
+            className="w-24 h-24 rounded-2xl border-2 border-dashed border-border/70 bg-secondary/30 flex items-center justify-center cursor-pointer overflow-hidden hover:bg-secondary/40 transition-colors"
           >
             {previewUrl ? (
               <div style={{ position: 'relative', width: '100%', height: '100%' }}>
@@ -140,35 +138,39 @@ export function GymSetupStepForm({
                 />
                 <span
                   onClick={(e) => { e.stopPropagation(); handleRemoveLogo(); }}
-                  style={{
-                    position: 'absolute',
-                    bottom: 4,
-                    right: 4,
-                    fontSize: 11,
-                    color: '#ff4d4f',
-                    cursor: 'pointer',
-                    textDecoration: 'underline',
-                  }}
+                  className="absolute bottom-1 right-2 text-[11px] text-destructive cursor-pointer underline"
                 >
                   Remove
                 </span>
               </div>
             ) : (
-              <div style={{ textAlign: 'center', color: '#8c8c8c' }}>
+              <div className="text-center text-muted-foreground">
                 <CameraOutlined style={{ fontSize: 28, marginBottom: 4 }} />
-                <div style={{ fontSize: 11 }}>Upload</div>
+                <div className="text-[11px]">Upload</div>
               </div>
             )}
           </div>
         </Form.Item>
 
         <Form.Item style={{ marginBottom: 12 }}>
-          <Button type="primary" htmlType="button" block loading={loading} onClick={handleSubmit}>
+          <Button
+            type="primary"
+            htmlType="button"
+            block
+            loading={loading}
+            onClick={handleSubmit}
+            className="!h-11 !rounded-xl !font-semibold !shadow-md hover:!opacity-95"
+          >
             Create Account
           </Button>
         </Form.Item>
         <Form.Item style={{ marginBottom: 12 }}>
-          <Button block onClick={onBack} disabled={loading}>
+          <Button
+            block
+            onClick={onBack}
+            disabled={loading}
+            className="!h-11 !rounded-xl !bg-secondary/40 !border-border/60 !text-foreground hover:!bg-secondary/60"
+          >
             Back
           </Button>
         </Form.Item>

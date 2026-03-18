@@ -120,3 +120,79 @@ html {
   background: rgba(24, 144, 255, 0.2) !important;
   color: #fff !important;
 }
+
+/* Auth pages (scoped) — ensure AntD text is readable on dark glass */
+.ff-auth .ant-form-item-label > label,
+.ff-auth .ant-form-item-label > label > span,
+.ff-auth .ant-typography {
+  color: hsl(var(--foreground)) !important;
+}
+
+.ff-auth .ant-form-item-explain-error {
+  color: hsl(var(--destructive)) !important;
+}
+
+.ff-auth .ant-input,
+.ff-auth .ant-input-affix-wrapper,
+.ff-auth .ant-input-affix-wrapper > input.ant-input {
+  background: hsla(220, 12%, 10%, 0.45) !important;
+  border-color: hsla(220, 12%, 12%, 0.7) !important;
+  color: hsl(var(--foreground)) !important;
+}
+
+.ff-auth .ant-input::placeholder,
+.ff-auth .ant-input-affix-wrapper > input.ant-input::placeholder {
+  color: hsla(215, 12%, 70%, 0.75) !important;
+}
+
+.ff-auth .ant-input-prefix,
+.ff-auth .ant-input-suffix {
+  color: hsla(215, 12%, 70%, 0.8) !important;
+}
+
+.ff-auth .ant-input-password-icon,
+.ff-auth .anticon-eye,
+.ff-auth .anticon-eye-invisible {
+  color: hsla(215, 12%, 70%, 0.9) !important;
+}
+
+.ff-auth .ant-input-password-icon:hover,
+.ff-auth .ant-input-affix-wrapper:hover .ant-input-password-icon,
+.ff-auth .ant-input-affix-wrapper:hover .anticon-eye,
+.ff-auth .ant-input-affix-wrapper:hover .anticon-eye-invisible {
+  color: hsl(var(--foreground)) !important;
+}
+
+.ff-auth .ant-input-affix-wrapper:hover,
+.ff-auth .ant-input:hover {
+  border-color: hsla(250, 75%, 62%, 0.45) !important;
+}
+
+.ff-auth .ant-input-affix-wrapper-focused,
+.ff-auth .ant-input:focus {
+  border-color: hsla(250, 75%, 62%, 0.65) !important;
+  box-shadow: 0 0 0 3px hsla(250, 75%, 62%, 0.18) !important;
+}
+
+.ff-auth .ant-steps .ant-steps-item-title,
+.ff-auth .ant-steps .ant-steps-item-description,
+.ff-auth .ant-steps .ant-steps-item-icon {
+  color: hsl(var(--foreground)) !important;
+}
+
+.ff-auth .ant-steps .ant-steps-item-wait .ant-steps-item-title {
+  color: hsla(215, 12%, 70%, 0.85) !important;
+}
+
+/* Auth links/buttons must remain visible */
+.ff-auth .ff-auth-link,
+.ff-auth .ant-btn-link,
+.ff-auth .ant-btn-link > span {
+  color: hsl(var(--primary)) !important;
+}
+
+.ff-auth .ff-auth-link:hover,
+.ff-auth .ant-btn-link:hover,
+.ff-auth .ant-btn-link:hover > span {
+  color: hsla(250, 75%, 62%, 0.9) !important;
+}

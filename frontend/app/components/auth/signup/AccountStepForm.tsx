@@ -2,6 +2,7 @@
 
 import { useEffect } from 'react';
 import { Form, Input, Button, Row, Col } from 'antd';
+import { Mail, Lock, User } from 'lucide-react';
 
 export interface AccountFormValues {
   firstName: string;
@@ -48,45 +49,72 @@ export function AccountStepForm({ initialValues, onFinish, loading }: AccountSte
       <Row gutter={16}>
         <Col span={12}>
           <Form.Item
-            label="First Name"
+            label={<span className="text-sm text-muted-foreground">First Name</span>}
             name="firstName"
             rules={[{ required: true, message: 'Please enter your first name' }]}
           >
-            <Input placeholder="Enter first name" />
+            <Input
+              placeholder="First name"
+              autoComplete="given-name"
+              prefix={<User className="w-4 h-4 text-muted-foreground" />}
+              className="!bg-secondary/40 !border-border/60 !text-foreground placeholder:!text-muted-foreground/70 !rounded-xl"
+            />
           </Form.Item>
         </Col>
         <Col span={12}>
           <Form.Item
-            label="Last Name"
+            label={<span className="text-sm text-muted-foreground">Last Name</span>}
             name="lastName"
             rules={[{ required: true, message: 'Please enter your last name' }]}
           >
-            <Input placeholder="Enter last name" />
+            <Input
+              placeholder="Last name"
+              autoComplete="family-name"
+              prefix={<User className="w-4 h-4 text-muted-foreground" />}
+              className="!bg-secondary/40 !border-border/60 !text-foreground placeholder:!text-muted-foreground/70 !rounded-xl"
+            />
           </Form.Item>
         </Col>
       </Row>
       <Form.Item
-        label="Email"
+        label={<span className="text-sm text-muted-foreground">Email</span>}
         name="email"
         rules={[
           { required: true, message: 'Please enter your email!' },
           { type: 'email', message: 'Please enter a valid email address' },
         ]}
       >
-        <Input placeholder="Enter your email" type="email" autoComplete="email" />
+        <Input
+          placeholder="you@company.com"
+          type="email"
+          autoComplete="email"
+          prefix={<Mail className="w-4 h-4 text-muted-foreground" />}
+          className="!bg-secondary/40 !border-border/60 !text-foreground placeholder:!text-muted-foreground/70 !rounded-xl"
+        />
       </Form.Item>
       <Form.Item
-        label="Password"
+        label={<span className="text-sm text-muted-foreground">Password</span>}
         name="password"
         rules={[
           { required: true, message: 'Please enter your password!' },
           { min: 8, message: 'Password must be at least 8 characters' },
         ]}
       >
-        <Input.Password placeholder="Enter your password" autoComplete="new-password" />
+        <Input.Password
+          placeholder="Create a password"
+          autoComplete="new-password"
+          prefix={<Lock className="w-4 h-4 text-muted-foreground" />}
+          className="!bg-secondary/40 !border-border/60 !text-foreground placeholder:!text-muted-foreground/70 !rounded-xl"
+        />
       </Form.Item>
       <Form.Item style={{ marginBottom: 0 }}>
-        <Button type="primary" htmlType="submit" block loading={loading}>
+        <Button
+          type="primary"
+          htmlType="submit"
+          block
+          loading={loading}
+          className="!h-11 !rounded-xl !font-semibold !shadow-md hover:!opacity-95"
+        >
           Continue
         </Button>
       </Form.Item>

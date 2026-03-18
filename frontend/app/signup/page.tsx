@@ -3,11 +3,12 @@
 import { useState, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { Card, Typography, App } from 'antd';
+import { Typography, App } from 'antd';
 import { SignupSteps } from '../components/auth/signup/SignupSteps';
 import { AccountStepForm, type AccountFormValues } from '../components/auth/signup/AccountStepForm';
 import { GymSetupStepForm, type GymSetupFormValues } from '../components/auth/signup/GymSetupStepForm';
 import { api } from '../utils/api';
+import { AuthShell } from '../components/auth/AuthShell';
 
 const { Title, Text } = Typography;
 
@@ -139,68 +140,63 @@ export default function SignupPage() {
   }, []);
 
   return (
-    <div
-      style={{
-        minHeight: '100vh',
-        background: 'linear-gradient(135deg, #1e293b 0%, #0f172a 100%)',
-        display: 'flex',
-        justifyContent: 'center',
-        alignItems: 'center',
-      }}
+    <AuthShell
+      title="Create Your Account"
+      subtitle="Start your 14‑day free trial. Set up your gym in minutes."
+      footer={
+        <div className="text-center">
+          <Text className="!text-muted-foreground">Already have an account? </Text>
+          <Link href="/login" className="text-primary hover:underline font-medium">
+            Sign in
+          </Link>
+        </div>
+      }
+      bullets={[
+        'Set up your gym in minutes',
+        'Automated billing + renewals',
+        'Dashboards and multi-branch support',
+      ]}
     >
-      <Card style={{ width: 400 }}>
-        <div style={{ textAlign: 'center', marginBottom: 24 }}>
-          <Title level={3} style={{ marginBottom: 8 }}>
-            Sign Up
-          </Title>
+      <div className="text-center mb-6">
+        <Title level={5} className="!mb-2 !text-foreground !font-display">
+          {currentStep === 0 ? 'Account details' : 'Gym setup'}
+        </Title>
+        <div className="flex justify-center">
           <SignupSteps current={currentStep} />
         </div>
+      </div>
 
-        {currentStep === 0 && (
-          <>
-            {errorMessage && (
-              <div style={{ color: '#ff4d4f', fontSize: 14, marginBottom: 8, textAlign: 'left' }}>
-                {errorMessage}
-              </div>
-            )}
-            <AccountStepForm
-              initialValues={{
-                firstName: formData.firstName,
-                lastName: formData.lastName,
-                email: formData.email,
-                password: formData.password,
-              }}
-              onFinish={handleAccountFinish}
-              loading={loading}
-            />
-          </>
-        )}
-
-        {currentStep === 1 && (
-          <>
-            {errorMessage && (
-              <div style={{ color: '#ff4d4f', fontSize: 14, marginBottom: 8, textAlign: 'left' }}>
-                {errorMessage}
-              </div>
-            )}
-            <GymSetupStepForm
-              initialGymName={formData.gymName}
-              initialLogoUrl={formData.gymLogo}
-              onLogoChange={handleLogoChange}
-              onGymNameChange={handleGymNameChange}
-              onFinish={handleGymFinish}
-              onSkip={handleSkip}
-              onBack={handleBack}
-              loading={loading}
-            />
-          </>
-        )}
-
-        <div style={{ textAlign: 'center', marginTop: 24 }}>
-          <Text type="secondary">Already have an account? </Text>
-          <Link href="/login">Log in</Link>
+      {errorMessage && (
+        <div className="mb-4 text-sm text-destructive" role="alert">
+          {errorMessage}
         </div>
-      </Card>
-    </div>
+      )}
+
+      {currentStep === 0 && (
+        <AccountStepForm
+          initialValues={{
+            firstName: formData.firstName,
+            lastName: formData.lastName,
+            email: formData.email,
+            password: formData.password,
+          }}
+          onFinish={handleAccountFinish}
+          loading={loading}
+        />
+      )}
+
+      {currentStep === 1 && (
+        <GymSetupStepForm
+          initialGymName={formData.gymName}
+          initialLogoUrl={formData.gymLogo}
+          onLogoChange={handleLogoChange}
+          onGymNameChange={handleGymNameChange}
+          onFinish={handleGymFinish}
+          onSkip={handleSkip}
+          onBack={handleBack}
+          loading={loading}
+        />
+      )}
+    </AuthShell>
   );
 }

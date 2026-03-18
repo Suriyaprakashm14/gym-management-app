@@ -16,7 +16,9 @@ export function SignupSteps({ current }: SignupStepsProps) {
     <Steps
       current={current}
       size="small"
-      items={STEP_ITEMS.map((s) => ({ title: s.title }))}
+      items={STEP_ITEMS.map((s) => ({
+        title: <span className="text-xs sm:text-sm text-foreground/90">{s.title}</span>,
+      }))}
       style={{ marginBottom: 24 }}
     />
   );
