@@ -10,7 +10,7 @@ import DashboardLayoutWrapper from './DashboardLayoutWrapper';
 const inter = Inter({ subsets: ['latin'], display: 'swap' });
 
 export const metadata: Metadata = {
-  title: 'Small Circle Dashboard',
+  title: 'Gym Management',
   description: 'Dashboard UI with Redux',
 };
 
