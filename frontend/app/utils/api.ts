@@ -90,6 +90,7 @@ export const api = {
     const method = (opts.method != null && typeof opts.method === 'string') ? opts.method : 'GET';
     const fetchInit: RequestInit = {
       method,
+      credentials: 'include',
     };
 
     if (Object.keys(headersObj).length > 0) {
@@ -146,6 +147,8 @@ export const api = {
                 lowerEndpoint.includes('/attendance/enroll-face') ||
                 lowerEndpoint.includes('/attendance/photo-only') ||
                 lowerEndpoint.includes('/attendance/dual-auth') ||
+                lowerEndpoint.includes('/members/register-fingerprint') ||
+                lowerEndpoint.includes('/members/verify-fingerprint') ||
                 lowerEndpoint.includes('/fingerprints/');
               if (!isLoginRequest && !isBiometricEndpoint) {
                 window.dispatchEvent(new CustomEvent('auth:logout'));
@@ -377,17 +380,17 @@ export const api = {
         body: JSON.stringify(managerData),
       }),
 
-    forgotPassword: (email: string) =>
-      api.request('/auth/forgot-password', {
-        method: 'POST',
-        body: JSON.stringify({ email: email.toLowerCase() }),
-      }),
+      forgotPassword: (email: string) =>
+        api.request('/auth/forgot-password', {
+          method: 'POST',
+          body: JSON.stringify({ email: email.toLowerCase(), type: 'password_reset' }),
+        }),
 
-    verifyOtp: (email: string, otp: string) =>
-      api.request('/auth/verify-otp', {
-        method: 'POST',
-        body: JSON.stringify({ email: email.toLowerCase(), otp }),
-      }),
+      verifyOtp: (email: string, otp: string, type = 'password_reset') =>
+        api.request('/auth/verify-otp', {
+          method: 'POST',
+          body: JSON.stringify({ email: email.toLowerCase(), otp, type }),
+        }),
 
     resetPassword: (email: string, otp: string, newPassword: string) =>
       api.request('/auth/reset-password', {
@@ -395,17 +398,44 @@ export const api = {
         body: JSON.stringify({ email: email.toLowerCase(), otp, newPassword }),
       }),
 
-    resendOtp: (email: string) =>
-      api.request('/auth/resend-otp', {
-        method: 'POST',
-        body: JSON.stringify({ email: email.toLowerCase() }),
-      }),
+      resendOtp: (email: string, type = 'password_reset') =>
+        api.request('/auth/resend-otp', {
+          method: 'POST',
+          body: JSON.stringify({ email: email.toLowerCase(), type }),
+        }),
 
     resetUserPassword: (userId: string, body: { newPassword: string }) =>
       api.request(`/auth/reset-user-password/${encodeURIComponent(userId)}`, {
         method: 'PUT',
         body: JSON.stringify(body),
       }),
+
+    // WebAuthn (Windows Hello / fingerprint) endpoints for user authentication
+    webauthn: {
+      registerOptions: () =>
+        api.request('/auth/webauthn/register-options', {
+          method: 'POST',
+          body: JSON.stringify({}),
+        }),
+
+      registerVerify: (registrationResponse: any) =>
+        api.request('/auth/webauthn/register-verify', {
+          method: 'POST',
+          body: JSON.stringify({ response: registrationResponse }),
+        }),
+
+      loginOptions: (email: string) =>
+        api.request('/auth/webauthn/login-options', {
+          method: 'POST',
+          body: JSON.stringify({ email }),
+        }),
+
+      loginVerify: (authenticationResponse: any) =>
+        api.request('/auth/webauthn/login-verify', {
+          method: 'POST',
+          body: JSON.stringify({ response: authenticationResponse }),
+        }),
+    },
   },
 
   // Gyms endpoints (gym owner updates name/logo)
@@ -483,6 +513,37 @@ export const api = {
           paidAmount: data.paidAmount ?? 0,
         }),
       }),
+
+    // WebAuthn (Windows Hello) fingerprint enrollment + check-in verification for members
+    fingerprintWebAuthn: {
+      // memberId optional for "pending enrollment" (fingerprint first)
+      registerOptions: (memberId?: string, pendingUser?: { userName?: string; displayName?: string }) =>
+        api.request('/members/register-fingerprint', {
+          method: 'POST',
+          body: JSON.stringify(memberId ? { memberId } : { pendingUser: pendingUser || {} }),
+        }),
+      registerVerify: (memberId: string | undefined, registrationResponse: any) =>
+        api.request('/members/register-fingerprint', {
+          method: 'POST',
+          body: JSON.stringify(memberId ? { memberId, registrationResponse } : { registrationResponse }),
+        }),
+      // Attaches the pending fingerprint enrollment in session to the newly created member.
+      attachPendingToMember: (memberId: string) =>
+        api.request('/members/register-fingerprint', {
+          method: 'POST',
+          body: JSON.stringify({ memberId }),
+        }),
+      loginOptions: () =>
+        api.request('/members/verify-fingerprint', {
+          method: 'POST',
+          body: JSON.stringify({}),
+        }),
+      loginVerify: (authenticationResponse: any) =>
+        api.request('/members/verify-fingerprint', {
+          method: 'POST',
+          body: JSON.stringify({ authenticationResponse }),
+        }),
+    },
   },
 
   // Payments endpoints

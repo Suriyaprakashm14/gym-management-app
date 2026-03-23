@@ -8,6 +8,7 @@ const Gym = require('../models/gym');
 const Branch = require('../models/branch');
 const OTP = require('../models/otp');
 const { sendOTPEmail, sendPasswordResetSuccessEmail, verifyEmailConfig } = require('../utils/emailService');
+const sgMail = require('@sendgrid/mail');
 
 const JWTSECRET = process.env.JWTSECRET || 'your_jwt_secret_key_here';
 const JWTEXPIRESIN = '8h'; // Extended token expiry for better UX
@@ -379,14 +380,6 @@ exports.forgotPassword = async (req, res) => {
     }
 
     // Verify email service configuration
-    const emailServiceReady = await verifyEmailConfig();
-    if (!emailServiceReady) {
-      console.error('Email service is not configured properly');
-      return res.status(500).json({ 
-        error: 'Email service is temporarily unavailable. Please try again later.' 
-      });
-    }
-
     // Create OTP record
     const otpRecord = await OTP.createForEmail(email, 'password_reset');
     console.log('OTP created for email:', email);
@@ -395,11 +388,9 @@ exports.forgotPassword = async (req, res) => {
     try {
       await sendOTPEmail(email, otpRecord.otp, 'password_reset');
       console.log('OTP email sent successfully to:', email);
-    } catch (emailError) {
-      console.error('Failed to send OTP email:', emailError);
-      return res.status(500).json({ 
-        error: 'Failed to send OTP email. Please try again later.' 
-      });
+    } catch (error) {
+      console.error('🔥 REAL EMAIL ERROR:', error.response?.body || error);
+      throw error; // don't wrap it
     }
 
     res.json({
@@ -423,7 +414,7 @@ exports.forgotPassword = async (req, res) => {
 // Reset Password - Verify OTP and reset password
 exports.resetPassword = async (req, res) => {
   try {
-    const { email, otp, newPassword } = req.body;
+    const { newPassword } = req.body;
     
     if (!email || !otp || !newPassword) {
       return res.status(400).json({ 
@@ -503,40 +494,32 @@ exports.resetPassword = async (req, res) => {
 exports.verifyOTP = async (req, res) => {
   try {
     const { email, otp } = req.body;
-    
+
     if (!email || !otp) {
-      return res.status(400).json({ 
-        error: 'Email and OTP are required' 
+      return res.status(400).json({
+        error: 'Email and OTP are required'
       });
     }
 
-    console.log('OTP verification request for email:', email);
+    // Verify OTP (this already marks as used ✅)
+    await OTP.verifyOTP(email, otp, 'password_reset');
 
-    // Verify OTP
-    try {
-      await OTP.verifyOTP(email, otp, 'password_reset');
-      console.log('OTP verified successfully for email:', email);
-      
-      res.json({
-        success: true,
-        message: 'OTP verified successfully',
-        data: {
-          email: email,
-          verifiedAt: new Date().toISOString()
-        }
-      });
-    } catch (otpError) {
-      console.log('OTP verification failed:', otpError.message);
-      return res.status(400).json({ 
-        error: otpError.message 
-      });
-    }
+    // 🔥 NEW: Generate reset token
+    const resetToken = jwt.sign(
+      { email, purpose: 'password_reset' },
+      JWTSECRET,
+      { expiresIn: '10m' }
+    );
+
+    res.json({
+      success: true,
+      message: 'OTP verified successfully',
+      token: resetToken   // 👈 IMPORTANT
+    });
 
   } catch (error) {
-    console.error('Verify OTP error:', error);
-    res.status(500).json({ 
-      error: 'Server error during OTP verification',
-      details: error.message 
+    res.status(400).json({
+      error: error.message
     });
   }
 };
@@ -545,7 +528,6 @@ exports.verifyOTP = async (req, res) => {
 exports.resendOTP = async (req, res) => {
   try {
     const { email } = req.body;
-    
     if (!email) {
       return res.status(400).json({ 
         error: 'Email is required' 
@@ -594,28 +576,14 @@ exports.resendOTP = async (req, res) => {
       });
     }
 
-    // Verify email service
-    const emailServiceReady = await verifyEmailConfig();
-    if (!emailServiceReady) {
-      return res.status(500).json({ 
-        error: 'Email service is temporarily unavailable. Please try again later.' 
-      });
-    }
+    
+    
 
     // Create new OTP
     const otpRecord = await OTP.createForEmail(email, 'password_reset');
     console.log('New OTP created for email:', email);
 
-    // Send OTP email
-    try {
-      await sendOTPEmail(email, otpRecord.otp, 'password_reset');
-      console.log('OTP email resent successfully to:', email);
-    } catch (emailError) {
-      console.error('Failed to resend OTP email:', emailError);
-      return res.status(500).json({ 
-        error: 'Failed to send OTP email. Please try again later.' 
-      });
-    }
+    
 
     res.json({
       success: true,

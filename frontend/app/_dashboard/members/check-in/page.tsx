@@ -33,6 +33,7 @@ import type { ColumnsType } from 'antd/es/table';
 import { api } from '../../../utils/api';
 import { useAuth } from '../../../contexts/AuthContext';
 import dayjs from 'dayjs';
+import { useMemberFingerprintWebAuthn } from '../../../hooks/useMemberFingerprintWebAuthn';
 
 
 
@@ -96,6 +97,8 @@ export default function CheckInPage() {
   const [viewMode, setViewMode] = useState<'all' | 'present' | 'absent'>('all');
   const { message } = App.useApp();
   const { user } = useAuth();
+  const { verifyFingerprint } = useMemberFingerprintWebAuthn();
+  const [verifyingFingerprint, setVerifyingFingerprint] = useState(false);
 
   const fetchAttendanceReport = async () => {
     try {
@@ -124,6 +127,29 @@ export default function CheckInPage() {
   useEffect(() => {
     fetchAttendanceReport();
   }, [selectedPeriod, selectedDate]);
+
+  const handleVerifyFingerprintTest = async () => {
+    if (verifyingFingerprint) return;
+    setVerifyingFingerprint(true);
+    try {
+      const res = await verifyFingerprint();
+      if (res.success) {
+        const msg = res.payload?.message || 'Attendance marked';
+        message.success(msg);
+        await fetchAttendanceReport();
+        return;
+      }
+
+      const subscriptionStatus = (res.payload as any)?.subscriptionStatus;
+      if (subscriptionStatus === 'NOT_STARTED' || subscriptionStatus === 'EXPIRED') {
+        message.error((res.payload as any)?.subscriptionMessage || res.message || 'Subscription invalid');
+        return;
+      }
+      message.error(res.message || 'Authentication Failed');
+    } finally {
+      setVerifyingFingerprint(false);
+    }
+  };
 
   const getAuthMethodText = (method: string) => {
     switch (method) {
@@ -327,6 +353,15 @@ export default function CheckInPage() {
               Refresh
             </Button>
           </Col>
+          <Col>
+            <Button
+              type="default"
+              onClick={handleVerifyFingerprintTest}
+              loading={verifyingFingerprint}
+            >
+              Verify Fingerprint (Test)
+            </Button>
+          </Col>
         </Row>
       </Card>
 
@@ -350,7 +385,7 @@ export default function CheckInPage() {
             </Col>
             <Col span={6}>
               <Card>
-                <Statistic title="Attendance Rate" value={attendanceData.summary.overallAttendanceRate} suffix="%" prefix={<PercentageOutlined />} valueStyle={{ color: '#722ed1' }} />
+                <Statistic title="Attendance Rate" value={attendanceData.summary.overallAttendanceRate} suffix="%" valueStyle={{ color: '#722ed1' }} />
               </Card>
             </Col>
           </Row>

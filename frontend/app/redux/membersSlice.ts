@@ -13,13 +13,12 @@ export interface Member {
   status?: string;
   membership?: string;
   expires?: string;
-  image?: string;
+  image?: string; // Profile image (base64 or data URL)
   lastVisit?: string;
   billingStatus?: string;
   billingAmount?: number | string;
   billingDate?: string;
   /** Profile image (base64 or data URL) */
-  image?: string;
 }
 
 interface MembersState {

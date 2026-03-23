@@ -7,6 +7,7 @@ import { useRouter } from 'next/navigation';
 import { useAuth } from '../../../contexts/AuthContext';
 import { api } from '../../../utils/api';
 import { emailRule, emailPatternRule, mobileRequiredRule, mobilePatternRule, dobValidator } from '../../../utils/validation';
+import { useMemberFingerprintWebAuthn } from '../../../hooks/useMemberFingerprintWebAuthn';
 
 const { Option } = Select;
 
@@ -27,6 +28,10 @@ export default function MemberCreationPage() {
   const { user } = useAuth();
   const router = useRouter();
    const { message } = App.useApp();
+
+  const { registerFingerprint } = useMemberFingerprintWebAuthn();
+  const [createdMemberId, setCreatedMemberId] = useState<string | null>(null);
+  const [fingerprintEnrolling, setFingerprintEnrolling] = useState(false);
 
   useEffect(() => {
     const fetchMembershipTypes = async () => {
@@ -136,11 +141,28 @@ export default function MemberCreationPage() {
       message.success('Member and personal details created successfully!');
       form.resetFields();
       setFileList([]);
-      router.push('/members');
+      setCreatedMemberId(memberId);
+      message.success('Member created. Register fingerprint to enable WebAuthn check-in.');
     } catch (err: any) {
       message.error(err.message || 'Failed to create member');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleRegisterFingerprint = async () => {
+    if (!createdMemberId || fingerprintEnrolling) return;
+    setFingerprintEnrolling(true);
+    try {
+      const res = await registerFingerprint(createdMemberId);
+      if (!res.success) {
+        message.error(res.message || 'Fingerprint enrollment failed');
+        return;
+      }
+      message.success('Fingerprint registered successfully!');
+      router.push('/members');
+    } finally {
+      setFingerprintEnrolling(false);
     }
   };
 
@@ -297,6 +319,19 @@ export default function MemberCreationPage() {
             <Button type="primary" htmlType="submit" loading={loading} size="large">Create Member</Button>
             <Button style={{ marginLeft: 8 }} onClick={() => router.push('/members')}>Cancel</Button>
           </Form.Item>
+
+          {createdMemberId && (
+            <Form.Item>
+              <Button
+                type="default"
+                block
+                loading={fingerprintEnrolling}
+                onClick={handleRegisterFingerprint}
+              >
+                Register Fingerprint
+              </Button>
+            </Form.Item>
+          )}
         </Form>
       </Card>
     </div>

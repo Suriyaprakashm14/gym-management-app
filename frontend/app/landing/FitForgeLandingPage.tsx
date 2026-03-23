@@ -164,7 +164,7 @@ const Navbar = () => {
           <div className="w-9 h-9 rounded-xl bg-primary/10 border border-primary/20 flex items-center justify-center">
             <Dumbbell className="w-5 h-5 text-primary" />
           </div>
-          <span className="font-display text-lg font-bold text-foreground">
+          <span className="font-display text-lg font-bold text-foreground" >
             FitForge{" "}
             <span className="text-muted-foreground font-normal text-sm">
               Business OS

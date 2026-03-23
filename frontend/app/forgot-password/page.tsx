@@ -63,7 +63,7 @@ export default function ForgotPasswordPage() {
       const values = await form2.validateFields();
       const otpVal = String(values.otp).trim();
       setLoading(true);
-      const res = await api.auth.verifyOtp(email, otpVal);
+      const res = await api.auth.verifyOtp(email, otpVal, 'password_reset');
       const data = res as { success?: boolean; error?: string; message?: string };
       if (data?.success) {
         setOtp(otpVal);

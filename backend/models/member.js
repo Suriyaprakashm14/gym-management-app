@@ -105,6 +105,13 @@ const memberSchema = new mongoose.Schema({
   // Fingerprint authentication fields
   hasFingerprint: { type: Boolean, default: false },
   fingerprintEnrolled: { type: Date },
+
+  // WebAuthn / Windows Hello fingerprint credential (stored for check-in verification)
+  // fingerprintId is the WebAuthn credential ID (base64url string).
+  fingerprintId: { type: String, default: null, index: true },
+  // publicKey is the credential public key (raw bytes).
+  publicKey: { type: Buffer, default: null },
+  counter: { type: Number, default: 0 },
   // Authentication preferences
   authMethods: {
     faceRecognition: { type: Boolean, default: true },

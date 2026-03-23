@@ -5,6 +5,7 @@ const authMiddleware = require('../middleware/authMiddleware');
 const blacklist = require('../middleware/tokenBlacklist');
 const { gymOwnerOrAdmin, managerOrAbove } = require('../middleware/rbacMiddleware');
 const { ok, fail } = require('../utils/apiResponse');
+const webauthnAuthRoutes = require('./webauthnAuthRoutes');
 
 // Authentication
 router.post('/login', authController.login);
@@ -20,6 +21,11 @@ router.post('/resend-otp', authController.resendOTP);
 router.get('/debug', authController.debugLogin);
 router.get('/debug-email/:email', authController.debugEmail);
 router.post('/test-login', authController.testLogin);
+
+// ========= WebAuthn (Windows Hello) =========
+// IMPORTANT: must be mounted before `router.use(authMiddleware)` so that
+// `/login-options` can remain public while `/register-*` remains protected.
+router.use('/webauthn', webauthnAuthRoutes);
 
 // ========== PROTECTED ROUTES (Authentication required) ==========
 router.use(authMiddleware);
@@ -43,5 +49,14 @@ router.post('/logout', (req, res) => {
 
 router.post('/create-manager', gymOwnerOrAdmin, authController.createManager);
 router.put('/reset-user-password/:userId', gymOwnerOrAdmin, authController.resetUserPassword);
+
+const verifyResetToken = require('../middleware/verifyResetToken');
+
+router.post(
+  '/reset-password',
+  verifyResetToken,
+  authController.resetPassword
+);
+
 
 module.exports = router;

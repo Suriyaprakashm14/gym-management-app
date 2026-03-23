@@ -33,6 +33,9 @@ import { useAppDispatch, useAppSelector } from '../../redux/hooks';
 import { addMember, fetchMembers, normalizeMember } from '../../redux/membersSlice';
 import { fetchMembershipPrices } from '../../redux/membershipsSlice';
 import FaceCapture from '../biometrics/FaceCapture';
+import { Fingerprint } from 'lucide-react'; // If not already imported
+import { useMemberFingerprintWebAuthn } from '../../hooks/useMemberFingerprintWebAuthn';
+
 
 const { Option } = Select;
 const { Text } = Typography;
@@ -67,6 +70,8 @@ export default function AddMemberForm({ visible = true, onSuccess, onCancel }: A
   const { user } = useAuth();
   const dispatch = useAppDispatch();
   const reduxPlans = useAppSelector((s) => s.membershipPrices.items);
+  const { registerPendingFingerprint, attachPendingFingerprintToMember } = useMemberFingerprintWebAuthn();
+  const [fingerprintEnrolling, setFingerprintEnrolling] = useState(false);
 
   const normalizePlans = React.useCallback((list: any[]) => {
     return list
@@ -163,7 +168,13 @@ export default function AddMemberForm({ visible = true, onSuccess, onCancel }: A
       formData.append('email', values.email);
       formData.append('role', values.role ?? 'member');
       formData.append('branchId', values.branchId);
-      formData.append('fingerprintRegistered', String(fingerprintRegistered));
+      // Fingerprint enrollment happens after member creation (WebAuthn).
+      
+      // Add fingerprint ID if available (similar to facePersonId)
+      // if (fingerprintAdded?.fi ngerprintId) {
+      //   formData.append('fingerprintId', fingerprintData.fingerprintId);
+      // }
+      
       if (facePersonId) formData.append('facePersonId', facePersonId);
       if (values.dateOfBirth) {
         const d = values.dateOfBirth instanceof Date ? values.dateOfBirth : new Date(values.dateOfBirth);
@@ -229,37 +240,53 @@ export default function AddMemberForm({ visible = true, onSuccess, onCancel }: A
         // e.g. 403 for owner; table still has new member from addMember
       }
       message.success('Member created successfully');
-      form.resetFields();
-      setFileList([]);
-      setFingerprintRegistered(false);
-      setFaceRegistered(false);
-      setFacePersonId(null);
-      onSuccess?.();
-    } catch (err: any) {
-      message.error(err?.message || 'Failed to create member');
-    } finally {
-      setLoading(false);
-    }
-  };
+    form.resetFields();
+    setFileList([]);
+    setFingerprintRegistered(false);
+    setFaceRegistered(false);
+    setFacePersonId(null);
 
-  const handleEnrollFingerprint = async () => {
+    // Attach pending fingerprint enrollment stored in session to the newly created member.
+    // This keeps the intended UX order: fingerprint first, then face, then final creation.
+    if (memberId) {
+      const attachRes = await attachPendingFingerprintToMember(memberId);
+      if (!attachRes.success) {
+        message.error(attachRes.message || 'Failed to attach fingerprint to member');
+        return;
+      }
+    }
+
+    // Close modal after successful enrollment + member creation.
+    onSuccess?.();
+  } catch (err: any) {
+    message.error(err?.message || 'Failed to create member');
+  } finally {
+    setLoading(false);
+  }
+};
+
+  const handleRegisterPendingFingerprint = async () => {
+    if (fingerprintEnrolling || fingerprintRegistered) return;
+
+    setFingerprintEnrolling(true);
     try {
-      await form.validateFields(['firstName', 'lastName', 'email', 'branchId']);
-      setFingerprintLoading(true);
-      const response = await api.biometrics.simulateEnroll();
-      const successFlag = (response as any)?.success;
-      if (successFlag === false) {
-        throw new Error(
-          (response as any)?.error?.message || 'Fingerprint registration failed'
-        );
+      const firstName = form.getFieldValue('firstName') as string | undefined;
+      const lastName = form.getFieldValue('lastName') as string | undefined;
+      const email = form.getFieldValue('email') as string | undefined;
+      const fullName = `${firstName || ''} ${lastName || ''}`.trim() || email || 'Pending Member';
+
+      const res = await registerPendingFingerprint({
+        userName: email || fullName,
+        displayName: fullName,
+      });
+      if (!res.success) {
+        message.error(res.message || 'Fingerprint enrollment failed');
+        return;
       }
       setFingerprintRegistered(true);
-      message.success('Fingerprint captured successfully (simulation)');
-    } catch (err: any) {
-      if (err?.errorFields) return;
-      message.error(err?.message || 'Failed to capture fingerprint');
+      message.success('Fingerprint registered successfully!');
     } finally {
-      setFingerprintLoading(false);
+      setFingerprintEnrolling(false);
     }
   };
 
@@ -617,54 +644,53 @@ export default function AddMemberForm({ visible = true, onSuccess, onCancel }: A
         )}
       </Form.List>
       <Form.Item style={{ marginTop: 24 }}>
-        <div
-          style={{
-            display: 'flex',
-            flexWrap: 'wrap',
-            gap: 8,
-            alignItems: 'center',
-          }}
-        >
-          <Button
-            onClick={handleEnrollFingerprint}
-            loading={fingerprintLoading}
-            type={fingerprintRegistered ? 'primary' : 'default'}
-            icon={fingerprintRegistered ? <CheckOutlined /> : undefined}
-            style={
-              fingerprintRegistered
-                ? { background: '#52c41a', borderColor: '#52c41a', color: '#fff' }
-                : undefined
-            }
-          >
-            {fingerprintRegistered ? 'Fingerprint Added' : 'Add Fingerprint'}
-          </Button>
+  <div
+    style={{
+      display: 'flex',
+      flexWrap: 'wrap',
+      gap: 8,
+      alignItems: 'center',
+    }}
+  >
+    <Button
+      onClick={handleRegisterPendingFingerprint}
+      type={fingerprintRegistered ? 'primary' : 'default'}
+      loading={fingerprintEnrolling}
+      disabled={fingerprintEnrolling || fingerprintRegistered}
+      icon={fingerprintRegistered ? <CheckOutlined /> : <Fingerprint className="w-4 h-4" />}
+      style={fingerprintRegistered ? { background: '#52c41a', borderColor: '#52c41a' } : {}}
+>
+  {fingerprintRegistered ? 'Fingerprint Registered' : 'Register Fingerprint'}
+</Button>
 
-          <Button
-            onClick={() => setFaceModalOpen(true)}
-            loading={faceScanning}
-            type={faceRegistered ? 'primary' : 'default'}
-            icon={faceRegistered ? <CheckOutlined /> : <VideoCameraOutlined />}
-            style={
-              faceRegistered
-                ? { background: '#52c41a', borderColor: '#52c41a', color: '#fff' }
-                : undefined
-            }
-          >
-            {faceRegistered ? 'Face Added' : 'Add Face Recognition'}
-          </Button>
 
-          <Button
-            type="primary"
-            htmlType="submit"
-            loading={loading}
-            size="large"
-            disabled={!fingerprintRegistered || !faceRegistered}
-          >
-            Create Member
-          </Button>
-          <Button onClick={onCancel}>Cancel</Button>
-        </div>
-      </Form.Item>
+    <Button
+      onClick={() => setFaceModalOpen(true)}
+      loading={faceScanning}
+      type={faceRegistered ? 'primary' : 'default'}
+      disabled={!fingerprintRegistered || faceRegistered}
+      icon={faceRegistered ? <CheckOutlined /> : <VideoCameraOutlined />}
+      style={
+        faceRegistered
+          ? { background: '#52c41a', borderColor: '#52c41a', color: '#fff' }
+          : undefined
+      }
+    >
+      {faceRegistered ? 'Face Added' : 'Add Face Recognition'}
+    </Button>
+
+    <Button
+      type="primary"
+      htmlType="submit"
+      loading={loading}
+      size="large"
+      disabled={!fingerprintRegistered || !faceRegistered || fingerprintEnrolling}
+    >
+      Create Member
+    </Button>
+    <Button onClick={onCancel}>Cancel</Button>
+  </div>
+</Form.Item>
 
       <FaceCapture
         visible={faceModalOpen}

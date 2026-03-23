@@ -97,6 +97,13 @@ const userSchema = new mongoose.Schema({
   fingerprintEnrolled: { 
     type: Date 
   },
+
+  // WebAuthn (Windows Hello / FIDO2)
+  webauthn: {
+    credentialID: { type: Buffer },
+    publicKey: { type: Buffer },
+    counter: { type: Number, default: 0 },
+  },
   // Authentication preferences
   authMethods: {
     faceRecognition: { type: Boolean, default: true },

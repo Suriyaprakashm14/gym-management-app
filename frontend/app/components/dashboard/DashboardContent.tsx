@@ -161,32 +161,32 @@ export default function DashboardContent() {
             <Text style={{ color: 'rgba(255,255,255,0.85)' }}>Overview of your gym metrics</Text>
           </div>
           <Dropdown
-            open={dropdownOpen}
-            onOpenChange={setDropdownOpen}
-            popupRender={() => dropdownContent}
-            trigger={['click']}
-            overlayStyle={{ zIndex: 2147483646 }}
-          >
-            <Button
-              style={{
-                background: 'rgba(255,255,255,0.2)',
-                border: '1px solid rgba(255,255,255,0.4)',
-                color: '#fff',
-                minWidth: 200,
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-              }}
+              open={dropdownOpen}
+              onOpenChange={setDropdownOpen}
+              popupRender={() => dropdownContent}
+              trigger={['click']}
+              overlayStyle={{ zIndex: 2147483646 }}
             >
-              <span>
-                <CalendarOutlined style={{ marginRight: 8 }} />
-                {dateFilter === "custom" && customRange
-                  ? `${dayjs(customRange.startDate).format("DD-MM-YYYY")} – ${dayjs(customRange.endDate).format("DD-MM-YYYY")}`
-                  : FILTER_LABELS[dateFilter]}
-              </span>
-              <DownOutlined style={{ fontSize: 10, marginLeft: 8 }} />
-            </Button>
-          </Dropdown>
+              <Button
+                style={{
+                  background: 'rgba(255,255,255,0.2)',
+                  border: '1px solid rgba(255,255,255,0.4)',
+                  color: '#fff',
+                  minWidth: 200,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                }}
+              >
+                <span>
+                  <CalendarOutlined style={{ marginRight: 8 }} />
+                  {dateFilter === "custom" && customRange
+                    ? `${dayjs(customRange.startDate).format("DD-MM-YYYY")} – ${dayjs(customRange.endDate).format("DD-MM-YYYY")}`
+                    : FILTER_LABELS[dateFilter]}
+                </span>
+                <DownOutlined style={{ fontSize: 10, marginLeft: 8 }} />
+              </Button>
+            </Dropdown>
         </div>
 
         <Row gutter={[16, 16]} align="stretch">

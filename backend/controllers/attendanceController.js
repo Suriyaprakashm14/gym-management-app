@@ -8,7 +8,7 @@ const Gym = require("../models/gym");
 const Branch = require("../models/branch");
 const { checkMembershipStatus } = require("../middleware/membershipValidation");
 
-const LUXAND_TOKEN = process.env.LUXAND_TOKEN;
+const LUXAND_TOKEN = (process.env.LUXAND_TOKEN || '').trim();
 
 /**
  * Resolve effective branch scope for the current user.
@@ -224,12 +224,15 @@ exports.enrollFacePre = async (req, res) => {
 
   try {
     const formData = new FormData();
-    formData.append("photo", req.file.buffer, { filename: req.file.originalname || "face.jpg" });
+    // Luxand v2 expects `photos` file field (not `photo`).
+    formData.append("photos", req.file.buffer, { filename: req.file.originalname || "face.jpg" });
     formData.append("name", "pending-member");
     formData.append("store", "1");
+    formData.append("collections", "");
+    formData.append("unique", "0");
 
     const response = await axios.post(
-      "https://api.luxand.cloud/person",
+      "https://api.luxand.cloud/v2/person",
       formData,
       {
         headers: {
@@ -291,14 +294,18 @@ exports.enrollMemberFace = async (req, res) => {
 
     // Create form data for Luxand API
     const formData = new FormData();
-    formData.append("photo", req.file.buffer, { filename: req.file.originalname });
+    // Luxand v2 expects `photos` file field (not `photo`)
+    formData.append("photos", req.file.buffer, { filename: req.file.originalname });
     // Luxand expects a person name for the record
     const fullName = `${member.firstName || ''} ${member.lastName || ''}`.trim() || `Member ${member._id}`;
     formData.append("name", fullName);
+    formData.append("store", "1");
+    formData.append("collections", "");
+    formData.append("unique", "0");
 
     // Call Luxand API to add person
     const response = await axios.post(
-      "https://api.luxand.cloud/person",
+      "https://api.luxand.cloud/v2/person",
       formData,
       {
         headers: {

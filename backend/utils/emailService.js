@@ -1,4 +1,7 @@
 const nodemailer = require('nodemailer');
+const sgMail = require('@sendgrid/mail');
+
+sgMail.setApiKey(process.env.SENDGRID_API_KEY);
 
 // Email configuration - using Gmail as default
 // You can configure these in your .env file
@@ -34,97 +37,21 @@ const verifyEmailConfig = async () => {
 // Send OTP email
 const sendOTPEmail = async (email, otp, type = 'password_reset') => {
   try {
-    const transporter = createTransporter();
-    
-    let subject, htmlContent;
-    
-    switch (type) {
-      case 'password_reset':
-        subject = 'Password Reset OTP - Gym Management System';
-        htmlContent = `
-          <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
-            <div style="background-color: #f8f9fa; padding: 20px; border-radius: 8px; text-align: center;">
-              <h2 style="color: #333; margin-bottom: 20px;">Password Reset Request</h2>
-              <p style="color: #666; font-size: 16px; line-height: 1.5;">
-                You have requested to reset your password for the Gym Management System.
-              </p>
-              <div style="background-color: #ffffff; padding: 20px; border-radius: 6px; margin: 20px 0;">
-                <p style="color: #333; font-size: 18px; margin: 0;">Your OTP is:</p>
-                <h1 style="color: #007bff; font-size: 36px; font-weight: bold; letter-spacing: 5px; margin: 10px 0;">
-                  ${otp}
-                </h1>
-              </div>
-              <p style="color: #666; font-size: 14px;">
-                This OTP will expire in 10 minutes. If you didn't request this password reset, please ignore this email.
-              </p>
-              <hr style="border: none; border-top: 1px solid #ddd; margin: 20px 0;">
-              <p style="color: #999; font-size: 12px;">
-                Gym Management System<br>
-                This is an automated message, please do not reply.
-              </p>
-            </div>
-          </div>
-        `;
-        break;
-        
-      case 'email_verification':
-        subject = 'Email Verification OTP - Gym Management System';
-        htmlContent = `
-          <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
-            <div style="background-color: #f8f9fa; padding: 20px; border-radius: 8px; text-align: center;">
-              <h2 style="color: #333; margin-bottom: 20px;">Email Verification</h2>
-              <p style="color: #666; font-size: 16px; line-height: 1.5;">
-                Please verify your email address to complete your account setup.
-              </p>
-              <div style="background-color: #ffffff; padding: 20px; border-radius: 6px; margin: 20px 0;">
-                <p style="color: #333; font-size: 18px; margin: 0;">Your verification code is:</p>
-                <h1 style="color: #28a745; font-size: 36px; font-weight: bold; letter-spacing: 5px; margin: 10px 0;">
-                  ${otp}
-                </h1>
-              </div>
-              <p style="color: #666; font-size: 14px;">
-                This code will expire in 10 minutes.
-              </p>
-            </div>
-          </div>
-        `;
-        break;
-        
-      default:
-        subject = 'OTP Code - Gym Management System';
-        htmlContent = `
-          <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
-            <div style="background-color: #f8f9fa; padding: 20px; border-radius: 8px; text-align: center;">
-              <h2 style="color: #333; margin-bottom: 20px;">OTP Code</h2>
-              <div style="background-color: #ffffff; padding: 20px; border-radius: 6px; margin: 20px 0;">
-                <h1 style="color: #007bff; font-size: 36px; font-weight: bold; letter-spacing: 5px; margin: 10px 0;">
-                  ${otp}
-                </h1>
-              </div>
-              <p style="color: #666; font-size: 14px;">
-                This OTP will expire in 10 minutes.
-              </p>
-            </div>
-          </div>
-        `;
-    }
-
-    const mailOptions = {
-      from: `"Gym Management System" <${EMAIL_CONFIG.auth.user}>`,
+    await sgMail.send({
       to: email,
-      subject: subject,
-      html: htmlContent
-    };
+      from: 'suriyaprakash2k03@gmail.com', // MUST be verified
+      subject: 'Your OTP Code',
+      html: `<h2>Your OTP is ${otp}</h2><p>Expires in 10 minutes</p>`
+    });
 
-    const result = await transporter.sendMail(mailOptions);
-    console.log('OTP email sent successfully:', result.messageId);
-    return { success: true, messageId: result.messageId };
-    
+    return { success: true };
   } catch (error) {
-    console.error('Failed to send OTP email:', error);
-    throw new Error('Failed to send OTP email');
+    console.error('🔥 SENDGRID ERROR:', error.response?.body || error);
+    throw error;
   }
 };
+
+
 
 // Send password reset success email
 const sendPasswordResetSuccessEmail = async (email, firstName) => {

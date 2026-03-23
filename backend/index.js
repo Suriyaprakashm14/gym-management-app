@@ -4,6 +4,7 @@ const cors = require('cors');
 const mongoose = require('mongoose');
 const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
+const session = require('express-session');
 const { attachRequestContext } = require('./middleware/requestContext');
 const { requestLogger } = require('./middleware/requestLogger');
 const { responseEnvelope } = require('./middleware/responseEnvelope');
@@ -19,6 +20,8 @@ const legacyPaymentRoutes = require('./routes/paymentRoutes');
 const authRoutes = require('./routes/authRoutes');
 const attendanceRoutes = require('./routes/attendanceRoutes');
 const fingerprintRoutes = require('./routes/fingerprintRoutes');
+const webauthnRoutes = require('./routes/webauthnRoutes');
+const biometricAttendanceRoutes = require('./routes/biometricAttendanceRoutes');
 
 // RBAC routes
 const gymRoutes = require('./routes/gymRoutes');
@@ -45,11 +48,20 @@ app.use(
     crossOriginResourcePolicy: false,
   })
 );
-// CORS: allow localhost, Vercel, and production frontend via FRONTEND_URL or ALLOWED_ORIGINS
+// CORS: allow localhost, LAN dev, Vercel, and production frontend via FRONTEND_URL or ALLOWED_ORIGINS
 const corsOrigins = [
   'http://localhost:3000',
+  'http://127.0.0.1:3000',
   /\.vercel\.app$/
 ];
+
+// In dev, allow common LAN IPs (e.g. 192.168.x.x:3000) so session cookies
+// can be set/read during WebAuthn enrollment/attach.
+if ((process.env.NODE_ENV || '').toLowerCase() !== 'production') {
+  corsOrigins.push(
+    /^http:\/\/(10\.\d{1,3}\.\d{1,3}\.\d{1,3}|192\.168\.\d{1,3}\.\d{1,3}|172\.(1[6-9]|2\d|3[0-1])\.\d{1,3}\.\d{1,3}):3000$/
+  );
+}
 if (process.env.FRONTEND_URL) {
   corsOrigins.push(process.env.FRONTEND_URL.trim());
 }
@@ -59,15 +71,7 @@ if (process.env.ALLOWED_ORIGINS) {
     if (trimmed) corsOrigins.push(trimmed);
   });
 }
-app.use(cors({
-  origin: [
-    "http://localhost:3000",
-    /\.vercel\.app$/
-  ],
-  origin: corsOrigins,
-  credentials: true
-}
-));
+app.use(cors({ origin: corsOrigins, credentials: true }));
 // Allow moderately large payloads for JSON and urlencoded bodies (e.g. images/base64),
 // while still protecting against excessively large requests.
 app.use(express.json({ limit: '15mb' }));
@@ -75,6 +79,20 @@ app.use(express.urlencoded({ limit: '15mb', extended: true }));
 app.use(attachRequestContext);
 app.use(requestLogger);
 app.use(responseEnvelope);
+
+app.use(
+  session({
+    secret: process.env.SESSION_SECRET || 'dev-session-secret-change-me',
+    resave: false,
+    saveUninitialized: false,
+    cookie: {
+      httpOnly: true,
+      sameSite: 'lax',
+      secure: false,
+      maxAge: 10 * 60 * 1000, // 10 minutes
+    },
+  })
+);
 
 const globalRateLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
@@ -123,12 +141,14 @@ mongoose
 
 // Unified API routes (primary)
 app.use('/api/auth', authRateLimiter, authRoutes);
+app.use('/api/webauthn', webauthnRoutes);
 app.use('/api/gyms', gymRoutes);
 app.use('/api/branches', branchRoutes);
 app.use('/api/members', memberRoutes);
 app.use('/api/membership-prices', membershipPriceRoutes);
 app.use('/api/payments', paymentRoutes);
 app.use('/api/attendance', attendanceRoutes);
+app.use('/api/attendance', biometricAttendanceRoutes);
 app.use('/api/fingerprints', fingerprintRoutes);
 app.use('/api/members-personal-details', detailsRoutes);
 app.use('/api/expenses', expenseRoutes);

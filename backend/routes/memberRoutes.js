@@ -4,6 +4,7 @@ const router = express.Router();
 
 const memberController = require('../controllers/memberController');
 const authMiddleware = require('../middleware/authMiddleware');
+const memberFingerprintRoutes = require('./memberFingerprintRoutes');
 const { 
   gymOwnerOrAdmin, 
   managerOrAbove,
@@ -34,6 +35,9 @@ router.delete('/:id', authMiddleware, memberController.remove);
 
 // Attendance marking (separate functionality)
 router.post('/attendance', markAttendanceWithFace);
+
+// ========= Member fingerprint enrollment + check-in (WebAuthn) =========
+router.use(memberFingerprintRoutes);
 
 // Test Luxand connectivity (for debugging)
 router.get('/test-luxand', authMiddleware, memberController.testLuxand);
