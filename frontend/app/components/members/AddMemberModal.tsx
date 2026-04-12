@@ -18,23 +18,21 @@ export default function AddMemberModal({ open, onClose }: AddMemberModalProps) {
       footer={null}
       width={720}
       destroyOnHidden={false}
+      rootClassName="add-member-modal"
       styles={{
         body: {
-          maxHeight: '75vh',
+          maxHeight: 'min(72vh, 760px)',
           overflowY: 'auto',
           overflowX: 'hidden',
-          padding: '16px 0',
+          padding: '16px 20px 20px',
         },
         content: {
           overflow: 'hidden',
         },
       }}
       style={{ top: 24 }}
-      wrapClassName="add-member-modal-wrap"
     >
-      <div style={{ paddingRight: 8 }}>
-        <AddMemberForm visible={open} onSuccess={onClose} onCancel={onClose} />
-      </div>
+      <AddMemberForm visible={open} onSuccess={onClose} onCancel={onClose} />
     </Modal>
   );
 }

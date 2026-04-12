@@ -31,8 +31,16 @@ import {
 } from '@ant-design/icons';
 import type { ColumnsType } from 'antd/es/table';
 import { api } from '../../utils/api';
+import PageLoader from '../PageLoader';
 import { useAuth } from '../../contexts/AuthContext';
-import { mobileRequiredRule, mobilePatternRule } from '../../utils/validation';
+import {
+  mobileRequiredRule,
+  sanitizeIndianMobileDigits,
+  indianMobileTenDigitsRule,
+  blockNonDigitKeysOnPhoneField,
+  toE164IndiaLocal,
+  parseIndianMobileToTenDigits,
+} from '../../utils/validation';
 
 const { Title, Text } = Typography;
 
@@ -147,7 +155,7 @@ export default function BranchesContent() {
       'address.state': addr.state ?? '',
       'address.zipCode': addr.zipCode ?? '',
       'address.country': addr.country ?? '',
-      'contactInfo.phone': contact.phone ?? '',
+      'contactInfo.phone': parseIndianMobileToTenDigits(contact.phone ?? ''),
     });
     setModalVisible(true);
   };
@@ -323,6 +331,10 @@ export default function BranchesContent() {
     );
   }
 
+  if (loading && branches.length === 0) {
+    return <PageLoader message="Loading branches…" />;
+  }
+
   return (
     <div style={{ padding: 24 }}>
       <div style={{ marginBottom: 24 }}>
@@ -342,7 +354,7 @@ export default function BranchesContent() {
         <Table
           columns={columns}
           dataSource={branches}
-          loading={loading}
+          loading={loading && branches.length > 0}
           locale={{
             emptyText: (
               <Empty
@@ -375,10 +387,21 @@ export default function BranchesContent() {
             <Col span={8}><Form.Item name="address.country" label="Country" rules={[{ required: true }]}><Input placeholder="Country" /></Form.Item></Col>
           </Row>
           <Title level={5}>Contact</Title>
-          <Form.Item name="contactInfo.phone" label="Phone" rules={[
-              mobileRequiredRule,
-              { pattern: /^[0-9]{10}$/, message: 'Enter a valid 10 digit phone number' },
-            ]}><Input placeholder="Phone" /></Form.Item>
+          <Form.Item
+            name="contactInfo.phone"
+            label="Phone"
+            normalize={(v) => sanitizeIndianMobileDigits(v as string)}
+            rules={[mobileRequiredRule, indianMobileTenDigitsRule()]}
+          >
+            <Input
+              prefix="+91"
+              placeholder="9876543210"
+              maxLength={10}
+              inputMode="numeric"
+              autoComplete="tel-national"
+              onKeyDown={blockNonDigitKeysOnPhoneField}
+            />
+          </Form.Item>
         </Form>
       </Modal>
       <Modal title={`Create Manager for ${selectedBranch?.name || 'Branch'}`} open={managerModalVisible} onCancel={() => { setManagerModalVisible(false); managerForm.resetFields(); }} onOk={() => managerForm.submit()} okText="Create Manager" cancelText="Cancel" width={500}>

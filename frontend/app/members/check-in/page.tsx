@@ -16,7 +16,6 @@ import {
   Statistic,
   Select,
   DatePicker,
-  Spin,
   Alert,
   Modal,
   List,
@@ -36,6 +35,7 @@ import { api } from '../../utils/api';
 import { useAuth } from '../../contexts/AuthContext';
 import dayjs from 'dayjs';
 import { useMemberFingerprintWebAuthn } from '../../hooks/useMemberFingerprintWebAuthn';
+import PageLoader from '../../components/PageLoader';
 
 interface AttendanceData {
   period: string;
@@ -291,11 +291,7 @@ export default function CheckInPage() {
   ];
 
   if (loading && !attendanceData) {
-    return (
-      <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: 400 }}>
-        <Spin size="large" />
-      </div>
-    );
+    return <PageLoader message="Loading attendance…" />;
   }
 
   if (error) {
@@ -397,7 +393,7 @@ export default function CheckInPage() {
             <Table
               columns={columns}
               dataSource={filteredMembers}
-              loading={loading}
+              loading={loading && !!attendanceData}
               pagination={{ pageSize: 10, showSizeChanger: true, showTotal: (total, range) => `${range[0]}-${range[1]} of ${total} members` }}
               scroll={{ x: 1200 }}
             />

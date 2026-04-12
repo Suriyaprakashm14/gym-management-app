@@ -221,3 +221,28 @@ html {
 .ff-auth .ant-btn-link:hover > span {
   color: hsla(250, 75%, 62%, 0.9) !important;
 }
+
+/* Add member modal — thin scrollbar aligned with app teal (avoids heavy OS scrollbar) */
+.add-member-modal .ant-modal-body {
+  scrollbar-gutter: stable;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(8, 151, 156, 0.45) rgba(0, 0, 0, 0.06);
+}
+
+.add-member-modal .ant-modal-body::-webkit-scrollbar {
+  width: 6px;
+}
+
+.add-member-modal .ant-modal-body::-webkit-scrollbar-track {
+  background: rgba(0, 0, 0, 0.05);
+  border-radius: 999px;
+}
+
+.add-member-modal .ant-modal-body::-webkit-scrollbar-thumb {
+  background: rgba(8, 151, 156, 0.45);
+  border-radius: 999px;
+}
+
+.add-member-modal .ant-modal-body::-webkit-scrollbar-thumb:hover {
+  background: rgba(8, 151, 156, 0.7);
+}

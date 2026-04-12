@@ -2,7 +2,15 @@ import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 
 const PUBLIC_PATHS = ['/landing', '/login', '/forgot-password'];
-const DASHBOARD_PREFIXES = ['/dashboard', '/members', '/branches', '/billing', '/revenue'];
+const DASHBOARD_PREFIXES = [
+  '/dashboard',
+  '/members',
+  '/branches',
+  '/billing',
+  '/revenue',
+  '/expenses',
+  '/staffs',
+];
 
 function isPublic(pathname: string): boolean {
   return PUBLIC_PATHS.some((p) => pathname === p || pathname.startsWith(p + '/'));
@@ -40,5 +48,22 @@ export function middleware(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ['/', '/landing', '/login', '/forgot-password', '/dashboard', '/dashboard/:path*', '/members', '/members/:path*', '/branches', '/branches/:path*', '/billing', '/revenue'],
+  matcher: [
+    '/',
+    '/landing',
+    '/login',
+    '/forgot-password',
+    '/dashboard',
+    '/dashboard/:path*',
+    '/members',
+    '/members/:path*',
+    '/branches',
+    '/branches/:path*',
+    '/billing',
+    '/revenue',
+    '/expenses',
+    '/expenses/:path*',
+    '/staffs',
+    '/staffs/:path*',
+  ],
 };

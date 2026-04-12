@@ -20,6 +20,7 @@ import {
 import { PlusOutlined, EditOutlined, DeleteOutlined, SettingOutlined } from '@ant-design/icons';
 import type { ColumnsType } from 'antd/es/table';
 import { api } from '../../utils/api';
+import PageLoader from '../PageLoader';
 import { useAuth } from '../../contexts/AuthContext';
 import { useBranchContext } from '../../contexts/BranchContext';
 import dayjs from 'dayjs';
@@ -227,6 +228,10 @@ export default function ExpensesContent() {
     },
   ];
 
+  if (loading && list.length === 0) {
+    return <PageLoader message="Loading expenses…" />;
+  }
+
   return (
     <div style={{ padding: 24, maxWidth: 1200, margin: '0 auto' }}>
       <div style={{ marginBottom: 24, display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 16 }}>
@@ -247,7 +252,7 @@ export default function ExpensesContent() {
         <Table
           columns={columns}
           dataSource={list}
-          loading={loading}
+          loading={loading && list.length > 0}
           pagination={list.length > 0 ? { pageSize: 10, showSizeChanger: true, showTotal: (t) => `Total ${t} expenses` } : false}
           locale={{
             emptyText: (

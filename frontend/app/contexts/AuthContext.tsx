@@ -1,6 +1,10 @@
 'use client';
 
-import React, { createContext, useContext, useState, useEffect, useCallback, ReactNode } from 'react';
+import React, { createContext, useContext, useState, useEffect, useLayoutEffect, useCallback, ReactNode } from 'react';
+
+// useLayoutEffect fires synchronously before the browser paints (client only).
+// On the server it falls back to useEffect so there are no SSR warnings.
+const useIsomorphicLayoutEffect = typeof window !== 'undefined' ? useLayoutEffect : useEffect;
 import { useRouter } from 'next/navigation';
 import { setTokenCookie, clearTokenCookie } from '../utils/authCookie';
 
@@ -55,7 +59,9 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     router.replace('/login');
   }, [router]);
 
-  useEffect(() => {
+  // Runs synchronously before the first paint on the client so the auth
+  // state is resolved before the user ever sees a loading spinner.
+  useIsomorphicLayoutEffect(() => {
     const storedToken = localStorage.getItem('token');
     const storedUser = localStorage.getItem('user');
 

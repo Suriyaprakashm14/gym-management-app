@@ -11,6 +11,7 @@ import { useAuth } from '../../contexts/AuthContext';
 import CreateMembershipModal from '../../components/members/CreateMembershipModal';
 import EditMembershipModal from '../../components/members/EditMembershipModal';
 import { api } from '../../utils/api';
+import PageLoader from '../../components/PageLoader';
 
 const { Title, Text } = Typography;
 
@@ -170,6 +171,10 @@ export default function MembershipsPage() {
     type: p.type,
   }));
 
+  if (loading && items.length === 0) {
+    return <PageLoader message="Loading memberships…" />;
+  }
+
   return (
     <div style={{ padding: 24 }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
@@ -188,7 +193,7 @@ export default function MembershipsPage() {
       <Table
         columns={columns}
         dataSource={data}
-        loading={loading}
+        loading={loading && items.length > 0}
         pagination={{ pageSize: 10, showSizeChanger: true }}
         sticky
         scroll={{ x: 800, y: 500 }}
