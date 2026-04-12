@@ -301,12 +301,14 @@ const Sidebar: React.FC<SidebarProps> = ({ collapsed, onCollapse }) => {
   };
 
   return (
-    <Sider 
-      collapsible 
-      collapsed={collapsed} 
-      onCollapse={onCollapse} 
+    <Sider
+      width={200}
+      collapsedWidth={80}
+      collapsible
+      collapsed={collapsed}
+      onCollapse={onCollapse}
       theme="dark"
-      style={{ 
+      style={{
         height: '100vh',
         position: 'fixed',
         left: 0,
@@ -315,6 +317,9 @@ const Sidebar: React.FC<SidebarProps> = ({ collapsed, onCollapse }) => {
         zIndex: 1000,
         display: 'flex',
         flexDirection: 'column',
+        flexShrink: 0,
+        overflow: 'hidden',
+        minWidth: collapsed ? 80 : 200,
       }}
     >
       <div
@@ -468,6 +473,7 @@ const Sidebar: React.FC<SidebarProps> = ({ collapsed, onCollapse }) => {
         <Menu
           theme="dark"
           mode="inline"
+          inlineCollapsed={collapsed}
           items={menuItems}
           selectedKeys={[pathname?.startsWith('/members') ? '/members' : (pathname && pathname !== '/') ? pathname : '/dashboard']}
           onClick={handleClick}

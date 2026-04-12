@@ -59,6 +59,8 @@ app.use(
 const corsOrigins = [
   'http://localhost:3000',
   'http://127.0.0.1:3000',
+  /^http:\/\/localhost:\d+$/,
+  /^http:\/\/127\.0\.0\.1:\d+$/,
   /\.vercel\.app$/
 ];
 
@@ -104,7 +106,7 @@ app.use(
 
 const globalRateLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: 300,
+  max: 7000,
   standardHeaders: true,
   legacyHeaders: false,
   message: {

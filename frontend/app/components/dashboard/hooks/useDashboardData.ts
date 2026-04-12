@@ -194,127 +194,133 @@ export function useDashboardData(user: DashboardUser | null) {
       setLoading(true);
       setError(null);
 
-      const role = user.role;
-      const isGymOwner = role === 'gym_owner';
-      const isManager = role === 'manager';
-      const isStaff = role === 'staff';
+      try {
+        const role = user.role;
+        const isGymOwner = role === 'gym_owner';
+        const isManager = role === 'manager';
+        const isStaff = role === 'staff';
 
-      // For managers/staff: always use their own branch.
-      // For owners: when a branch is selected in the sidebar, behave like branch manager for that branch.
-      const ownerSelectedBranchId = isGymOwner && selectedBranch ? selectedBranch : undefined;
-      const branchId = !isGymOwner ? user.branchId : ownerSelectedBranchId;
+        // For managers/staff: always use their own branch.
+        // For owners: when a branch is selected in the sidebar, behave like branch manager for that branch.
+        const ownerSelectedBranchId = isGymOwner && selectedBranch ? selectedBranch : undefined;
+        const branchId = !isGymOwner ? user.branchId : ownerSelectedBranchId;
 
-      // Role-aware API requests:
-      // - gym_owner: full analytics (gym-level), expenses, pending across gym
-      // - manager: branch analytics, branch expenses, branch pending
-      // - staff: billing-only (pending for their branch), no analytics or expenses
-      let paymentsPromise: Promise<unknown>;
-      let pendingPromise: Promise<unknown>;
-      let expensesTotalPromise: Promise<unknown>;
+        // Role-aware API requests:
+        // - gym_owner: full analytics (gym-level), expenses, pending across gym
+        // - manager: branch analytics, branch expenses, branch pending
+        // - staff: billing-only (pending for their branch), no analytics or expenses
+        let paymentsPromise: Promise<unknown>;
+        let pendingPromise: Promise<unknown>;
+        let expensesTotalPromise: Promise<unknown>;
 
-      const ownerBranchScoped = isGymOwner && !!ownerSelectedBranchId;
+        const ownerBranchScoped = isGymOwner && !!ownerSelectedBranchId;
 
-      if (isGymOwner && !ownerBranchScoped) {
-        // Owner overall (all branches)
-        paymentsPromise = api.payments.getGymOwnerAnalytics({ startDate, endDate });
-        pendingPromise = api.request('/payments/pending');
-        expensesTotalPromise = api.expenses.getTotal(startDate, endDate).catch(() => ({ total: 0 }));
-      } else if (isManager || ownerBranchScoped) {
-        // Manager, or owner viewing a specific branch behaves like branch manager
-        const params: { startDate: string; endDate: string; branchId?: string } = { startDate, endDate };
-        if (branchId) params.branchId = branchId;
-        paymentsPromise = api.payments.getBranchManagerAnalytics(params);
-        pendingPromise = branchId
-          ? api.payments.getPendingByBranchId(branchId)
-          : Promise.resolve({ members: [] });
-        expensesTotalPromise = api.expenses.getTotal(startDate, endDate, branchId || undefined).catch(() => ({ total: 0 }));
-      } else if (isStaff) {
-        // Staff can view their branch dashboard (revenue, pending, attendance)
-        paymentsPromise = api.payments.getBranchManagerAnalytics({ startDate, endDate });
-        pendingPromise = branchId
-          ? api.payments.getPendingByBranchId(branchId)
-          : Promise.resolve({ members: [] });
-        // Staff are not allowed to access expenses endpoints
-        expensesTotalPromise = Promise.resolve({ total: 0 });
-      } else {
-        // Fallback for unexpected roles: no restricted APIs
-        paymentsPromise = Promise.resolve(null);
-        pendingPromise = Promise.resolve({ members: [] });
-        expensesTotalPromise = Promise.resolve({ total: 0 });
+        if (isGymOwner && !ownerBranchScoped) {
+          // Owner overall (all branches)
+          paymentsPromise = api.payments.getGymOwnerAnalytics({ startDate, endDate });
+          pendingPromise = api.request('/payments/pending');
+          expensesTotalPromise = api.expenses.getTotal(startDate, endDate).catch(() => ({ total: 0 }));
+        } else if (isManager || ownerBranchScoped) {
+          // Manager, or owner viewing a specific branch behaves like branch manager
+          const params: { startDate: string; endDate: string; branchId?: string } = { startDate, endDate };
+          if (branchId) params.branchId = branchId;
+          paymentsPromise = api.payments.getBranchManagerAnalytics(params);
+          pendingPromise = branchId
+            ? api.payments.getPendingByBranchId(branchId)
+            : Promise.resolve({ members: [] });
+          expensesTotalPromise = api.expenses.getTotal(startDate, endDate, branchId || undefined).catch(() => ({ total: 0 }));
+        } else if (isStaff) {
+          // Staff can view their branch dashboard (revenue, pending, attendance)
+          paymentsPromise = api.payments.getBranchManagerAnalytics({ startDate, endDate });
+          pendingPromise = branchId
+            ? api.payments.getPendingByBranchId(branchId)
+            : Promise.resolve({ members: [] });
+          // Staff are not allowed to access expenses endpoints
+          expensesTotalPromise = Promise.resolve({ total: 0 });
+        } else {
+          // Fallback for unexpected roles: no restricted APIs
+          paymentsPromise = Promise.resolve(null);
+          pendingPromise = Promise.resolve({ members: [] });
+          expensesTotalPromise = Promise.resolve({ total: 0 });
+        }
+
+        const weeklyUrl = branchId
+          ? `/attendance/report/weekly?branchId=${encodeURIComponent(branchId)}`
+          : '/attendance/report/weekly';
+
+        const [paymentsRes, weeklyRes, todayRes, pendingRes, expensesTotalRes] = await Promise.allSettled([
+          paymentsPromise,
+          api.request(weeklyUrl),
+          api.attendance.getReport(branchId ? { period: 'day', branchId } : { period: 'day' }),
+          pendingPromise,
+          expensesTotalPromise,
+        ]);
+
+        if (isCancelled || thisLoadId !== loadIdRef.current) {
+          return;
+        }
+
+        const paymentsPayload =
+          paymentsRes.status === 'fulfilled' && paymentsRes.value && (paymentsRes.value as { success?: boolean }).success !== false
+            ? paymentsRes.value
+            : null;
+        const paymentsKpis = paymentsPayload ? parsePayments(paymentsPayload) : { ...EMPTY_KPIS, expensesAmount: 0 };
+        const trackedExpensesTotal =
+          expensesTotalRes.status === 'fulfilled' && expensesTotalRes.value
+            ? toNumber((expensesTotalRes.value as { total?: number; data?: { total?: number } }).total ?? (expensesTotalRes.value as any).data?.total)
+            : 0;
+        const kpis: KpiSummary = {
+          ...paymentsKpis,
+          expensesAmount: trackedExpensesTotal,
+        };
+        const weeklyPayload =
+          weeklyRes.status === 'fulfilled' && weeklyRes.value && (weeklyRes.value as { success?: boolean }).success !== false
+            ? weeklyRes.value
+            : null;
+        const todayPayload =
+          todayRes.status === 'fulfilled' && todayRes.value && (todayRes.value as { success?: boolean }).success !== false
+            ? todayRes.value
+            : null;
+        const pendingPayload =
+          pendingRes.status === 'fulfilled' && pendingRes.value && (pendingRes.value as { success?: boolean }).success !== false
+            ? pendingRes.value
+            : null;
+        const attendanceBars = weeklyPayload ? parseAttendanceWeekly(weeklyPayload) : [];
+        const todayCheckIns = todayPayload ? parseTodayCheckIns(todayPayload) : [];
+        const pendingMembers = pendingPayload ? parsePendingMembers(pendingPayload) : [];
+
+        const nextModel: DashboardViewModel = {
+          kpis,
+          attendanceBars,
+          todayCheckIns,
+          pendingMembers,
+        };
+
+        setModel(nextModel);
+        if (
+          paymentsRes.status === 'rejected' &&
+          weeklyRes.status === 'rejected' &&
+          todayRes.status === 'rejected'
+        ) {
+          setError('Failed to load dashboard data');
+        }
+      } catch (err: unknown) {
+        if (process.env.NODE_ENV !== 'production') {
+          // eslint-disable-next-line no-console
+          console.error('[dashboard] load() failed', err);
+        }
+        if (!isCancelled && thisLoadId === loadIdRef.current) {
+          setError('Failed to load dashboard data');
+        }
+      } finally {
+        // Only the active request may clear loading; superseded requests must not leave loading stuck true.
+        if (!isCancelled && thisLoadId === loadIdRef.current) {
+          setLoading(false);
+        }
       }
-
-      const weeklyUrl = branchId
-        ? `/attendance/report/weekly?branchId=${encodeURIComponent(branchId)}`
-        : '/attendance/report/weekly';
-
-      const [paymentsRes, weeklyRes, todayRes, pendingRes, expensesTotalRes] = await Promise.allSettled([
-        paymentsPromise,
-        api.request(weeklyUrl),
-        api.attendance.getReport(branchId ? { period: 'day', branchId } : { period: 'day' }),
-        pendingPromise,
-        expensesTotalPromise,
-      ]);
-
-      if (isCancelled || thisLoadId !== loadIdRef.current) return;
-
-      const paymentsPayload =
-        paymentsRes.status === 'fulfilled' && paymentsRes.value && (paymentsRes.value as { success?: boolean }).success !== false
-          ? paymentsRes.value
-          : null;
-      const paymentsKpis = paymentsPayload ? parsePayments(paymentsPayload) : { ...EMPTY_KPIS, expensesAmount: 0 };
-      const trackedExpensesTotal =
-        expensesTotalRes.status === 'fulfilled' && expensesTotalRes.value
-          ? toNumber((expensesTotalRes.value as { total?: number; data?: { total?: number } }).total ?? (expensesTotalRes.value as any).data?.total)
-          : 0;
-      const kpis: KpiSummary = {
-        ...paymentsKpis,
-        expensesAmount: trackedExpensesTotal,
-      };
-      const weeklyPayload =
-        weeklyRes.status === 'fulfilled' && weeklyRes.value && (weeklyRes.value as { success?: boolean }).success !== false
-          ? weeklyRes.value
-          : null;
-      const todayPayload =
-        todayRes.status === 'fulfilled' && todayRes.value && (todayRes.value as { success?: boolean }).success !== false
-          ? todayRes.value
-          : null;
-      const pendingPayload =
-        pendingRes.status === 'fulfilled' && pendingRes.value && (pendingRes.value as { success?: boolean }).success !== false
-          ? pendingRes.value
-          : null;
-      const attendanceBars = weeklyPayload ? parseAttendanceWeekly(weeklyPayload) : [];
-      const todayCheckIns = todayPayload ? parseTodayCheckIns(todayPayload) : [];
-      const pendingMembers = pendingPayload ? parsePendingMembers(pendingPayload) : [];
-
-      const nextModel: DashboardViewModel = {
-        kpis,
-        attendanceBars,
-        todayCheckIns,
-        pendingMembers,
-      };
-
-      if (thisLoadId !== loadIdRef.current) return;
-      setModel(nextModel);
-      if (
-        paymentsRes.status === 'rejected' &&
-        weeklyRes.status === 'rejected' &&
-        todayRes.status === 'rejected'
-      ) {
-        setError('Failed to load dashboard data');
-      }
-      setLoading(false);
     }
 
-    load().catch((err: unknown) => {
-      if (process.env.NODE_ENV !== 'production') {
-        // eslint-disable-next-line no-console
-        console.error('[dashboard] load() failed', err);
-      }
-      if (!isCancelled && thisLoadId === loadIdRef.current) {
-        setError('Failed to load dashboard data');
-        setLoading(false);
-      }
-    });
+    void load();
 
     return () => {
       isCancelled = true;

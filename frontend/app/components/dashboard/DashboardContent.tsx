@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState } from "react";
-import { Col, Row, Spin, Typography, Dropdown, Button, DatePicker } from "antd";
+import { Col, Row, Typography, Dropdown, Button, DatePicker } from "antd";
 import { DownOutlined, CalendarOutlined } from "@ant-design/icons";
 import { useAuth } from '../../contexts/AuthContext';
 import { useDashboardData } from './hooks/useDashboardData';
@@ -10,6 +10,7 @@ import KpiCards from './widgets/KpiCards';
 import AttendanceChartCard from './widgets/AttendanceChartCard';
 import TodayCheckInsCard from './widgets/TodayCheckInsCard';
 import PendingMembersCard from './widgets/PendingMembersCard';
+import PageLoader from '../PageLoader';
 import dayjs from "dayjs";
 
 const { Title, Text } = Typography;
@@ -131,13 +132,7 @@ export default function DashboardContent() {
   );
 
   if (loading && model.kpis.totalMembers === 0 && model.attendanceBars.length === 0) {
-    return (
-      <div style={panelStyle}>
-        <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: 400 }}>
-          <Spin size="large" />
-        </div>
-      </div>
-    );
+    return <PageLoader message="Loading dashboard…" />;
   }
 
   if (error) {

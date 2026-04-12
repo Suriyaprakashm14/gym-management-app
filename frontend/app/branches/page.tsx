@@ -1,7 +1,12 @@
 'use client';
-
-import BranchesContent from '../components/branches/BranchesContent';
+import dynamic from 'next/dynamic';
 import ProtectedRoute from '../components/auth/ProtectedRoute';
+import PageLoader from '../components/PageLoader';
+
+const BranchesContent = dynamic(
+  () => import('../components/branches/BranchesContent'),
+  { ssr: false, loading: () => <PageLoader /> }
+);
 
 export default function BranchesPage() {
   return (

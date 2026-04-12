@@ -1,3 +1,5 @@
+import type { KeyboardEvent } from 'react';
+
 /**
  * Shared frontend validation: email, mobile, date of birth.
  */
@@ -9,6 +11,72 @@ export const EMAIL_REGEX =
 /** Indian mobile: 10 digits starting 6–9, optional +91 or 0 prefix. Intl: + and 10–15 digits. */
 export const MOBILE_REGEX =
   /^(\+91[\s-]?)?(0)?[6-9]\d{9}$|^\+[1-9]\d{6,14}$/;
+
+/** Indian local part only: exactly 10 digits, first digit 6–9 (no country code). */
+export const INDIAN_MOBILE_TEN_DIGIT_REGEX = /^[6-9]\d{9}$/;
+
+/** Strip non-digits and keep at most 10 characters (Indian local mobile input). */
+export function sanitizeIndianMobileDigits(input: string | undefined | null): string {
+  if (input == null) return '';
+  return String(input).replace(/\D/g, '').slice(0, 10);
+}
+
+/**
+ * Parse a stored phone value (+91…, 91…, spaces) into a 10-digit local part for form fields.
+ * Unlike {@link sanitizeIndianMobileDigits}, handles full numbers longer than 10 digits.
+ */
+export function parseIndianMobileToTenDigits(input: string | undefined | null): string {
+  if (input == null || typeof input !== 'string') return '';
+  let digits = input.replace(/\D/g, '');
+  if (digits.length >= 12 && digits.startsWith('91')) digits = digits.slice(2);
+  else if (digits.length === 11 && digits.startsWith('0')) digits = digits.slice(1);
+  return digits.slice(0, 10);
+}
+
+export function isValidIndianMobileTenDigits(value: string | undefined | null): boolean {
+  if (value == null || typeof value !== 'string') return false;
+  return INDIAN_MOBILE_TEN_DIGIT_REGEX.test(value.trim());
+}
+
+/** Antd Form rule: exactly 10 Indian mobile digits (6–9…). */
+export function indianMobileTenDigitsRule(message = 'Enter exactly 10 digits starting with 6–9') {
+  return {
+    validator(_: unknown, value: string) {
+      if (value == null || value === '') return Promise.resolve();
+      return isValidIndianMobileTenDigits(value)
+        ? Promise.resolve()
+        : Promise.reject(new Error(message));
+    },
+  };
+}
+
+/** Build +91 E.164 from validated 10-digit local part. */
+export function toE164IndiaLocal(digits10: string): string {
+  const d = sanitizeIndianMobileDigits(digits10);
+  if (!isValidIndianMobileTenDigits(d)) return d;
+  return `+91${d}`;
+}
+
+/** Prevent letters/symbols in phone inputs; allow control/navigation keys and Ctrl/Cmd shortcuts. */
+export function blockNonDigitKeysOnPhoneField(e: KeyboardEvent<HTMLInputElement>) {
+  const allowed = [
+    'Backspace',
+    'Delete',
+    'Tab',
+    'Escape',
+    'Enter',
+    'ArrowLeft',
+    'ArrowRight',
+    'ArrowUp',
+    'ArrowDown',
+    'Home',
+    'End',
+  ];
+  if (allowed.includes(e.key)) return;
+  if (e.ctrlKey || e.metaKey || e.altKey) return;
+  if (/^\d$/.test(e.key)) return;
+  e.preventDefault();
+}
 
 /** Normalize phone for validation: digits only; leading 91 stripped for Indian 10-digit. */
 function normalizePhone(value: string): string {

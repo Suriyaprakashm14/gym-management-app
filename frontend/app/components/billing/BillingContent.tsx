@@ -1,11 +1,12 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { Table, Button, Modal, Form, InputNumber, App, Spin, Card, Typography, Space, Tag } from 'antd';
+import { Table, Button, Modal, Form, InputNumber, App, Card, Typography, Space, Tag } from 'antd';
 import { PlusOutlined, ClockCircleOutlined } from '@ant-design/icons';
 import { useAuth } from '../../contexts/AuthContext';
 import { useBranchContext } from '../../contexts/BranchContext';
 import { api } from '../../utils/api';
+import PageLoader from '../PageLoader';
 
 const { Title } = Typography;
 
@@ -144,11 +145,7 @@ export default function BillingContent() {
   ];
 
   if (loading && pendingMembers.length === 0) {
-    return (
-      <div style={{ padding: 24, display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '50vh' }}>
-        <Spin size="large" />
-      </div>
-    );
+    return <PageLoader message="Loading billing…" />;
   }
 
   return (
@@ -165,6 +162,7 @@ export default function BillingContent() {
           columns={columns}
           dataSource={pendingMembers}
           rowKey="memberId"
+          loading={loading && pendingMembers.length > 0}
           pagination={{ pageSize: 10, showSizeChanger: true, showQuickJumper: true, showTotal: (t, r) => `${r[0]}-${r[1]} of ${t} pending payments` }}
           sticky
           scroll={{ x: 800, y: 500 }}

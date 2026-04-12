@@ -3,7 +3,6 @@
 import React, { useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '../../contexts/AuthContext';
-import { Spin } from 'antd';
 
 interface ProtectedRouteProps {
   children: React.ReactNode;
@@ -12,44 +11,31 @@ interface ProtectedRouteProps {
   redirectPath?: string;
 }
 
+// Auth state is now resolved synchronously before paint (useIsomorphicLayoutEffect
+// in AuthContext), so `loading` is false by the time this component renders.
+// We no longer need a loading spinner here.
 const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children, allowedRoles, redirectPath = '/not-found' }) => {
   const { isAuthenticated, loading, user } = useAuth();
   const router = useRouter();
 
   useEffect(() => {
-    if (!loading && !isAuthenticated) {
-      // Redirect to login page if not authenticated
+    if (loading) return;
+    if (!isAuthenticated) {
       router.push('/login');
       return;
     }
-
-    if (!loading && isAuthenticated && allowedRoles?.length) {
+    if (allowedRoles?.length) {
       const hasRole = !!user?.role && allowedRoles.includes(user.role);
-      if (!hasRole) {
-        router.replace(redirectPath);
-      }
+      if (!hasRole) router.replace(redirectPath);
     }
   }, [isAuthenticated, loading, router, allowedRoles, user?.role, redirectPath]);
 
-  if (loading) {
-    return (
-      <div style={{ 
-        display: 'flex', 
-        justifyContent: 'center', 
-        alignItems: 'center', 
-        height: '100vh' 
-      }}>
-        <Spin size="large" />
-      </div>
-    );
-  }
-
-  if (!isAuthenticated) {
-    return null; // Will redirect in useEffect
-  }
+  // While the layout effect hasn't run yet (SSR → hydration gap), render nothing
+  // rather than a full-page spinner. The transition is imperceptible before paint.
+  if (loading || !isAuthenticated) return null;
 
   if (allowedRoles?.length && (!user?.role || !allowedRoles.includes(user.role))) {
-    return null; // Will redirect in useEffect
+    return null;
   }
 
   return <>{children}</>;

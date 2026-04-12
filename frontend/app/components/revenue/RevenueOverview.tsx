@@ -23,6 +23,7 @@ import { useAuth } from '../../contexts/AuthContext'
 import { useBranchContext } from '../../contexts/BranchContext'
 import { api } from '../../utils/api'
 import { formatDisplayDate } from '../../constants/dateFormat'
+import PageLoader from '../PageLoader'
 
 interface AnalyticsData {
   period: {
@@ -490,29 +491,7 @@ const BillingOverview: React.FC = () => {
   })()
 
   if (loading) {
-    return (
-      <div style={{
-        minHeight: '100vh',
-        background: '#F8FAFC',
-        fontFamily: 'system-ui, -apple-system, sans-serif',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center'
-      }}>
-        <div style={{ textAlign: 'center' }}>
-          <div style={{
-            width: '3rem',
-            height: '3rem',
-            border: '4px solid #E2E8F0',
-            borderTop: '4px solid #3B82F6',
-            borderRadius: '50%',
-            animation: 'spin 1s linear infinite',
-            margin: '0 auto 1rem'
-          }} />
-          <p style={{ color: '#64748B', fontSize: '1rem' }}>Loading Revenue...</p>
-        </div>
-      </div>
-    )
+    return <PageLoader message="Loading revenue…" />
   }
 
   if (error) {

@@ -20,7 +20,6 @@ import dayjs from 'dayjs';
 import {
   UploadOutlined,
   HomeOutlined,
-  PhoneOutlined,
   PlusOutlined,
   MinusCircleOutlined,
   CheckOutlined,
@@ -29,9 +28,14 @@ import {
 import { useAuth } from '../../contexts/AuthContext';
 import { api } from '../../utils/api';
 import {
+  emailRule,
+  emailPatternRule,
   mobileRequiredRule,
-  mobilePatternRule,
-  normalizeIndianMobileDigits,
+  dobValidator,
+  sanitizeIndianMobileDigits,
+  indianMobileTenDigitsRule,
+  blockNonDigitKeysOnPhoneField,
+  toE164IndiaLocal,
 } from '../../utils/validation';
 import { useAppDispatch, useAppSelector } from '../../redux/hooks';
 import { addMember, fetchMembers, normalizeMember } from '../../redux/membersSlice';
@@ -208,8 +212,11 @@ export default function AddMemberForm({ visible = true, onSuccess, onCancel }: A
           zipcode: values.zipcode || '',
           state: values.state || '',
           country: values.country || '',
-          phoneNumber: values.phoneNumber,
-          emergencyContacts: values.emergencyContacts || [],
+          phoneNumber: toE164IndiaLocal(values.phoneNumber),
+          emergencyContacts: (values.emergencyContacts || []).map((c: { name?: string; phone?: string; relation?: string }) => ({
+            ...c,
+            phone: c?.phone != null && String(c.phone).trim() !== '' ? toE164IndiaLocal(String(c.phone)) : c.phone,
+          })),
           dateOfBirth: values.dateOfBirth
             ? new Date(values.dateOfBirth).toISOString().split('T')[0]
             : '',
@@ -422,6 +429,23 @@ export default function AddMemberForm({ visible = true, onSuccess, onCancel }: A
       <Row gutter={16}>
         <Col span={12}>
           <Form.Item
+            label="Phone Number"
+            name="phoneNumber"
+            normalize={(v) => sanitizeIndianMobileDigits(v as string)}
+            rules={[mobileRequiredRule, indianMobileTenDigitsRule()]}
+          >
+            <Input
+              prefix="+91"
+              placeholder="9876543210"
+              maxLength={10}
+              inputMode="numeric"
+              autoComplete="tel-national"
+              onKeyDown={blockNonDigitKeysOnPhoneField}
+            />
+          </Form.Item>
+        </Col>
+        <Col span={12}>
+          <Form.Item
             label="Gender"
             name="personalGender"
             rules={[{ required: true, message: 'Please select gender' }]}
@@ -607,9 +631,17 @@ export default function AddMemberForm({ visible = true, onSuccess, onCancel }: A
                     <Form.Item
                       {...rest}
                       name={[name, 'phone']}
-                      rules={[{ required: true, message: 'Missing phone number' }, mobilePatternRule('Valid 10-digit number (e.g. 9876543210)')]}
+                      normalize={(v) => sanitizeIndianMobileDigits(v as string)}
+                      rules={[{ required: true, message: 'Missing phone number' }, indianMobileTenDigitsRule()]}
                     >
-                      <Input placeholder="Phone number" />
+                      <Input
+                        prefix="+91"
+                        placeholder="9876543210"
+                        maxLength={10}
+                        inputMode="numeric"
+                        autoComplete="tel-national"
+                        onKeyDown={blockNonDigitKeysOnPhoneField}
+                      />
                     </Form.Item>
                   </Col>
                   <Col span={6}>

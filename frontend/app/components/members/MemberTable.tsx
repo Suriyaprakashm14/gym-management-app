@@ -38,6 +38,7 @@ import { useAuth } from '../../contexts/AuthContext';
 import { api } from '../../utils/api';
 import EditMemberModal from './EditMemberModal';
 import MemberDetailsModal from './MemberDetailsModal';
+import PageLoader from '../PageLoader';
 
 const { Text } = Typography;
 
@@ -131,20 +132,27 @@ const MemberTable: React.FC = () => {
   const { user } = useAuth();
 
   const isOwner = user?.role === 'gym_owner';
-  const branchIdParam = isOwner && selectedBranch ? { branchId: selectedBranch } : {};
+
+  const buildMemberFetchParams = useCallback(
+    (p: number, size: number): Record<string, string | number> => {
+      const params: Record<string, string | number> = {
+        page: p,
+        limit: size,
+        status: filter,
+      };
+      if (isOwner && selectedBranch) {
+        params.branchId = selectedBranch;
+      }
+      return params;
+    },
+    [filter, isOwner, selectedBranch]
+  );
 
   const loadPage = useCallback(
     (p: number, size: number) => {
-      dispatch(
-        fetchMembers({
-          page: p,
-          limit: size,
-          status: filter,
-          ...branchIdParam,
-        })
-      );
+      dispatch(fetchMembers(buildMemberFetchParams(p, size)));
     },
-    [dispatch, filter, selectedBranch]
+    [dispatch, buildMemberFetchParams]
   );
 
   const prevFilterRef = useRef(filter);
@@ -236,7 +244,7 @@ const MemberTable: React.FC = () => {
       });
       message.success('Member renewed successfully');
       handleRenewModalClose();
-      dispatch(fetchMembers({ page, limit: pageSize, status: filter, ...branchIdParam }));
+      dispatch(fetchMembers(buildMemberFetchParams(page, pageSize)));
     } catch (err: any) {
       message.error(err?.message || 'Failed to renew member');
     } finally {
@@ -561,6 +569,10 @@ const MemberTable: React.FC = () => {
     },
   };
 
+  if (loading && members.length === 0) {
+    return <PageLoader message="Loading members…" />;
+  }
+
   return (
     <>
       {membersError && members.length === 0 && !loading && (
@@ -572,7 +584,7 @@ const MemberTable: React.FC = () => {
         rowSelection={rowSelection}
         columns={columns}
         dataSource={dataSource}
-        loading={loading}
+        loading={loading && members.length > 0}
         rowKey="key"
         pagination={{
           current: page,

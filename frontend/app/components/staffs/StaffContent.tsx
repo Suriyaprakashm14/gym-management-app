@@ -28,6 +28,7 @@ import {
 } from '@ant-design/icons';
 import type { ColumnsType } from 'antd/es/table';
 import { api } from '../../utils/api';
+import PageLoader from '../PageLoader';
 import { useAuth } from '../../contexts/AuthContext';
 import { useBranchContext } from '../../contexts/BranchContext';
 import dayjs from 'dayjs';
@@ -421,7 +422,7 @@ export default function StaffContent() {
         <Table<StaffRecord>
           columns={columns}
           dataSource={staffs.filter((s) => roleFilter === 'all' || (roleFilter === 'managers' && s.role === 'manager') || (roleFilter === 'staff' && s.role === 'staff'))}
-          loading={loading}
+          loading={loading && staffs.length > 0}
           rowKey="key"
           scroll={{ x: 900 }}
           pagination={

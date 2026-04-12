@@ -85,12 +85,12 @@ export function AuthShell({
           </div>
 
           <div className="max-w-lg">
-            <div className="inline-flex items-center gap-2 rounded-full px-4 py-1.5 mb-8 text-sm" style={glassStyle}>
+            {/* <div className="inline-flex items-center gap-2 rounded-full px-4 py-1.5 mb-8 text-sm" style={glassStyle}>
               <span className="w-2 h-2 rounded-full bg-accent animate-pulse-glow" />
               <span className="text-muted-foreground">
                 Trusted by <span className="text-foreground font-medium">1,000+ gyms</span>
               </span>
-            </div>
+            </div> */}
 
             <h1 className="font-display text-4xl xl:text-5xl font-bold leading-[1.08] tracking-tight text-foreground mb-4">
               {sideTitle}
