@@ -29,7 +29,7 @@ describe('Member - create', () => {
         lastName: 'Doe',
         role: 'member',
         branchId: 'branch-1',
-        email: 'john@member.com',
+        phone: '9876543210',
       },
       file: undefined,
     };

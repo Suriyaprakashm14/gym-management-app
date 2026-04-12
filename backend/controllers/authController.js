@@ -9,32 +9,61 @@ const Branch = require('../models/branch');
 const OTP = require('../models/otp');
 const { sendOTPEmail, sendPasswordResetSuccessEmail, verifyEmailConfig } = require('../utils/emailService');
 const sgMail = require('@sendgrid/mail');
+const { getJwtSecret } = require('../config/env');
+const { isUserEmailDuplicateKey, isUserPhoneDuplicateKey } = require('../utils/mongoErrors');
+const { normalizeIndianMobile } = require('../utils/indianPhone');
 
-const JWTSECRET = process.env.JWTSECRET || 'your_jwt_secret_key_here';
+const JWTSECRET = getJwtSecret();
 const JWTEXPIRESIN = '8h'; // Extended token expiry for better UX
 
 // Unified login function supporting both User (RBAC) and Member (Legacy) models
 exports.login = async (req, res) => {
   try {
-    const { email, password } = req.body;
-    
-    if (!email || !password) {
-      return res.status(400).json({ 
-        error: 'Email and password are required' 
+    const { phone, email, password } = req.body;
+
+    if ((!phone && !email) || !password) {
+      return res.status(400).json({
+        error: 'Missing credentials',
+        message: 'Phone or email, and password are required',
       });
     }
 
-    const normalizedEmail = email.toLowerCase();
+    const normalizedPhone = phone != null && String(phone).trim() ? normalizeIndianMobile(phone) : null;
+    const normalizedEmail =
+      email != null && String(email).trim() ? String(email).toLowerCase().trim() : null;
 
-    // Find user in RBAC User model first
-    let user = await User.findOne({ email: normalizedEmail })
-      .populate('gymId', 'name status isFrozen logoUrl')
-      .populate('branchId', 'name status');
+    if (phone != null && String(phone).trim() && !normalizedPhone) {
+      return res.status(400).json({
+        error: 'Invalid phone',
+        message: 'Enter a valid 10-digit Indian mobile number (e.g. 9876543210 or +91 9876543210)',
+      });
+    }
+
+    if (!normalizedPhone && !normalizedEmail) {
+      return res.status(400).json({
+        error: 'Missing credentials',
+        message: 'Phone or email, and password are required',
+      });
+    }
+
+    // Find user in RBAC User model first (phone preferred; then email with case-insensitive match)
+    let user = null;
+    if (normalizedPhone) {
+      user = await User.findOne({ phone: normalizedPhone })
+        .populate('gymId', 'name status isFrozen logoUrl')
+        .populate('branchId', 'name status');
+    }
+    if (!user && normalizedEmail) {
+      user = await User.findOne({ email: normalizedEmail })
+        .collation({ locale: 'en', strength: 2 })
+        .populate('gymId', 'name status isFrozen logoUrl')
+        .populate('branchId', 'name status');
+    }
 
     let isLegacyUser = false;
 
-    // If not found in User model, check legacy Member model
-    if (!user) {
+    // If not found in User model, check legacy Member model (email only)
+    if (!user && normalizedEmail) {
       const member = await Member.findOne({ email: normalizedEmail });
       if (member) {
         const allowedRoles = ['manager'];
@@ -69,7 +98,7 @@ exports.login = async (req, res) => {
     if (!user) {
       return res.status(401).json({
         error: 'Invalid credentials',
-        message: 'Email or password is incorrect'
+        message: 'Phone/email or password is incorrect',
       });
     }
 
@@ -80,7 +109,7 @@ exports.login = async (req, res) => {
       }
       return res.status(401).json({
         error: 'Invalid credentials',
-        message: 'Email or password is incorrect'
+        message: 'Phone/email or password is incorrect',
       });
     }
 
@@ -97,7 +126,11 @@ exports.login = async (req, res) => {
     }
 
     const devEmails = ['owner@gympro.com', 'manager@gympro.com'];
-    const isDevUser = devEmails.includes((user.email || normalizedEmail).toLowerCase());
+    const devPhones = ['9999999999'];
+    const isDevUser =
+      devEmails.includes((user.email || normalizedEmail || '').toLowerCase()) ||
+      (!!normalizedPhone && devPhones.includes(normalizedPhone)) ||
+      (!!user.phone && devPhones.includes(String(user.phone)));
     const skipLock = process.env.NODE_ENV === 'development' && isDevUser;
     if (!isLegacyUser && user.isLocked && !skipLock) {
       return res.status(423).json({
@@ -126,10 +159,11 @@ exports.login = async (req, res) => {
       role: user.role,
       gymId: user.gymId?._id || user.gymId,
       branchId: user.branchId?._id || user.branchId,
-      email: user.email,
+      email: user.email || null,
+      phone: user.phone || null,
       firstName: user.firstName,
       lastName: user.lastName,
-      isLegacy: isLegacyUser
+      isLegacy: isLegacyUser,
     };
 
     const token = jwt.sign(tokenPayload, JWTSECRET, { expiresIn: JWTEXPIRESIN });
@@ -142,7 +176,8 @@ exports.login = async (req, res) => {
         id: user._id,
         firstName: user.firstName,
         lastName: user.lastName,
-        email: user.email,
+        email: user.email || null,
+        phone: user.phone || null,
         role: user.role,
         gymId: user.gymId?._id || user.gymId,
         gymName: user.gymId?.name,
@@ -341,23 +376,37 @@ exports.testLogin = async (req, res) => {
 // Forgot Password - Send OTP to email
 exports.forgotPassword = async (req, res) => {
   try {
-    const { email } = req.body;
-    
-    if (!email) {
-      return res.status(400).json({ 
-        error: 'Email is required' 
+    const { email, phone } = req.body;
+
+    if (!email && !phone) {
+      return res.status(400).json({
+        error: 'Email or phone is required',
+        message: 'Send your registered email or Indian mobile number',
       });
     }
 
-    console.log('Forgot password request for email:', email);
+    let user = null;
+    if (phone != null && String(phone).trim()) {
+      const np = normalizeIndianMobile(phone);
+      if (!np) {
+        return res.status(400).json({
+          error: 'Invalid phone',
+          message: 'Enter a valid 10-digit Indian mobile number',
+        });
+      }
+      user = await User.findOne({ phone: np, isActive: true });
+    }
+    if (!user && email) {
+      user = await User.findOne({ email: String(email).toLowerCase().trim(), isActive: true }).collation({
+        locale: 'en',
+        strength: 2,
+      });
+    }
 
-    // Forgot password is for gym owners only (owner login)
-    const user = await User.findOne({ email: email.toLowerCase(), isActive: true });
     if (!user) {
-      console.log('No owner found for email:', email);
       return res.status(404).json({
         success: false,
-        error: 'Owner account not found'
+        error: 'Owner account not found',
       });
     }
     if (user.role !== 'gym_owner') {
@@ -379,15 +428,22 @@ exports.forgotPassword = async (req, res) => {
       }
     }
 
-    // Verify email service configuration
-    // Create OTP record
-    const otpRecord = await OTP.createForEmail(email, 'password_reset');
-    console.log('OTP created for email:', email);
+    const recoveryEmail = user.email && String(user.email).trim();
+    if (!recoveryEmail) {
+      return res.status(400).json({
+        success: false,
+        error: 'NO_RECOVERY_EMAIL',
+        message:
+          'Password reset uses email. Add a recovery email to your profile (gym owner settings) or contact support.',
+      });
+    }
+
+    // Create OTP record (keyed by recovery email)
+    const otpRecord = await OTP.createForEmail(recoveryEmail, 'password_reset');
 
     // Send OTP email
     try {
-      await sendOTPEmail(email, otpRecord.otp, 'password_reset');
-      console.log('OTP email sent successfully to:', email);
+      await sendOTPEmail(recoveryEmail, otpRecord.otp, 'password_reset');
     } catch (error) {
       console.error('🔥 REAL EMAIL ERROR:', error.response?.body || error);
       throw error; // don't wrap it
@@ -397,9 +453,9 @@ exports.forgotPassword = async (req, res) => {
       success: true,
       message: 'OTP has been sent to your email address',
       data: {
-        email: email,
-        expiresIn: '10 minutes'
-      }
+        email: recoveryEmail,
+        expiresIn: '10 minutes',
+      },
     });
 
   } catch (error) {
@@ -414,11 +470,11 @@ exports.forgotPassword = async (req, res) => {
 // Reset Password - Verify OTP and reset password
 exports.resetPassword = async (req, res) => {
   try {
-    const { newPassword } = req.body;
-    
+    const { email, otp, newPassword } = req.body;
+
     if (!email || !otp || !newPassword) {
-      return res.status(400).json({ 
-        error: 'Email, OTP, and new password are required' 
+      return res.status(400).json({
+        error: 'Email, OTP, and new password are required',
       });
     }
 
@@ -428,12 +484,11 @@ exports.resetPassword = async (req, res) => {
       });
     }
 
-    console.log('Reset password request for email:', email);
+    const normalizedResetEmail = String(email).toLowerCase().trim();
 
     // Verify OTP
     try {
-      await OTP.verifyOTP(email, otp, 'password_reset');
-      console.log('OTP verified successfully for email:', email);
+      await OTP.verifyOTP(normalizedResetEmail, otp, 'password_reset');
     } catch (otpError) {
       console.log('OTP verification failed:', otpError.message);
       return res.status(400).json({ 
@@ -442,11 +497,14 @@ exports.resetPassword = async (req, res) => {
     }
 
     // Find user (try User model first, then Member model)
-    let user = await User.findOne({ email: email.toLowerCase(), isActive: true });
+    let user = await User.findOne({ email: normalizedResetEmail, isActive: true }).collation({
+      locale: 'en',
+      strength: 2,
+    });
     let isLegacyUser = false;
     
     if (!user) {
-      user = await Member.findOne({ email: email.toLowerCase() });
+      user = await Member.findOne({ email: normalizedResetEmail });
       if (user) {
         isLegacyUser = true;
       }
@@ -461,10 +519,9 @@ exports.resetPassword = async (req, res) => {
     // Update password (will be automatically hashed by pre-save middleware)
     user.password = newPassword;
     await user.save();
-    console.log('Password updated successfully for email:', email);
 
     // Send success email (non-blocking)
-    sendPasswordResetSuccessEmail(email, user.firstName)
+    sendPasswordResetSuccessEmail(normalizedResetEmail, user.firstName)
       .then(result => {
         console.log('Password reset success email result:', result);
       })
@@ -476,9 +533,9 @@ exports.resetPassword = async (req, res) => {
       success: true,
       message: 'Password has been reset successfully',
       data: {
-        email: email,
-        resetAt: new Date().toISOString()
-      }
+        email: normalizedResetEmail,
+        resetAt: new Date().toISOString(),
+      },
     });
 
   } catch (error) {
@@ -501,12 +558,12 @@ exports.verifyOTP = async (req, res) => {
       });
     }
 
-    // Verify OTP (this already marks as used ✅)
-    await OTP.verifyOTP(email, otp, 'password_reset');
+    const normalizedOtpEmail = String(email).toLowerCase().trim();
+    await OTP.verifyOTP(normalizedOtpEmail, otp, 'password_reset');
 
     // 🔥 NEW: Generate reset token
     const resetToken = jwt.sign(
-      { email, purpose: 'password_reset' },
+      { email: normalizedOtpEmail, purpose: 'password_reset' },
       JWTSECRET,
       { expiresIn: '10m' }
     );
@@ -527,17 +584,27 @@ exports.verifyOTP = async (req, res) => {
 // Resend OTP endpoint
 exports.resendOTP = async (req, res) => {
   try {
-    const { email } = req.body;
-    if (!email) {
-      return res.status(400).json({ 
-        error: 'Email is required' 
+    const { email, phone } = req.body;
+    if (!email && !phone) {
+      return res.status(400).json({
+        error: 'Email or phone is required',
       });
     }
 
-    console.log('Resend OTP request for email:', email);
-
-    // Resend OTP is for gym owners only (same flow as forgot password)
-    const user = await User.findOne({ email: email.toLowerCase(), isActive: true });
+    let user = null;
+    if (phone != null && String(phone).trim()) {
+      const np = normalizeIndianMobile(phone);
+      if (!np) {
+        return res.status(400).json({ error: 'Invalid phone', message: 'Enter a valid Indian mobile number' });
+      }
+      user = await User.findOne({ phone: np, isActive: true });
+    }
+    if (!user && email) {
+      user = await User.findOne({ email: String(email).toLowerCase().trim(), isActive: true }).collation({
+        locale: 'en',
+        strength: 2,
+      });
+    }
     if (!user) {
       return res.status(404).json({
         success: false,
@@ -563,9 +630,19 @@ exports.resendOTP = async (req, res) => {
       }
     }
 
+    const recoveryEmail = user.email && String(user.email).trim();
+    if (!recoveryEmail) {
+      return res.status(400).json({
+        success: false,
+        error: 'NO_RECOVERY_EMAIL',
+        message:
+          'Password reset uses email. Add a recovery email to your profile or contact support.',
+      });
+    }
+
     // Check if there's a recent OTP request (rate limiting)
     const recentOTP = await OTP.findOne({
-      email: email.toLowerCase(),
+      email: recoveryEmail.toLowerCase(),
       type: 'password_reset',
       createdAt: { $gte: new Date(Date.now() - 2 * 60 * 1000) } // 2 minutes ago
     });
@@ -576,20 +653,19 @@ exports.resendOTP = async (req, res) => {
       });
     }
 
-    
-    
-
-    // Create new OTP
-    const otpRecord = await OTP.createForEmail(email, 'password_reset');
-    console.log('New OTP created for email:', email);
-
-    
+    const otpRecord = await OTP.createForEmail(recoveryEmail, 'password_reset');
+    try {
+      await sendOTPEmail(recoveryEmail, otpRecord.otp, 'password_reset');
+    } catch (sendErr) {
+      console.error('Resend OTP email error:', sendErr);
+      throw sendErr;
+    }
 
     res.json({
       success: true,
       message: 'New OTP has been sent to your email address',
       data: {
-        email: email,
+        email: recoveryEmail,
         expiresIn: '10 minutes'
       }
     });
@@ -675,14 +751,15 @@ exports.resetUserPassword = async (req, res) => {
 
 // Public gym owner signup: creates Gym + User (gym_owner). No branch; owner adds branches via Branches page.
 exports.signup = async (req, res) => {
+  let gymCreated = null;
+  let userPersisted = false;
   try {
-    const { gymName, firstName, lastName, email, password, gymIcon } = req.body;
+    const { gymName, firstName, lastName, phone, email: bodyEmail, password, gymIcon } = req.body;
 
-    // Gym name/logo are optional; default gym will be created if not provided
-    if (!firstName || !lastName || !email || !password) {
+    if (!firstName || !lastName || !phone || !password) {
       return res.status(400).json({
         error: 'Missing required fields',
-        message: 'firstName, lastName, email, and password are required'
+        message: 'firstName, lastName, phone, and password are required',
       });
     }
 
@@ -691,16 +768,44 @@ exports.signup = async (req, res) => {
     if (String(password).length < 6) {
       return res.status(400).json({
         error: 'Invalid password',
-        message: 'Password must be at least 6 characters'
+        message: 'Password must be at least 6 characters',
       });
     }
 
-    const normalizedEmail = String(email).toLowerCase().trim();
-    const existingUser = await User.findOne({ email: normalizedEmail });
-    if (existingUser) {
+    const normalizedPhone = normalizeIndianMobile(phone);
+    if (!normalizedPhone) {
       return res.status(400).json({
-        error: 'Email already exists',
-        message: 'A user with this email already exists'
+        error: 'Invalid phone',
+        message: 'Enter a valid 10-digit Indian mobile number (e.g. 9876543210 or +91 9876543210)',
+      });
+    }
+
+    let normalizedOptionalEmail = null;
+    if (bodyEmail != null && String(bodyEmail).trim()) {
+      normalizedOptionalEmail = String(bodyEmail).toLowerCase().trim();
+      if (!/^[\w-.]+@([\w-]+\.)+[\w-]{2,}$/.test(normalizedOptionalEmail)) {
+        return res.status(400).json({
+          error: 'Invalid email',
+          message: 'Please provide a valid recovery email or omit it',
+        });
+      }
+      const existingByEmail = await User.findOne({ email: normalizedOptionalEmail })
+        .collation({ locale: 'en', strength: 2 })
+        .select('_id')
+        .lean();
+      if (existingByEmail) {
+        return res.status(409).json({
+          error: 'EMAIL_ALREADY_REGISTERED',
+          message: 'An account with this email already exists. Try logging in instead.',
+        });
+      }
+    }
+
+    const existingByPhone = await User.findOne({ phone: normalizedPhone }).select('_id').lean();
+    if (existingByPhone) {
+      return res.status(409).json({
+        error: 'PHONE_ALREADY_REGISTERED',
+        message: 'An account with this phone number already exists. Try logging in instead.',
       });
     }
 
@@ -709,39 +814,67 @@ exports.signup = async (req, res) => {
       status: 'active',
       isFrozen: false,
       createdBy: 'system',
-      ...(gymIcon && typeof gymIcon === 'string' && gymIcon.length > 0 ? { logoUrl: gymIcon } : {})
+      ...(gymIcon && typeof gymIcon === 'string' && gymIcon.length > 0 ? { logoUrl: gymIcon } : {}),
     });
     await gym.save();
+    gymCreated = gym;
 
     const gymOwner = new User({
       firstName: String(firstName).trim(),
       lastName: String(lastName).trim(),
-      email: normalizedEmail,
+      phone: normalizedPhone,
+      ...(normalizedOptionalEmail ? { email: normalizedOptionalEmail } : {}),
       password: String(password),
       role: 'gym_owner',
       gymId: gym._id,
       status: 'active',
       isActive: true,
-      createdBy: 'system'
+      createdBy: 'system',
     });
-    await gymOwner.save();
 
-    res.status(201).json({
+    try {
+      await gymOwner.save();
+      userPersisted = true;
+    } catch (saveErr) {
+      await Gym.findByIdAndDelete(gym._id).catch(() => {});
+      gymCreated = null;
+      if (isUserEmailDuplicateKey(saveErr)) {
+        return res.status(409).json({
+          error: 'EMAIL_ALREADY_REGISTERED',
+          message: 'An account with this email already exists. Try logging in instead.',
+        });
+      }
+      if (isUserPhoneDuplicateKey(saveErr)) {
+        return res.status(409).json({
+          error: 'PHONE_ALREADY_REGISTERED',
+          message: 'An account with this phone number already exists. Try logging in instead.',
+        });
+      }
+      throw saveErr;
+    }
+
+    return res.status(201).json({
       success: true,
       message: 'Account created successfully. Please log in.',
       data: {
         id: gymOwner._id,
-        email: gymOwner.email,
+        phone: gymOwner.phone,
+        email: gymOwner.email || null,
         gymId: gym._id,
-        gymName: gym.name
-      }
+        gymName: gym.name,
+      },
     });
   } catch (error) {
+    if (gymCreated?._id && !userPersisted) {
+      await Gym.findByIdAndDelete(gymCreated._id).catch(() => {});
+    }
     console.error('Signup error:', error);
-    res.status(500).json({
-      error: 'Server error during signup',
-      message: error.message || 'An unexpected error occurred. Please try again.'
-    });
+    if (!res.headersSent) {
+      res.status(500).json({
+        error: 'Server error during signup',
+        message: error.message || 'An unexpected error occurred. Please try again.'
+      });
+    }
   }
 };
 
@@ -902,7 +1035,8 @@ exports.getProfile = async (req, res) => {
         id: user._id,
         firstName: user.firstName,
         lastName: user.lastName,
-        email: user.email,
+        email: user.email || null,
+        phone: user.phone || (user.profile && user.profile.phone) || null,
         role: user.role,
         gymId: user.gymId?._id || user.gymId,
         gymName: user.gymId?.name,
@@ -931,8 +1065,8 @@ exports.getProfile = async (req, res) => {
 // Update user profile
 exports.updateProfile = async (req, res) => {
   try {
-    const { firstName, lastName, profile } = req.body;
-    
+    const { firstName, lastName, profile, email: bodyEmail } = req.body;
+
     const user = await User.findById(req.user.id);
     if (!user) {
       return res.status(404).json({ 
@@ -945,7 +1079,30 @@ exports.updateProfile = async (req, res) => {
     if (firstName) user.firstName = firstName;
     if (lastName) user.lastName = lastName;
     if (profile) user.profile = { ...user.profile, ...profile };
-    
+
+    if (bodyEmail !== undefined) {
+      const raw = String(bodyEmail).trim();
+      if (raw === '') {
+        user.set('email', undefined);
+      } else {
+        const ne = raw.toLowerCase();
+        if (!/^[\w-.]+@([\w-]+\.)+[\w-]{2,}$/.test(ne)) {
+          return res.status(400).json({ error: 'Invalid email', message: 'Please provide a valid email address' });
+        }
+        const dup = await User.findOne({ email: ne, _id: { $ne: user._id } })
+          .collation({ locale: 'en', strength: 2 })
+          .select('_id')
+          .lean();
+        if (dup) {
+          return res.status(409).json({
+            error: 'EMAIL_ALREADY_REGISTERED',
+            message: 'This email is already used by another account',
+          });
+        }
+        user.email = ne;
+      }
+    }
+
     user.lastModifiedBy = req.user.id;
     await user.save();
 
@@ -956,6 +1113,8 @@ exports.updateProfile = async (req, res) => {
         id: user._id,
         firstName: user.firstName,
         lastName: user.lastName,
+        email: user.email || null,
+        phone: user.phone || null,
         profile: user.profile
       }
     });

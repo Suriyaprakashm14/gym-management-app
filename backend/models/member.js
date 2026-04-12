@@ -155,50 +155,110 @@ memberSchema.virtual('isMembershipActive').get(function() {
 });
 
 // Static method to check and update expired memberships.
-// If Details has subscriptionPeriods with a next period (endDate > now), advance to it; otherwise mark Member inactive.
+// Uses the same subscriptionPeriods ordering as member flows (utils/subscriptionPeriods).
+// Skips suspended / already inactive members for revenue-critical safety.
 memberSchema.statics.checkAndUpdateExpiredMemberships = async function() {
   try {
+    const { getCurrentPeriodForDate } = require('../utils/subscriptionPeriods');
     const now = new Date();
     const today = new Date(now);
     today.setHours(0, 0, 0, 0);
+    const asOfLocalDate = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
 
     const Details = require('./membersPersonalDetails');
 
-    const expiredPersonalDetails = await Details.find({
-      membership_end_date: { $lt: today },
-      membership: { $exists: true, $ne: null }
-    });
+    const skipStatuses = new Set(['suspended', 'inactive', 'long term inactive']);
+
+    async function syncActiveWindow(memberId, periodStart, periodEnd) {
+      await Details.findOneAndUpdate(
+        { memberId },
+        { membership_start_date: periodStart, membership_end_date: periodEnd }
+      );
+      await this.findByIdAndUpdate(memberId, {
+        'membership.startDate': periodStart,
+        'membership.endDate': periodEnd,
+        'membership.isActive': true,
+        status: 'active',
+      });
+    }
+
+    /**
+     * If subscriptionPeriods says there is a current or upcoming paid window, sync docs; else queue inactive.
+     */
+    const considerDetailAndMember = async (detail, memberDoc) => {
+      if (!memberDoc || skipStatuses.has(memberDoc.status)) return { advanced: false, inactive: false };
+      if (memberDoc.role && memberDoc.role !== 'member') return { advanced: false, inactive: false };
+
+      const periods = detail.subscriptionPeriods;
+      if (Array.isArray(periods) && periods.length > 0) {
+        const cur = getCurrentPeriodForDate(periods, now);
+        if (cur && cur.isActive) {
+          await syncActiveWindow.call(this, detail.memberId, cur.periodStart, cur.periodEnd);
+          return { advanced: true, inactive: false };
+        }
+        if (cur && !cur.isActive && now < cur.periodStart) {
+          await syncActiveWindow.call(this, detail.memberId, cur.periodStart, cur.periodEnd);
+          return { advanced: true, inactive: false };
+        }
+      }
+      return { advanced: false, inactive: true };
+    };
 
     let advancedCount = 0;
-    const toMarkInactive = [];
+    const toMarkInactiveSet = new Set();
+
+    const expiredPersonalDetails = await Details.find({
+      membership_end_date: { $lt: today },
+      membership: { $exists: true, $ne: null },
+    });
 
     for (const detail of expiredPersonalDetails) {
-      const nextPeriod = Array.isArray(detail.subscriptionPeriods) && detail.subscriptionPeriods.length > 0
-        ? detail.subscriptionPeriods.find((p) => p.endDate && new Date(p.endDate) > now)
-        : null;
-
-      if (nextPeriod) {
-        const nextStart = new Date(nextPeriod.startDate);
-        const nextEnd = new Date(nextPeriod.endDate);
-        await Details.findOneAndUpdate(
-          { memberId: detail.memberId },
-          { membership_start_date: nextStart, membership_end_date: nextEnd }
-        );
-        await this.findByIdAndUpdate(detail.memberId, {
-          'membership.startDate': nextStart,
-          'membership.endDate': nextEnd,
-          'membership.isActive': true,
-          status: 'active'
-        });
-        advancedCount++;
-      } else {
-        toMarkInactive.push(detail.memberId);
+      const memberDoc = await this.findById(detail.memberId);
+      const { advanced, inactive } = await considerDetailAndMember.call(this, detail, memberDoc);
+      if (advanced) advancedCount++;
+      if (inactive && memberDoc && !skipStatuses.has(memberDoc.status)) {
+        toMarkInactiveSet.add(String(detail.memberId));
       }
     }
 
+    // Members whose Member record shows an expired end date but were not fixed above (no Details row, drift, etc.)
+    const memberOnlyExpired = await this.find({
+      role: 'member',
+      status: { $nin: ['inactive', 'long term inactive', 'suspended'] },
+      membership: { $exists: true },
+      'membership.isActive': true,
+      'membership.endDate': { $exists: true, $lt: today },
+    });
+
+    for (const memberDoc of memberOnlyExpired) {
+      const mid = String(memberDoc._id);
+      if (toMarkInactiveSet.has(mid)) continue;
+
+      const detail = await Details.findOne({ memberId: mid });
+      if (!detail || !detail.membership) {
+        toMarkInactiveSet.add(mid);
+        continue;
+      }
+
+      if (detail.membership_end_date && new Date(detail.membership_end_date) >= today) {
+        await this.findByIdAndUpdate(mid, {
+          'membership.startDate': detail.membership_start_date,
+          'membership.endDate': detail.membership_end_date,
+          'membership.isActive': true,
+        });
+        continue;
+      }
+
+      const { advanced, inactive } = await considerDetailAndMember.call(this, detail, memberDoc);
+      if (advanced) advancedCount++;
+      else if (inactive) toMarkInactiveSet.add(mid);
+    }
+
+    const toMarkInactive = Array.from(toMarkInactiveSet);
+
     const expiredMembers = await this.find({
       _id: { $in: toMarkInactive },
-      status: { $nin: ['inactive', 'long term inactive'] }
+      status: { $nin: ['inactive', 'long term inactive', 'suspended'] },
     });
 
     const ninetyDaysAgo = new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000);
@@ -211,9 +271,10 @@ memberSchema.statics.checkAndUpdateExpiredMemberships = async function() {
 
     return {
       success: true,
+      asOfLocalDate,
       expiredCount: expiredMembers.length,
       advancedCount,
-      message: `Advanced ${advancedCount} to next period; marked ${expiredMembers.length} members inactive`
+      message: `Advanced or repaired ${advancedCount} membership window(s); marked ${expiredMembers.length} member(s) inactive`,
     };
   } catch (error) {
     console.error('Error checking expired memberships:', error);

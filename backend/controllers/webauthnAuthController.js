@@ -2,8 +2,9 @@ const jwt = require('jsonwebtoken');
 const User = require('../models/user');
 
 const webauthnAuthService = require('../services/webauthnAuthService');
+const { getJwtSecret } = require('../config/env');
 
-const JWTSECRET = process.env.JWTSECRET || 'your_jwt_secret_key_here';
+const JWTSECRET = getJwtSecret();
 const JWTEXPIRESIN = '8h';
 
 function requireUserIdFromReq(req) {
@@ -68,7 +69,11 @@ async function assertUserUsable({ user }) {
   // Keep behavior consistent with email/password login.
   if (user.isLocked) {
     const devEmails = ['owner@gympro.com', 'manager@gympro.com'];
-    const skipLock = process.env.NODE_ENV === 'development' && devEmails.includes(String(user.email).toLowerCase());
+    const devPhones = ['9999999999'];
+    const skipLock =
+      process.env.NODE_ENV === 'development' &&
+      (devEmails.includes(String(user.email || '').toLowerCase()) ||
+        devPhones.includes(String(user.phone || '')));
     if (!skipLock) {
       const err = new Error('Account is temporarily locked due to multiple failed login attempts.');
       err.code = 'LOCKED';

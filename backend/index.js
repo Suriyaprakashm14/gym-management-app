@@ -1,4 +1,13 @@
 require('dotenv').config();
+const {
+  assertProductionConfig,
+  getSessionSecret,
+  sessionCookieSecure,
+  getMongoUri,
+} = require('./config/env');
+
+assertProductionConfig();
+
 const express = require('express');
 const cors = require('cors');
 const mongoose = require('mongoose');
@@ -19,9 +28,7 @@ const legacyPriceRoutes = require('./routes/membershipPriceRoutes');
 const legacyPaymentRoutes = require('./routes/paymentRoutes');
 const authRoutes = require('./routes/authRoutes');
 const attendanceRoutes = require('./routes/attendanceRoutes');
-const fingerprintRoutes = require('./routes/fingerprintRoutes');
 const webauthnRoutes = require('./routes/webauthnRoutes');
-const biometricAttendanceRoutes = require('./routes/biometricAttendanceRoutes');
 
 // RBAC routes
 const gymRoutes = require('./routes/gymRoutes');
@@ -33,8 +40,8 @@ const expenseCategoryRoutes = require('./routes/expenseCategoryRoutes');
 const staffRoutes = require('./routes/staffRoutes');
 const userRoutes = require('./routes/userRoutes');
 
-const port = process.env.PORT || 3000;
-const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://localhost:27017/';
+const port = process.env.PORT || 5001;
+const MONGODB_URI = getMongoUri();
 
 
 
@@ -55,11 +62,12 @@ const corsOrigins = [
   /\.vercel\.app$/
 ];
 
-// In dev, allow common LAN IPs (e.g. 192.168.x.x:3000) so session cookies
-// can be set/read during WebAuthn enrollment/attach.
+// In dev, allow Next fallback port and LAN origins (WebAuthn / cookies use same site).
 if ((process.env.NODE_ENV || '').toLowerCase() !== 'production') {
   corsOrigins.push(
-    /^http:\/\/(10\.\d{1,3}\.\d{1,3}\.\d{1,3}|192\.168\.\d{1,3}\.\d{1,3}|172\.(1[6-9]|2\d|3[0-1])\.\d{1,3}\.\d{1,3}):3000$/
+    'http://localhost:3001',
+    'http://127.0.0.1:3001',
+    /^http:\/\/(10\.\d{1,3}\.\d{1,3}\.\d{1,3}|192\.168\.\d{1,3}\.\d{1,3}|172\.(1[6-9]|2\d|3[0-1])\.\d{1,3}\.\d{1,3}):(3000|3001)$/
   );
 }
 if (process.env.FRONTEND_URL) {
@@ -82,13 +90,13 @@ app.use(responseEnvelope);
 
 app.use(
   session({
-    secret: process.env.SESSION_SECRET || 'dev-session-secret-change-me',
+    secret: getSessionSecret(),
     resave: false,
     saveUninitialized: false,
     cookie: {
       httpOnly: true,
       sameSite: 'lax',
-      secure: false,
+      secure: sessionCookieSecure(),
       maxAge: 10 * 60 * 1000, // 10 minutes
     },
   })
@@ -129,16 +137,6 @@ app.use('/api', globalRateLimiter);
 
 
 
-mongoose
-  .connect(MONGODB_URI, {
-    serverSelectionTimeoutMS: 3000,
-  })
-  .then(() => {
-    console.log('Connected to MongoDB');
-    return;
-  })
-  .catch((error) => console.error('Error connecting:', error));
-
 // Unified API routes (primary)
 app.use('/api/auth', authRateLimiter, authRoutes);
 app.use('/api/webauthn', webauthnRoutes);
@@ -148,8 +146,6 @@ app.use('/api/members', memberRoutes);
 app.use('/api/membership-prices', membershipPriceRoutes);
 app.use('/api/payments', paymentRoutes);
 app.use('/api/attendance', attendanceRoutes);
-app.use('/api/attendance', biometricAttendanceRoutes);
-app.use('/api/fingerprints', fingerprintRoutes);
 app.use('/api/members-personal-details', detailsRoutes);
 app.use('/api/expenses', expenseRoutes);
 app.use('/api/expense-categories', expenseCategoryRoutes);
@@ -163,7 +159,6 @@ app.use('/api/legacy/details', detailsRoutes);
 app.use('/api/legacy/membership-prices', legacyPriceRoutes);
 app.use('/api/legacy/payments', legacyPaymentRoutes);
 app.use('/api/legacy/attendance', attendanceRoutes);
-app.use('/api/legacy/fingerprint', fingerprintRoutes);
 
 // Health endpoint for uptime checks and deployment verification
 app.get('/api/health', (req, res) => {
@@ -175,36 +170,55 @@ app.get('/api/health', (req, res) => {
   });
 });
 
-// Schedule daily membership expiry check
 const Member = require('./models/member');
+const tokenBlacklist = require('./middleware/tokenBlacklist');
 
-// Function to check expired memberships
-const checkExpiredMemberships = async () => {
+async function checkExpiredMemberships() {
   try {
     if (mongoose.connection.readyState !== 1) {
       console.warn('Skipping membership expiry check: MongoDB is not connected');
       return;
     }
-    console.log('Running daily membership expiry check...');
+    console.log('Running membership expiry check (calendar-day sweep)...');
     const result = await Member.checkAndUpdateExpiredMemberships();
-    console.log('Membership expiry check completed:', result.message);
+    const day = result.asOfLocalDate ? ` as of local date ${result.asOfLocalDate}` : '';
+    console.log(`Membership expiry check completed:${day}`, result.message);
   } catch (error) {
     console.error('Error in scheduled membership expiry check:', error);
   }
-};
-
-// Run immediately on startup
-checkExpiredMemberships();
-
-// Schedule to run every hour so multi-period members advance promptly after each period ends
-const ONE_HOUR_MS = 60 * 60 * 1000;
-setInterval(checkExpiredMemberships, ONE_HOUR_MS);
+}
 
 // 404 and error handling should be last in middleware chain
 app.use(notFoundHandler);
 app.use(errorHandler);
 
-app.listen(port, () => {
-  console.log(`App listening at http://localhost:${port}`);
-  console.log('Membership expiry check scheduled (hourly)');
+// Runs once before accepting traffic (syncs expired vs current calendar day), then every 4h while up.
+const MEMBERSHIP_EXPIRY_INTERVAL_MS = 4 * 60 * 60 * 1000;
+
+async function startServer() {
+  try {
+    await mongoose.connect(MONGODB_URI, {
+      serverSelectionTimeoutMS: 10000,
+    });
+    console.log('Connected to MongoDB');
+  } catch (error) {
+    console.error('MongoDB connection failed:', error.message);
+    process.exit(1);
+  }
+
+  await tokenBlacklist.init();
+
+  await checkExpiredMemberships();
+
+  app.listen(port, () => {
+    console.log(`App listening at http://localhost:${port}`);
+    console.log('Membership expiry check scheduled every 4 hours (startup sync already completed)');
+  });
+
+  setInterval(checkExpiredMemberships, MEMBERSHIP_EXPIRY_INTERVAL_MS);
+}
+
+startServer().catch((err) => {
+  console.error('Server start error:', err);
+  process.exit(1);
 });

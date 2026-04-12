@@ -58,8 +58,10 @@ async function makeRegistrationOptions({ user }) {
     rpName: RP_NAME,
     rpID: RP_ID,
     userID: userIDBuffer,
-    userName: user.email,
-    userDisplayName: `${user.firstName || ''} ${user.lastName || ''}`.trim() || user.email,
+    userName: user.phone ? `+91${user.phone}` : user.email || String(user._id),
+    userDisplayName:
+      `${user.firstName || ''} ${user.lastName || ''}`.trim() ||
+      (user.phone ? `+91${user.phone}` : user.email || String(user._id)),
     attestationType: 'none',
     authenticatorSelection: {
       residentKey: 'required',

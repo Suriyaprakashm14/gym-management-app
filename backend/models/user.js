@@ -14,18 +14,34 @@ const userSchema = new mongoose.Schema({
     required: true,
     trim: true
   },
-  email: { 
-    type: String, 
-    required: true,
+  /** Indian mobile: 10 digits, first digit 6–9 (stored normalized). Primary login for new gym owners. */
+  phone: {
+    type: String,
+    trim: true,
+    sparse: true,
     unique: true,
+    validate: {
+      validator(v) {
+        if (v == null || v === '') return true;
+        return /^[6-9]\d{9}$/.test(String(v));
+      },
+      message: 'Phone must be a valid 10-digit Indian mobile number',
+    },
+  },
+  /** Optional for phone-first owners; required for managers created via invite (see createManager). */
+  email: {
+    type: String,
     lowercase: true,
     trim: true,
+    sparse: true,
+    unique: true,
     validate: {
-      validator: function(v) {
+      validator(v) {
+        if (v == null || v === '') return true;
         return /^[\w-.]+@([\w-]+\.)+[\w-]{2,4}$/.test(v);
       },
-      message: props => `${props.value} is not a valid email!`
-    }
+      message: (props) => `${props.value} is not a valid email!`,
+    },
   },
   password: { 
     type: String, 
@@ -130,6 +146,15 @@ const userSchema = new mongoose.Schema({
   toObject: { virtuals: true }
 });
 
+userSchema.pre('validate', function validateEmailOrPhone(next) {
+  const hasEmail = !!(this.email && String(this.email).trim());
+  const hasPhone = !!(this.phone && String(this.phone).trim());
+  if (!hasEmail && !hasPhone) {
+    this.invalidate('phone', 'Either phone or email is required');
+  }
+  next();
+});
+
 // Virtual for full name
 userSchema.virtual('fullName').get(function() {
   return `${this.firstName} ${this.lastName}`;
@@ -140,7 +165,7 @@ userSchema.virtual('isLocked').get(function() {
   return !!(this.lockUntil && this.lockUntil > Date.now());
 });
 
-// Indexes for performance (email already has index from unique: true)
+// Indexes for performance (unique sparse on email / phone from field definitions)
 userSchema.index({ role: 1 });
 userSchema.index({ gymId: 1 });
 userSchema.index({ branchId: 1 });
