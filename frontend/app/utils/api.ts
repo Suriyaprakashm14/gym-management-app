@@ -1,5 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-const DEFAULT_LOCAL_API_PORT = '5000';
+/** Must match backend `PORT` default (`backend/index.js` uses 5001 when PORT is unset). */
+const DEFAULT_LOCAL_API_PORT = '5001';
 const RAW_API_BASE = process.env.NEXT_PUBLIC_API_URL;
 // Backend mounts routes at /api (e.g. /api/auth/signup). Ensure base URL ends with /api.
 const ENV_API_BASE_URL =
@@ -148,8 +149,7 @@ export const api = {
                 lowerEndpoint.includes('/attendance/photo-only') ||
                 lowerEndpoint.includes('/attendance/dual-auth') ||
                 lowerEndpoint.includes('/members/register-fingerprint') ||
-                lowerEndpoint.includes('/members/verify-fingerprint') ||
-                lowerEndpoint.includes('/fingerprints/');
+                lowerEndpoint.includes('/members/verify-fingerprint');
               if (!isLoginRequest && !isBiometricEndpoint) {
                 window.dispatchEvent(new CustomEvent('auth:logout'));
               }
@@ -289,7 +289,7 @@ export const api = {
 
   // Auth endpoints - login returns structured error on failure (no throw)
   auth: {
-    async login(credentials: { email: string; password: string }): Promise<{
+    async login(credentials: { phone?: string; email?: string; password: string }): Promise<{
       success: boolean;
       token?: string;
       user?: any;
@@ -368,7 +368,15 @@ export const api = {
       return { success: false, message: 'Invalid credentials' };
     },
 
-    signup: (data: { gymName: string; firstName: string; lastName: string; email: string; password: string; gymIcon?: string }) =>
+    signup: (data: {
+      gymName: string;
+      firstName: string;
+      lastName: string;
+      phone: string;
+      email?: string;
+      password: string;
+      gymIcon?: string;
+    }) =>
       api.request('/auth/signup', {
         method: 'POST',
         body: JSON.stringify(data),
@@ -380,10 +388,14 @@ export const api = {
         body: JSON.stringify(managerData),
       }),
 
-      forgotPassword: (email: string) =>
+      forgotPassword: (payload: { email?: string; phone?: string }) =>
         api.request('/auth/forgot-password', {
           method: 'POST',
-          body: JSON.stringify({ email: email.toLowerCase(), type: 'password_reset' }),
+          body: JSON.stringify({
+            ...(payload.email ? { email: payload.email.toLowerCase().trim() } : {}),
+            ...(payload.phone ? { phone: payload.phone.trim() } : {}),
+            type: 'password_reset',
+          }),
         }),
 
       verifyOtp: (email: string, otp: string, type = 'password_reset') =>
@@ -398,10 +410,14 @@ export const api = {
         body: JSON.stringify({ email: email.toLowerCase(), otp, newPassword }),
       }),
 
-      resendOtp: (email: string, type = 'password_reset') =>
+      resendOtp: (payload: { email?: string; phone?: string }, type = 'password_reset') =>
         api.request('/auth/resend-otp', {
           method: 'POST',
-          body: JSON.stringify({ email: email.toLowerCase(), type }),
+          body: JSON.stringify({
+            ...(payload.email ? { email: payload.email.toLowerCase().trim() } : {}),
+            ...(payload.phone ? { phone: payload.phone.trim() } : {}),
+            type,
+          }),
         }),
 
     resetUserPassword: (userId: string, body: { newPassword: string }) =>
@@ -696,13 +712,6 @@ export const api = {
 
   // Biometric enrollment helpers
   biometrics: {
-    /** Simulate fingerprint enrollment (no member). For add-member flow before member is created. */
-    simulateEnroll: () =>
-      api.request('/fingerprints/simulate-enroll', {
-        method: 'POST',
-        body: JSON.stringify({}),
-      }),
-
     /** Create Luxand person only; returns personId. For add-member flow before member is created. */
     createFacePerson: (image: Blob) => {
       const formData = new FormData();
@@ -711,17 +720,6 @@ export const api = {
         method: 'POST',
         body: formData,
         headers: {},
-      });
-    },
-
-    enrollFingerprint: (memberId: string, branchId?: string) => {
-      const payload: any = { memberId };
-      if (branchId) {
-        payload.branchId = branchId;
-      }
-      return api.request('/fingerprints/enroll', {
-        method: 'POST',
-        body: JSON.stringify(payload),
       });
     },
 

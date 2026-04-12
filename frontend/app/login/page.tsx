@@ -4,17 +4,25 @@ import { useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { Button, Form, Input, Typography, App } from 'antd';
-import { Mail, Lock } from 'lucide-react';
+import { Lock } from 'lucide-react';
+import { IndianMobileFormField } from '../components/forms/IndianMobileFormField';
 import { api } from '../utils/api';
 import { useAuth } from '../contexts/AuthContext';
 import { setTokenCookie } from '../utils/authCookie';
 import { AuthShell } from '../components/auth/AuthShell';
 
-const { Title } = Typography;
+const INDIAN_MOBILE = /^[6-9]\d{9}$/;
 
 interface LoginFormValues {
-  email: string;
+  phone: string;
   password: string;
+}
+
+function normalizePhoneInput(raw: string): string {
+  const digits = String(raw || '').replace(/\D/g, '');
+  if (digits.length === 12 && digits.startsWith('91')) return digits.slice(2);
+  if (digits.length === 11 && digits.startsWith('0')) return digits.slice(1);
+  return digits;
 }
 
 export default function LoginPage() {
@@ -32,7 +40,9 @@ export default function LoginPage() {
     setLoading(true);
     setErrorMessage('');
     try {
-      const response = await api.auth.login(values);
+      const raw = String(values.phone || '').trim();
+      const phone = normalizePhoneInput(raw);
+      const response = await api.auth.login({ phone, password: values.password });
       if (!response || response.aborted) {
         return;
       }
@@ -56,8 +66,12 @@ export default function LoginPage() {
   };
 
   const handleForgotPasswordClick = () => {
-    const emailValue = form.getFieldValue('email')?.trim?.() || '';
-    const url = emailValue ? `/forgot-password?email=${encodeURIComponent(emailValue)}` : '/forgot-password';
+    const raw = String(form.getFieldValue('phone') || '').trim();
+    const digits = normalizePhoneInput(raw);
+    const url =
+      digits && INDIAN_MOBILE.test(digits)
+        ? `/forgot-password?phone=${encodeURIComponent(digits)}`
+        : '/forgot-password';
     router.push(url);
   };
 
@@ -67,7 +81,7 @@ export default function LoginPage() {
       subtitle="Log in to your FitForge admin dashboard."
       footer={
         <div className="text-center">
-          <Typography.Text className="!text-muted-foreground">
+          <Typography.Text className="text-muted-foreground!">
             Don&apos;t have an account?{' '}
           </Typography.Text>
           <Link href="/signup" className="text-primary hover:underline font-medium">
@@ -82,36 +96,37 @@ export default function LoginPage() {
             className="mb-4 rounded-xl px-4 py-3 text-sm border border-accent/30 bg-accent/10 text-foreground"
             role="status"
           >
-            Account created. Please log in.
+            Account created. Please log in with your mobile number.
           </div>
         )}
 
-        <Form.Item
-          label={<span className="text-sm text-muted-foreground">Email</span>}
-          name="email"
+        <IndianMobileFormField
+          name="phone"
+          label={<span className="text-sm text-muted-foreground">Mobile number</span>}
           rules={[
-            { required: true, message: 'Please enter your email!' },
-            { type: 'email', message: 'Enter a valid email address' },
+            { required: true, message: 'Please enter your mobile number' },
+            {
+              validator: (_, v) => {
+                const local = normalizePhoneInput(String(v || '').trim());
+                if (!INDIAN_MOBILE.test(local)) {
+                  return Promise.reject(new Error('Enter a valid 10-digit Indian mobile number'));
+                }
+                return Promise.resolve();
+              },
+            },
           ]}
-        >
-          <Input
-            placeholder="you@company.com"
-            autoComplete="email"
-            prefix={<Mail className="w-4 h-4 text-muted-foreground" />}
-            className="!bg-secondary/40 !border-border/60 !text-foreground placeholder:!text-muted-foreground/70 !rounded-xl"
-          />
-        </Form.Item>
+        />
 
         <Form.Item
           label={<span className="text-sm text-muted-foreground">Password</span>}
           name="password"
-          rules={[{ required: true, message: 'Please enter your password!' }]}
+          rules={[{ required: true, message: 'Please enter your password' }]}
         >
           <Input.Password
             placeholder="Enter your password"
             autoComplete="current-password"
             prefix={<Lock className="w-4 h-4 text-muted-foreground" />}
-            className="!bg-secondary/40 !border-border/60 !text-foreground placeholder:!text-muted-foreground/70 !rounded-xl"
+            className="bg-secondary/40! border-border/60! text-foreground! placeholder:text-muted-foreground/70! rounded-xl!"
           />
         </Form.Item>
 
@@ -138,7 +153,7 @@ export default function LoginPage() {
             htmlType="submit"
             block
             loading={loading}
-            className="!h-11 !rounded-xl !font-semibold !shadow-md hover:!opacity-95"
+            className="h-11! rounded-xl! font-semibold! shadow-md! hover:opacity-95!"
           >
             Login
           </Button>

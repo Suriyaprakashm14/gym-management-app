@@ -2,11 +2,12 @@
 
 import React, { useState, useEffect } from 'react';
 import { App, Card, Form, Input, Select, Button, Upload, Row, Col, DatePicker, Divider, InputNumber } from 'antd';
-import { UserOutlined, UploadOutlined, HomeOutlined, PhoneOutlined, PlusOutlined, MinusCircleOutlined } from '@ant-design/icons';
+import { UploadOutlined, HomeOutlined, PhoneOutlined, PlusOutlined, MinusCircleOutlined } from '@ant-design/icons';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '../../../contexts/AuthContext';
 import { api } from '../../../utils/api';
-import { emailRule, emailPatternRule, mobileRequiredRule, mobilePatternRule, dobValidator } from '../../../utils/validation';
+import { mobileRequiredRule, mobilePatternRule, normalizeIndianMobileDigits } from '../../../utils/validation';
+import { IndianMobileFormField } from '../../../components/forms/IndianMobileFormField';
 import { useMemberFingerprintWebAuthn } from '../../../hooks/useMemberFingerprintWebAuthn';
 
 const { Option } = Select;
@@ -113,7 +114,7 @@ export default function MemberCreationPage() {
       const formData = new FormData();
       formData.append('firstName', values.firstName);
       formData.append('lastName', values.lastName);
-      formData.append('email', values.email);
+      formData.append('phone', normalizeIndianMobileDigits(values.phoneNumber));
       formData.append('role', values.role);
       formData.append('branchId', values.branchId);
       if (fileList.length > 0 && fileList[0].originFileObj) {
@@ -184,9 +185,19 @@ export default function MemberCreationPage() {
           </Row>
           <Row gutter={16}>
             <Col span={12}>
-              <Form.Item label="Email" name="email" rules={[emailRule, emailPatternRule()]}>
-                <Input placeholder="Enter email address" />
-              </Form.Item>
+              <IndianMobileFormField
+                name="phoneNumber"
+                label="Mobile number"
+                rules={[mobileRequiredRule, mobilePatternRule()]}
+                placeholder="Enter 10 Digit Mobile Number"
+                addonBefore={
+                  <span className="inline-flex items-center gap-1.5 text-muted-foreground font-medium tabular-nums select-none">
+                    <PhoneOutlined className="opacity-80" />
+                    +91
+                  </span>
+                }
+                inputProps={{ inputMode: 'numeric' }}
+              />
             </Col>
             <Col span={12}>
               <Form.Item label="Role" name="role" rules={[{ required: true, message: 'Please select role' }]}>
@@ -211,11 +222,6 @@ export default function MemberCreationPage() {
           </Form.Item>
           <Divider>Personal Details</Divider>
           <Row gutter={16}>
-            <Col span={12}>
-              <Form.Item label="Phone Number" name="phoneNumber" rules={[mobileRequiredRule, mobilePatternRule()]}>
-                <Input prefix={<PhoneOutlined />} placeholder="Enter phone number" />
-              </Form.Item>
-            </Col>
             <Col span={12}>
               <Form.Item label="Gender" name="personalGender" rules={[{ required: true, message: 'Please select gender' }]}>
                 <Select placeholder="Select gender">

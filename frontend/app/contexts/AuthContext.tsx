@@ -14,6 +14,8 @@ interface User {
   gymName?: string;
   gymLogo?: string | null;
   branchName?: string;
+  email?: string | null;
+  phone?: string | null;
 }
 
 interface AuthContextType {

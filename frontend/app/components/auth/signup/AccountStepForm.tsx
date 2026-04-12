@@ -2,12 +2,23 @@
 
 import { useEffect } from 'react';
 import { Form, Input, Button, Row, Col } from 'antd';
-import { Mail, Lock, User } from 'lucide-react';
+import { Lock, User, Mail } from 'lucide-react';
+import { IndianMobileFormField } from '../../forms/IndianMobileFormField';
+
+const INDIAN_MOBILE = /^[6-9]\d{9}$/;
+
+function normalizePhoneInput(raw: string): string {
+  const digits = String(raw || '').replace(/\D/g, '');
+  if (digits.length === 12 && digits.startsWith('91')) return digits.slice(2);
+  if (digits.length === 11 && digits.startsWith('0')) return digits.slice(1);
+  return digits;
+}
 
 export interface AccountFormValues {
   firstName: string;
   lastName: string;
-  email: string;
+  phone: string;
+  email?: string;
   password: string;
 }
 
@@ -25,11 +36,12 @@ export function AccountStepForm({ initialValues, onFinish, loading }: AccountSte
       form.setFieldsValue({
         firstName: initialValues.firstName ?? '',
         lastName: initialValues.lastName ?? '',
+        phone: initialValues.phone ?? '',
         email: initialValues.email ?? '',
         password: initialValues.password ?? '',
       });
     }
-  }, [form, initialValues?.firstName, initialValues?.lastName, initialValues?.email, initialValues?.password]);
+  }, [form, initialValues?.firstName, initialValues?.lastName, initialValues?.phone, initialValues?.email, initialValues?.password]);
 
   return (
     <Form
@@ -39,6 +51,7 @@ export function AccountStepForm({ initialValues, onFinish, loading }: AccountSte
       initialValues={{
         firstName: initialValues?.firstName ?? '',
         lastName: initialValues?.lastName ?? '',
+        phone: initialValues?.phone ?? '',
         email: initialValues?.email ?? '',
         password: initialValues?.password ?? '',
       }}
@@ -76,16 +89,29 @@ export function AccountStepForm({ initialValues, onFinish, loading }: AccountSte
           </Form.Item>
         </Col>
       </Row>
-      <Form.Item
-        label={<span className="text-sm text-muted-foreground">Email</span>}
-        name="email"
+      <IndianMobileFormField
+        name="phone"
+        label={<span className="text-sm text-muted-foreground">Mobile number</span>}
         rules={[
-          { required: true, message: 'Please enter your email!' },
-          { type: 'email', message: 'Please enter a valid email address' },
+          { required: true, message: 'Please enter your mobile number' },
+          {
+            validator: (_, v) => {
+              const local = normalizePhoneInput(String(v || '').trim());
+              if (!INDIAN_MOBILE.test(local)) {
+                return Promise.reject(new Error('Enter a valid 10-digit Indian mobile number'));
+              }
+              return Promise.resolve();
+            },
+          },
         ]}
+      />
+      <Form.Item
+        label={<span className="text-sm text-muted-foreground">Recovery email (optional)</span>}
+        name="email"
+        rules={[{ type: 'email', message: 'Please enter a valid email' }]}
       >
         <Input
-          placeholder="you@company.com"
+          placeholder="For password reset notifications"
           type="email"
           autoComplete="email"
           prefix={<Mail className="w-4 h-4 text-muted-foreground" />}

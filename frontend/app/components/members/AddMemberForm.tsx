@@ -28,13 +28,18 @@ import {
 } from '@ant-design/icons';
 import { useAuth } from '../../contexts/AuthContext';
 import { api } from '../../utils/api';
-import { emailRule, emailPatternRule, mobileRequiredRule, mobilePatternRule, dobValidator } from '../../utils/validation';
+import {
+  mobileRequiredRule,
+  mobilePatternRule,
+  normalizeIndianMobileDigits,
+} from '../../utils/validation';
 import { useAppDispatch, useAppSelector } from '../../redux/hooks';
 import { addMember, fetchMembers, normalizeMember } from '../../redux/membersSlice';
 import { fetchMembershipPrices } from '../../redux/membershipsSlice';
 import FaceCapture from '../biometrics/FaceCapture';
 import { Fingerprint } from 'lucide-react'; // If not already imported
 import { useMemberFingerprintWebAuthn } from '../../hooks/useMemberFingerprintWebAuthn';
+import { IndianMobileFormField } from '../forms/IndianMobileFormField';
 
 
 const { Option } = Select;
@@ -165,7 +170,7 @@ export default function AddMemberForm({ visible = true, onSuccess, onCancel }: A
       const formData = new FormData();
       formData.append('firstName', values.firstName);
       formData.append('lastName', values.lastName);
-      formData.append('email', values.email);
+      formData.append('phone', normalizeIndianMobileDigits(values.phoneNumber));
       formData.append('role', values.role ?? 'member');
       formData.append('branchId', values.branchId);
       // Fingerprint enrollment happens after member creation (WebAuthn).
@@ -229,8 +234,7 @@ export default function AddMemberForm({ visible = true, onSuccess, onCancel }: A
         id: memberId,
         firstName: values.firstName,
         lastName: values.lastName,
-        email: values.email,
-        phone: values.phoneNumber,
+        phone: normalizeIndianMobileDigits(values.phoneNumber),
         membership: values.membership,
       });
       dispatch(addMember(normalized));
@@ -272,11 +276,11 @@ export default function AddMemberForm({ visible = true, onSuccess, onCancel }: A
     try {
       const firstName = form.getFieldValue('firstName') as string | undefined;
       const lastName = form.getFieldValue('lastName') as string | undefined;
-      const email = form.getFieldValue('email') as string | undefined;
-      const fullName = `${firstName || ''} ${lastName || ''}`.trim() || email || 'Pending Member';
+      const phoneDigits = normalizeIndianMobileDigits(form.getFieldValue('phoneNumber') as string | undefined);
+      const fullName = `${firstName || ''} ${lastName || ''}`.trim() || (phoneDigits ? `+91${phoneDigits}` : 'Pending Member');
 
       const res = await registerPendingFingerprint({
-        userName: email || fullName,
+        userName: phoneDigits ? `+91${phoneDigits}` : fullName,
         displayName: fullName,
       });
       if (!res.success) {
@@ -350,13 +354,19 @@ export default function AddMemberForm({ visible = true, onSuccess, onCancel }: A
       </Row>
       <Row gutter={16}>
         <Col span={24}>
-          <Form.Item
-            label="Email"
-            name="email"
-            rules={[emailRule, emailPatternRule()]}
-          >
-            <Input placeholder="Enter email address" />
-          </Form.Item>
+          <IndianMobileFormField
+            name="phoneNumber"
+            label="Mobile number"
+            rules={[mobileRequiredRule, mobilePatternRule()]}
+            placeholder="Enter 10 Digit Mobile Number"
+            addonBefore={
+              <span className="inline-flex items-center gap-1.5 text-muted-foreground font-medium tabular-nums select-none">
+                <PhoneOutlined className="opacity-80" />
+                +91
+              </span>
+            }
+            inputProps={{ inputMode: 'numeric' }}
+          />
         </Col>
       </Row>
       {user?.role === 'gym_owner' ? (
@@ -410,18 +420,6 @@ export default function AddMemberForm({ visible = true, onSuccess, onCancel }: A
       </Form.Item>
       <Divider>Personal details</Divider>
       <Row gutter={16}>
-        <Col span={12}>
-          <Form.Item
-            label="Phone Number"
-            name="phoneNumber"
-            rules={[
-              mobileRequiredRule,
-              { pattern: /^[0-9]{10}$/, message: 'Enter a valid 10 digit phone number' },
-            ]}
-          >
-            <Input prefix={<PhoneOutlined />} placeholder="Enter phone number" inputMode="numeric" />
-          </Form.Item>
-        </Col>
         <Col span={12}>
           <Form.Item
             label="Gender"
