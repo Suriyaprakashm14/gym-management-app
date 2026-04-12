@@ -52,6 +52,8 @@ app.use(
 const corsOrigins = [
   'http://localhost:3000',
   'http://127.0.0.1:3000',
+  /^http:\/\/localhost:\d+$/,
+  /^http:\/\/127\.0\.0\.1:\d+$/,
   /\.vercel\.app$/
 ];
 
@@ -59,7 +61,7 @@ const corsOrigins = [
 // can be set/read during WebAuthn enrollment/attach.
 if ((process.env.NODE_ENV || '').toLowerCase() !== 'production') {
   corsOrigins.push(
-    /^http:\/\/(10\.\d{1,3}\.\d{1,3}\.\d{1,3}|192\.168\.\d{1,3}\.\d{1,3}|172\.(1[6-9]|2\d|3[0-1])\.\d{1,3}\.\d{1,3}):3000$/
+    /^http:\/\/(10\.\d{1,3}\.\d{1,3}\.\d{1,3}|192\.168\.\d{1,3}\.\d{1,3}|172\.(1[6-9]|2\d|3[0-1])\.\d{1,3}\.\d{1,3}):\d+$/
   );
 }
 if (process.env.FRONTEND_URL) {
@@ -96,7 +98,7 @@ app.use(
 
 const globalRateLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: 300,
+  max: 7000,
   standardHeaders: true,
   legacyHeaders: false,
   message: {
