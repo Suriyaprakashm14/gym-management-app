@@ -69,6 +69,7 @@ router.post('/logout', async (req, res) => {
 
 router.post('/create-manager', gymOwnerOrAdmin, authController.createManager);
 router.put('/reset-user-password/:userId', gymOwnerOrAdmin, authController.resetUserPassword);
+router.post('/reset-user-password/:userId', gymOwnerOrAdmin, authController.resetUserPassword);
 
 const verifyResetToken = require('../middleware/verifyResetToken');
 

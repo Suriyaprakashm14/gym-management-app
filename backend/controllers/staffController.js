@@ -1,5 +1,6 @@
 const User = require('../models/user');
 const Branch = require('../models/branch');
+const { normalizeIndianMobile } = require('../utils/indianPhone');
 
 /**
  * Staff Management Controller
@@ -67,7 +68,7 @@ exports.getStaffs = async (req, res) => {
 
     const user = req.currentUser || req.user;
     const staffList = await User.find(filter)
-      .select('firstName lastName email role gymId branchId status isActive createdAt createdBy')
+      .select('firstName lastName phone role gymId branchId status isActive createdAt createdBy')
       .populate('branchId', 'name')
       .populate('createdBy', 'firstName lastName')
       .sort({ createdAt: -1 })
@@ -82,7 +83,7 @@ exports.getStaffs = async (req, res) => {
           _id: s._id,
           firstName: s.firstName,
           lastName: s.lastName,
-          email: s.email,
+          phone: s.phone,
           role: s.role,
           branchId: s.branchId?._id || s.branchId,
           branchName: s.branchId?.name,
@@ -126,12 +127,21 @@ exports.createStaff = async (req, res) => {
       });
     }
 
-    const { firstName, lastName, email, password, branchId } = req.body;
-    if (!firstName || !lastName || !email || !password || !branchId) {
+    const { firstName, lastName, phone, password, branchId } = req.body;
+    if (!firstName || !lastName || !phone || !password || !branchId) {
       return res.status(400).json({
         success: false,
         error: 'Missing required fields',
-        message: 'firstName, lastName, email, password, and branchId are required'
+        message: 'firstName, lastName, phone, password, and branchId are required'
+      });
+    }
+
+    const normalizedPhone = normalizeIndianMobile(phone);
+    if (!normalizedPhone) {
+      return res.status(400).json({
+        success: false,
+        error: 'Invalid phone',
+        message: 'Enter a valid 10-digit Indian mobile number'
       });
     }
 
@@ -153,19 +163,19 @@ exports.createStaff = async (req, res) => {
     }
 
     const gymId = branch.gymId;
-    const existingUser = await User.findOne({ email: email.toLowerCase().trim() });
+    const existingUser = await User.findOne({ phone: normalizedPhone });
     if (existingUser) {
       return res.status(400).json({
         success: false,
-        error: 'Email already exists',
-        message: 'A user with this email already exists'
+        error: 'Phone already exists',
+        message: 'A user with this phone number already exists'
       });
     }
 
     const staff = new User({
       firstName: firstName.trim(),
       lastName: lastName.trim(),
-      email: email.toLowerCase().trim(),
+      phone: normalizedPhone,
       password,
       role: 'staff',
       gymId,
@@ -184,7 +194,7 @@ exports.createStaff = async (req, res) => {
         _id: staff._id,
         firstName: staff.firstName,
         lastName: staff.lastName,
-        email: staff.email,
+        phone: staff.phone,
         role: staff.role,
         branchId: staff.branchId,
         branchName: branch.name,
@@ -263,7 +273,7 @@ exports.updateStaff = async (req, res) => {
       { $set: updates },
       { new: true, runValidators: true }
     )
-      .select('firstName lastName email role gymId branchId status isActive createdAt updatedAt')
+      .select('firstName lastName phone role gymId branchId status isActive createdAt updatedAt')
       .populate('branchId', 'name')
       .lean();
 
@@ -274,7 +284,7 @@ exports.updateStaff = async (req, res) => {
         _id: updated._id,
         firstName: updated.firstName,
         lastName: updated.lastName,
-        email: updated.email,
+        phone: updated.phone,
         role: updated.role,
         branchId: updated.branchId?._id || updated.branchId,
         branchName: updated.branchId?.name,

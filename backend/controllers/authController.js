@@ -878,56 +878,60 @@ exports.signup = async (req, res) => {
   }
 };
 
-// Create manager
+// Create manager (owner/admin only via route middleware)
 exports.createManager = async (req, res) => {
   try {
-    const { email, password, firstName, lastName, gymId, branchId } = req.body;
-    
-    if (!email || !password || !firstName || !lastName || !gymId || !branchId) {
-      return res.status(400).json({ 
-        error: 'Missing required fields: email, password, firstName, lastName, gymId, branchId' 
+    const { phone, password, firstName, lastName, gymId, branchId } = req.body;
+
+    if (!phone || !password || !firstName || !lastName || !gymId || !branchId) {
+      return res.status(400).json({
+        error: 'Missing required fields: phone, password, firstName, lastName, gymId, branchId'
       });
     }
 
-    // Verify gym exists and user has access
+    const normalizedPhone = normalizeIndianMobile(phone);
+    if (!normalizedPhone) {
+      return res.status(400).json({
+        error: 'Invalid phone',
+        message: 'Enter a valid 10-digit Indian mobile number (e.g. 9876543210 or +91 9876543210)',
+      });
+    }
+
     const gym = await Gym.findById(gymId);
     if (!gym) {
-      return res.status(404).json({ 
+      return res.status(404).json({
         error: 'Gym not found',
         message: 'The specified gym does not exist'
       });
     }
 
-    // Verify branch exists and belongs to gym
     const branch = await Branch.findById(branchId);
     if (!branch) {
-      return res.status(404).json({ 
+      return res.status(404).json({
         error: 'Branch not found',
         message: 'The specified branch does not exist'
       });
     }
 
-    if (branch.gymId !== gymId) {
-      return res.status(400).json({ 
+    if (String(branch.gymId) !== String(gymId)) {
+      return res.status(400).json({
         error: 'Invalid branch',
         message: 'Branch does not belong to the specified gym'
       });
     }
 
-    // Check if email already exists
-    const existingUser = await User.findOne({ email: email.toLowerCase() });
+    const existingUser = await User.findOne({ phone: normalizedPhone }).select('_id').lean();
     if (existingUser) {
-      return res.status(400).json({ 
-        error: 'Email already exists',
-        message: 'A user with this email already exists'
+      return res.status(400).json({
+        error: 'Phone already exists',
+        message: 'A user with this phone number already exists'
       });
     }
 
-    // Create manager
     const manager = new User({
-      firstName,
-      lastName,
-      email: email.toLowerCase(),
+      firstName: String(firstName).trim(),
+      lastName: String(lastName).trim(),
+      phone: normalizedPhone,
       password,
       role: 'manager',
       gymId,
@@ -939,14 +943,14 @@ exports.createManager = async (req, res) => {
 
     await manager.save();
 
-    res.status(201).json({
+    return res.status(201).json({
       success: true,
       message: 'Manager created successfully',
       data: {
         id: manager._id,
         firstName: manager.firstName,
         lastName: manager.lastName,
-        email: manager.email,
+        phone: manager.phone,
         role: manager.role,
         gymId: manager.gymId,
         gymName: gym.name,
@@ -954,15 +958,15 @@ exports.createManager = async (req, res) => {
         branchName: branch.name
       }
     });
-
   } catch (error) {
     console.error('Create manager error:', error);
-    res.status(500).json({ 
+    return res.status(500).json({
       error: 'Server error while creating manager',
-      message: error.message 
+      message: error.message
     });
   }
 };
+
 
 
 // Get current user profile

@@ -119,18 +119,63 @@ exports.update = async (req, res) => {
     // Check authorization - only gym_owner or manager can update membership prices
     const allowedRoles = ['gym_owner', 'manager'];
     if (!allowedRoles.includes(req.user.role)) {
-      return res.status(403).json({ error: "Access denied. Only gym_owner can update membership prices." });
+      return res.status(403).json({ error: 'Access denied. Only gym_owner or manager can update membership prices.' });
     }
 
     const price = await MembershipPrice.findById(req.params.id);
     if (!price) return res.status(404).json({ error: 'Membership Price not found' });
 
-    // Check access permissions - gym owners can only update their own gym's prices
+    // Check access permissions
     if (req.user.role === 'gym_owner' && price.gymId !== req.user.gymId) {
       return res.status(403).json({ error: 'Access denied: Not authorized to update this membership price' });
     }
+    if (req.user.role === 'manager' && price.gymId !== req.user.gymId) {
+      return res.status(403).json({ error: 'Access denied: Not authorized to update this membership price' });
+    }
 
-    const updatedPrice = await MembershipPrice.findByIdAndUpdate(req.params.id, req.body, { new: true });
+    // Only type, description, and isActive are editable.
+    // Price and duration are immutable after creation to protect existing member subscriptions.
+    const { type, description, isActive } = req.body;
+    const updateData = {};
+
+    if (type !== undefined) {
+      const trimmedType = String(type).trim();
+      if (!trimmedType) {
+        return res.status(400).json({ error: 'Membership type cannot be empty' });
+      }
+      // If type is changing, ensure no other plan for this gym already uses it
+      if (trimmedType !== price.type) {
+        const conflict = await MembershipPrice.findOne({
+          gymId: price.gymId,
+          type: trimmedType,
+          _id: { $ne: price._id },
+        });
+        if (conflict) {
+          return res.status(400).json({
+            error: `A membership plan of type "${trimmedType}" already exists for this gym.`,
+          });
+        }
+      }
+      updateData.type = trimmedType;
+    }
+
+    if (description !== undefined) {
+      updateData.description = String(description).trim();
+    }
+
+    if (isActive !== undefined) {
+      updateData.isActive = Boolean(isActive);
+    }
+
+    if (Object.keys(updateData).length === 0) {
+      return res.status(400).json({ error: 'No editable fields provided (type, description, isActive).' });
+    }
+
+    const updatedPrice = await MembershipPrice.findByIdAndUpdate(
+      req.params.id,
+      updateData,
+      { new: true, runValidators: true }
+    );
     res.json(updatedPrice);
   } catch (err) {
     res.status(400).json({ error: err.message });

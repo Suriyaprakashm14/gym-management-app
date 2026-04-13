@@ -10,10 +10,19 @@ const Branch = require('../models/branch');
 function getStaffListFilter(req) {
   const user = req.currentUser || req.user;
   if (!user) return null;
+  const roleFilterRaw = req.query && req.query.roleFilter ? String(req.query.roleFilter).trim().toLowerCase() : 'all';
+  const roleFilter = roleFilterRaw === 'manager' || roleFilterRaw === 'managers'
+    ? 'manager'
+    : roleFilterRaw === 'staff'
+      ? 'staff'
+      : 'all';
   if (user.role === 'gym_owner') {
     const gymId = user.gymId?._id || user.gymId;
     if (!gymId) return null;
     const filter = { gymId, role: { $in: ['manager', 'staff'] } };
+    if (roleFilter !== 'all') {
+      filter.role = roleFilter;
+    }
     const queryBranchId = req.query && req.query.branchId ? String(req.query.branchId).trim() : null;
     if (queryBranchId) {
       if (user.branches && user.branches.length > 0) {
@@ -75,7 +84,7 @@ exports.getStaff = async (req, res) => {
     }
 
     const staffList = await User.find(filter)
-      .select('firstName lastName email role gymId branchId status isActive createdAt createdBy')
+      .select('firstName lastName phone role gymId branchId status isActive createdAt createdBy')
       .populate('branchId', 'name')
       .populate('createdBy', 'firstName lastName')
       .sort({ createdAt: -1 })
@@ -90,7 +99,7 @@ exports.getStaff = async (req, res) => {
           _id: s._id,
           firstName: s.firstName,
           lastName: s.lastName,
-          email: s.email,
+          phone: s.phone,
           role: s.role,
           branchId: s.branchId?._id || s.branchId,
           branchName: s.branchId?.name,
