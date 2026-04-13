@@ -94,46 +94,21 @@ const Sidebar: React.FC<SidebarProps> = ({ collapsed, onCollapse }) => {
         }))
       : [];
 
-        // If backend has restricted owner branches, only show branches they can actually access
-        const ownerBranches = (currentUser as any)?.branches as string[] | undefined;
-        if (Array.isArray(ownerBranches) && ownerBranches.length > 0) {
-          const allowedSet = new Set(ownerBranches.map((id) => id && id.toString()));
-          mapped = mapped.filter((b) => allowedSet.has(b._id && b._id.toString()));
-        }
-
-        setBranches(mapped);
-        // If previously selected branch is no longer available, fall back to Overall
-        // to avoid showing empty member/staff lists with a stale branch filter.
-        if (selectedBranch && !mapped.some((b) => String(b._id) === String(selectedBranch))) {
-          setSelectedBranch(null);
-        }
-      } catch {
-        if (!cancelled) {
-          setBranches([]);
-        }
-      } finally {
-        if (!cancelled) {
-          setBranchesLoading(false);
-        }
-      }
-    };
-    fetchBranches();
-
-    // Keep branch dropdown in sync right after branch create/update/delete.
-    const handleBranchesChanged = () => {
-      fetchBranches();
-    };
-    if (typeof window !== 'undefined') {
-      window.addEventListener('branches:changed', handleBranchesChanged);
+    const ownerBranches = (currentUser as any)?.branches as string[] | undefined;
+    if (Array.isArray(ownerBranches) && ownerBranches.length > 0) {
+      const allowedSet = new Set(ownerBranches.map((id) => id && id.toString()));
+      mapped = mapped.filter((b) => allowedSet.has(b._id && b._id.toString()));
     }
 
-    return () => {
-      cancelled = true;
-      if (typeof window !== 'undefined') {
-        window.removeEventListener('branches:changed', handleBranchesChanged);
-      }
-    };
-  }, [isGymOwner, currentUser.gymId, selectedBranch, setSelectedBranch]);
+    return mapped;
+  }, [allBranches, currentUser]);
+
+  useEffect(() => {
+    if (!selectedBranch || !setSelectedBranch) return;
+    if (!branches.some((b) => String(b._id) === String(selectedBranch))) {
+      setSelectedBranch(null);
+    }
+  }, [branches, selectedBranch, setSelectedBranch]);
 
   const baseDashboardItem = {
     key: '/dashboard',

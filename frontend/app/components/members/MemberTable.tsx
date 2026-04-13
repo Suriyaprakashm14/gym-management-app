@@ -121,7 +121,7 @@ const MemberTable: React.FC = () => {
   const [renewMember, setRenewMember] = useState<Member | null>(null);
   const [membershipTypes, setMembershipTypes] = useState<Array<{ id: string; type: string; price: number; duration: number }>>([]);
   const [renewForm] = Form.useForm();
-  const renewPlanType = Form.useWatch('membership', renewForm);
+  const [renewPlanType, setRenewPlanType] = useState<string | undefined>(undefined);
   const renewMaxAmount =
     renewPlanType && membershipTypes.length > 0
       ? (() => {
@@ -229,6 +229,7 @@ const MemberTable: React.FC = () => {
 
   const handleOpenRenew = useCallback((record: Member) => {
     setRenewMember(record);
+    setRenewPlanType(undefined);
     renewForm.setFieldsValue({ membership: undefined, paidAmount: 0 });
     setRenewModalVisible(true);
   }, [renewForm]);
@@ -236,6 +237,7 @@ const MemberTable: React.FC = () => {
   const handleRenewModalClose = () => {
     setRenewModalVisible(false);
     setRenewMember(null);
+    setRenewPlanType(undefined);
     renewForm.resetFields();
   };
 
@@ -645,7 +647,16 @@ const MemberTable: React.FC = () => {
             Renew membership for <strong>{renewMember.name}</strong>.
           </p>
         )}
-        <Form form={renewForm} layout="vertical" initialValues={{ paidAmount: 0 }}>
+        <Form
+          form={renewForm}
+          layout="vertical"
+          initialValues={{ paidAmount: 0 }}
+          onValuesChange={(changedValues) => {
+            if (Object.prototype.hasOwnProperty.call(changedValues, 'membership')) {
+              setRenewPlanType(changedValues.membership);
+            }
+          }}
+        >
           <Form.Item
             name="membership"
             label="Plan"

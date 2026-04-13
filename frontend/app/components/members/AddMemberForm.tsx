@@ -25,7 +25,6 @@ import {
   MinusCircleOutlined,
   CheckOutlined,
   VideoCameraOutlined,
-  PhoneOutlined,
 } from '@ant-design/icons';
 import { useAuth } from '../../contexts/AuthContext';
 import { api } from '../../utils/api';
@@ -35,7 +34,6 @@ import {
   normalizeIndianMobileDigits,
   sanitizeIndianMobileDigits,
   indianMobileTenDigitsRule,
-  normalizeIndianMobileDigits,
   blockNonDigitKeysOnPhoneField,
   toE164IndiaLocal,
 } from '../../utils/validation';
