@@ -410,7 +410,7 @@ export default function StaffContent() {
     <div style={{ padding: '24px' }}>
       <Row justify="space-between" align="middle" style={{ marginBottom: 16 }}>
         <Col>
-          <Title level={4} style={{ margin: 0 }}>Staff</Title>
+          <Title level={4} style={{ margin: 0 }}>Staff/Manager</Title>
         </Col>
         <Col>
           <Flex align="center" gap={8}>
