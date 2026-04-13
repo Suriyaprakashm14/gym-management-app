@@ -2,32 +2,55 @@ const Payment = require('../models/payment');
 const Member = require('../models/member');
 const Details = require('../models/membersPersonalDetails');
 const MembershipPrice = require('../models/membershipPrice');
+const Branch = require('../models/branch');
+const mongoose = require('mongoose');
+
+function toId(v) {
+  return v == null ? null : String(v);
+}
+
+function isTransactionUnsupported(err) {
+  const msg = String(err?.message || '');
+  return msg.includes('Transaction numbers are only allowed on a replica set member or mongos');
+}
 
 exports.create = async (req, res) => {
   try {
     const { memberId, paidAmount } = req.body;
+    const paid = Number(paidAmount);
+    if (!Number.isFinite(paid) || paid <= 0) {
+      return res.status(400).json({ error: 'paidAmount must be a positive number' });
+    }
+
     const branchId = req.params.branchId; // Get branchId from URL parameters
 
     if (!branchId) {
       return res.status(400).json({ error: 'branchId is required in URL' });
     }
 
-    if (req.user.role === 'manager' && branchId.toString() !== req.user.branchId.toString()) {
+    if (req.user.role === 'manager' && toId(branchId) !== toId(req.user.branchId)) {
       return res.status(403).json({ error: 'Cannot create payment outside your branch' });
+    }
+    if (req.user.role === 'gym_owner') {
+      const branch = await Branch.findOne({ _id: branchId, gymId: req.user.gymId }).select('_id');
+      if (!branch) return res.status(403).json({ error: 'Cannot create payment outside your gym branches' });
     }
 
     const member = await Member.findById(memberId).lean();
     if (!member) return res.status(404).json({ error: 'Member not found' });
 
-    if (member.branchId.toString() !== branchId.toString()) {
+    if (toId(member.branchId) !== toId(branchId)) {
       return res.status(400).json({ error: 'Member does not belong to the given branch' });
+    }
+    if (req.user.gymId && toId(member.gymId) !== toId(req.user.gymId)) {
+      return res.status(403).json({ error: 'Member belongs to another gym' });
     }
 
     const details = await Details.findOne({ memberId });
     if (!details) return res.status(404).json({ error: 'Member personal details not found' });
 
-    const membership = details.membership ? String(details.membership).trim() : '';
-    if (!membership) return res.status(400).json({ error: 'Membership type not set in personal details' });
+    const membership = member?.membership?.type ? String(member.membership.type).trim() : '';
+    if (!membership) return res.status(400).json({ error: 'Membership type not set on member profile' });
 
     const typeRegex = new RegExp(`^\\s*${membership.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*$`, 'i');
     let priceDoc = member.gymId
@@ -43,28 +66,57 @@ exports.create = async (req, res) => {
     const totalDue = details.totalAmount || totalAmount;
     const remaining = Math.max(0, totalDue - currentPaid);
 
-    if (paidAmount > remaining) {
+    if (paid > remaining) {
       return res.status(400).json({
         error: 'Payment exceeds remaining due amount',
         message: `Maximum payable amount is ₹${remaining}`,
       });
     }
+    const createWithoutSession = async () => {
+      payment = new Payment({
+        memberId,
+        branchId,
+        name: `${member.firstName} ${member.lastName}`,
+        detailsId: details._id,
+        membership,
+        totalAmount,
+        paidAmount: paid,
+      });
+      await payment.save();
+      details.paidAmount = (details.paidAmount || 0) + paid;
+      await details.save();
+    };
 
-    const payment = new Payment({
-      memberId,
-      branchId,
-      name: `${member.firstName} ${member.lastName}`,
-      detailsId: details._id,
-      membership,
-      totalAmount,
-      paidAmount,
-    });
+    let payment;
+    const canUseTransactions = mongoose.connection && mongoose.connection.readyState === 1;
+    if (canUseTransactions) {
+      const session = await mongoose.startSession();
+      try {
+        await session.withTransaction(async () => {
+          payment = new Payment({
+            memberId,
+            branchId,
+            name: `${member.firstName} ${member.lastName}`,
+            detailsId: details._id,
+            membership,
+            totalAmount,
+            paidAmount: paid,
+          });
+          await payment.save({ session });
 
-    await payment.save();
-
-    // Update paidAmount in personal details
-    details.paidAmount = (details.paidAmount || 0) + paidAmount;
-    await details.save();
+          // Update paidAmount in personal details
+          details.paidAmount = (details.paidAmount || 0) + paid;
+          await details.save({ session });
+        });
+      } catch (txnErr) {
+        if (!isTransactionUnsupported(txnErr)) throw txnErr;
+        await createWithoutSession();
+      } finally {
+        await session.endSession();
+      }
+    } else {
+      await createWithoutSession();
+    }
 
     res.status(201).json(payment);
   } catch (err) {
@@ -76,10 +128,21 @@ exports.getAll = async (req, res) => {
   try {
     const filter = {};
 
-    if (req.user.role === 'manager') {
+    if (req.user.role === 'manager' || req.user.role === 'staff') {
       filter.branchId = req.user.branchId;
-    } else if (req.query.branchId) {
-      filter.branchId = req.query.branchId;
+    } else if (req.user.role === 'gym_owner') {
+      const ownerBranches = await Branch.find({ gymId: req.user.gymId }).select('_id').lean();
+      const allowedBranchIds = ownerBranches.map((b) => String(b._id));
+      if (req.query.branchId) {
+        if (!allowedBranchIds.includes(String(req.query.branchId))) {
+          return res.status(403).json({ error: 'Access denied: branch not in your gym' });
+        }
+        filter.branchId = req.query.branchId;
+      } else {
+        filter.branchId = { $in: allowedBranchIds };
+      }
+    } else {
+      return res.status(403).json({ error: 'Access denied' });
     }
 
     const payments = await Payment.find(filter).select('memberId name paidAmount paidAt');
@@ -94,8 +157,14 @@ exports.getOne = async (req, res) => {
     const payment = await Payment.findById(req.params.id);
     if (!payment) return res.status(404).json({ error: 'Payment not found' });
 
-    if (req.user.role === 'manager' && payment.branchId.toString() !== req.user.branchId.toString()) {
+    if ((req.user.role === 'manager' || req.user.role === 'staff') && toId(payment.branchId) !== toId(req.user.branchId)) {
       return res.status(403).json({ error: 'Access denied: Not authorized for this payment' });
+    }
+    if (req.user.role === 'gym_owner') {
+      const branch = await Branch.findOne({ _id: payment.branchId, gymId: req.user.gymId }).select('_id').lean();
+      if (!branch) {
+        return res.status(403).json({ error: 'Access denied: Not authorized for this payment' });
+      }
     }
 
     res.json(payment);
@@ -106,14 +175,19 @@ exports.getOne = async (req, res) => {
 
 exports.update = async (req, res) => {
   try {
-    const payment = await Payment.findById(req.params.id);
+    const paymentId = req.params.paymentId || req.params.id;
+    const payment = await Payment.findById(paymentId);
     if (!payment) return res.status(404).json({ error: 'Payment not found' });
 
-    if (req.user.role === 'manager') {
-      return res.status(403).json({ error: 'Managers not authorized to update payments' });
+    if (req.user.role === 'manager' || req.user.role === 'staff') {
+      return res.status(403).json({ error: 'Only gym owners can update payments' });
+    }
+    const branch = await Branch.findOne({ _id: payment.branchId, gymId: req.user.gymId }).select('_id').lean();
+    if (!branch) {
+      return res.status(403).json({ error: 'Access denied: Not authorized for this payment' });
     }
 
-    const updated = await Payment.findByIdAndUpdate(req.params.id, req.body, { new: true });
+    const updated = await Payment.findByIdAndUpdate(paymentId, req.body, { new: true });
     res.json(updated);
   } catch (err) {
     res.status(400).json({ error: err.message });
@@ -125,8 +199,12 @@ exports.remove = async (req, res) => {
     const payment = await Payment.findById(req.params.id);
     if (!payment) return res.status(404).json({ error: 'Payment not found' });
 
-    if (req.user.role === 'manager') {
-      return res.status(403).json({ error: 'Managers not authorized to delete payments' });
+    if (req.user.role === 'manager' || req.user.role === 'staff') {
+      return res.status(403).json({ error: 'Only gym owners can delete payments' });
+    }
+    const branch = await Branch.findOne({ _id: payment.branchId, gymId: req.user.gymId }).select('_id').lean();
+    if (!branch) {
+      return res.status(403).json({ error: 'Access denied: Not authorized for this payment' });
     }
 
     await Payment.findByIdAndDelete(req.params.id);
@@ -144,7 +222,10 @@ exports.getMemberPaymentSummary = async (req, res) => {
     const member = await Member.findById(memberId).lean();
     if (!member) return res.status(404).json({ error: 'Member not found' });
 
-    if (req.user.role === 'manager' && member.branchId.toString() !== req.user.branchId.toString()) {
+    if ((req.user.role === 'manager' || req.user.role === 'staff') && toId(member.branchId) !== toId(req.user.branchId)) {
+      return res.status(403).json({ error: 'Access denied' });
+    }
+    if (req.user.role === 'gym_owner' && toId(member.gymId) !== toId(req.user.gymId)) {
       return res.status(403).json({ error: 'Access denied' });
     }
 
@@ -162,7 +243,7 @@ exports.getMemberPaymentSummary = async (req, res) => {
       memberId,
       name: `${member.firstName} ${member.lastName}`,
       detailsId: details._id,
-      membership: details.membership || null,
+      membership: member?.membership?.type || null,
       totalAmount: totalDue,
       paidAmount: totalPaid,
       paidAt: lastPaidAt,

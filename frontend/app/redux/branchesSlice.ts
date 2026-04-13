@@ -93,7 +93,11 @@ export const fetchBranchesAsync = createAsyncThunk<Branch[], string>(
   async (gymId, { rejectWithValue }) => {
     try {
       const response = await axiosClient.get(`/branches/${gymId}/branches`);
-      return normaliseBranches(response.data);
+      const branches = normaliseBranches(response.data);
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new Event('branches:changed'));
+      }
+      return branches;
     } catch (error: any) {
       return rejectWithValue(
         error.response?.data?.message || 'Failed to fetch branches'

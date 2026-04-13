@@ -36,6 +36,10 @@ function canAssignBranch(req, branchId) {
   return false;
 }
 
+function toId(value) {
+  return value == null ? null : String(value);
+}
+
 function getAssignableBranches(req) {
   const user = req.currentUser || req.user;
   if (!user) return [];
@@ -163,6 +167,13 @@ exports.createStaff = async (req, res) => {
     }
 
     const gymId = branch.gymId;
+    if (toId(gymId) !== toId(user.gymId)) {
+      return res.status(403).json({
+        success: false,
+        error: 'Access denied',
+        message: 'You cannot assign staff to a branch outside your gym',
+      });
+    }
     const existingUser = await User.findOne({ phone: normalizedPhone });
     if (existingUser) {
       return res.status(400).json({
@@ -260,6 +271,13 @@ exports.updateStaff = async (req, res) => {
             success: false,
             error: 'Branch not found',
             message: 'The specified branch does not exist'
+          });
+        }
+        if (toId(branch.gymId) !== toId((req.currentUser || req.user)?.gymId)) {
+          return res.status(403).json({
+            success: false,
+            error: 'Access denied',
+            message: 'You cannot assign this staff to a branch outside your gym',
           });
         }
         updates.branchId = branchId;

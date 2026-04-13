@@ -8,6 +8,7 @@ const { gymOwnerOrAdmin, managerOrAbove } = require('../middleware/rbacMiddlewar
 const { ok, fail } = require('../utils/apiResponse');
 const webauthnAuthRoutes = require('./webauthnAuthRoutes');
 const { isProduction } = require('../config/env');
+const verifyResetToken = require('../middleware/verifyResetToken');
 
 // Authentication
 router.post('/login', authController.login);
@@ -27,7 +28,7 @@ router.post('/signup', signupRateLimit, authController.signup);
 
 // Forgot Password Routes
 router.post('/forgot-password', authController.forgotPassword);
-router.post('/reset-password', authController.resetPassword);
+router.post('/reset-password', verifyResetToken, authController.resetPassword);
 router.post('/verify-otp', authController.verifyOTP);
 router.post('/resend-otp', authController.resendOTP);
 
@@ -70,14 +71,6 @@ router.post('/logout', async (req, res) => {
 router.post('/create-manager', gymOwnerOrAdmin, authController.createManager);
 router.put('/reset-user-password/:userId', gymOwnerOrAdmin, authController.resetUserPassword);
 router.post('/reset-user-password/:userId', gymOwnerOrAdmin, authController.resetUserPassword);
-
-const verifyResetToken = require('../middleware/verifyResetToken');
-
-router.post(
-  '/reset-password',
-  verifyResetToken,
-  authController.resetPassword
-);
 
 
 module.exports = router;

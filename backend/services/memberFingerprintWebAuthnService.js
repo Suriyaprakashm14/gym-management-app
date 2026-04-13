@@ -8,10 +8,15 @@ const {
 const crypto = require('crypto');
 const Member = require('../models/member');
 const Attendance = require('../models/attendance');
+const {
+  getWebAuthnOrigin,
+  getWebAuthnRpId,
+  getWebAuthnRpName,
+} = require('../utils/webauthnConfig');
 
-const RP_ID = 'localhost';
-const EXPECTED_ORIGIN = 'http://localhost:3000';
-const RP_NAME = 'FitForge';
+const RP_ID = getWebAuthnRpId();
+const EXPECTED_ORIGIN = getWebAuthnOrigin();
+const RP_NAME = getWebAuthnRpName();
 
 const SESSION_KEY = 'memberFingerprintWebAuthn';
 const CHALLENGE_TTL_MS = 5 * 60 * 1000; // 5 minutes
@@ -50,6 +55,22 @@ function stripTime(d) {
   return x;
 }
 
+function canAccessMember(req, member) {
+  const user = req?.currentUser || req?.user;
+  if (!user || !member) return false;
+  const role = String(user.role || '');
+  const userGymId = user.gymId ? String(user.gymId) : null;
+  const userBranchId = user.branchId ? String(user.branchId) : null;
+  const memberGymId = member.gymId ? String(member.gymId) : null;
+  const memberBranchId = member.branchId ? String(member.branchId) : null;
+
+  if (role === 'gym_owner') return !!userGymId && userGymId === memberGymId;
+  if (role === 'manager' || role === 'staff') {
+    return !!userGymId && !!userBranchId && userGymId === memberGymId && userBranchId === memberBranchId;
+  }
+  return false;
+}
+
 function bufferToUint8Array(maybeBuffer) {
   if (!maybeBuffer) return null;
   if (Buffer.isBuffer(maybeBuffer)) return new Uint8Array(maybeBuffer);
@@ -75,6 +96,11 @@ async function getRegisterOptions({ req, memberId, pendingUser }) {
     if (!member) {
       const err = new Error('Member not found');
       err.code = 'MEMBER_NOT_FOUND';
+      throw err;
+    }
+    if (!canAccessMember(req, member)) {
+      const err = new Error('Access denied for this member');
+      err.code = 'FORBIDDEN_MEMBER_SCOPE';
       throw err;
     }
 
@@ -157,6 +183,11 @@ async function verifyAndStoreRegistration({ req, memberId, registrationResponse 
     err.code = 'MEMBER_NOT_FOUND';
     throw err;
   }
+  if (!canAccessMember(req, member)) {
+    const err = new Error('Access denied for this member');
+    err.code = 'FORBIDDEN_MEMBER_SCOPE';
+    throw err;
+  }
 
   member.fingerprintId = credential.id; // base64url string
   member.publicKey = Buffer.from(credential.publicKey); // raw bytes
@@ -187,6 +218,11 @@ async function attachPendingFingerprintToMember({ req, memberId }) {
   if (!member) {
     const err = new Error('Member not found');
     err.code = 'MEMBER_NOT_FOUND';
+    throw err;
+  }
+  if (!canAccessMember(req, member)) {
+    const err = new Error('Access denied for this member');
+    err.code = 'FORBIDDEN_MEMBER_SCOPE';
     throw err;
   }
 
@@ -240,6 +276,11 @@ async function verifyAndMarkAttendance({ req, authenticationResponse }) {
   if (!member) {
     const err = new Error('Credential not recognized');
     err.code = 'CREDENTIAL_NOT_FOUND';
+    throw err;
+  }
+  if (!canAccessMember(req, member)) {
+    const err = new Error('Access denied for this member');
+    err.code = 'FORBIDDEN_MEMBER_SCOPE';
     throw err;
   }
 

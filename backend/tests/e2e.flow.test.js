@@ -33,11 +33,16 @@ jest.mock('../models/membershipPrice', () => ({
 jest.mock('../models/attendance', () => ({
   find: jest.fn(),
 }));
+jest.mock('../models/branch', () => ({
+  findOne: jest.fn(),
+  findById: jest.fn(),
+}));
 
 const User = require('../models/user');
 const Details = require('../models/membersPersonalDetails');
 const MembershipPrice = require('../models/membershipPrice');
 const Attendance = require('../models/attendance');
+const Branch = require('../models/branch');
 
 const authController = require('../controllers/authController');
 const memberController = require('../controllers/memberController');
@@ -102,6 +107,14 @@ describe('E2E flow - login to attendance report', () => {
       gymId: 'gym-1',
       role: 'member',
     });
+    Branch.findOne.mockReturnValue({
+      select: jest.fn().mockResolvedValue({ _id: 'branch-1', gymId: 'gym-1' }),
+    });
+    Branch.findById.mockReturnValue({
+      select: jest.fn().mockReturnValue({
+        lean: jest.fn().mockResolvedValue({ _id: 'branch-1', gymId: 'gym-1' }),
+      }),
+    });
 
     mockMemberModel.findById.mockReturnValue({
       lean: jest.fn().mockResolvedValue({
@@ -109,6 +122,8 @@ describe('E2E flow - login to attendance report', () => {
         firstName: 'John',
         lastName: 'Doe',
         branchId: 'branch-1',
+        gymId: 'gym-1',
+        membership: { type: 'monthly' },
       }),
     });
 

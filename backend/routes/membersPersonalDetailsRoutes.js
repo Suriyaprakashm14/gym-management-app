@@ -2,15 +2,15 @@ const express = require('express');
 const router = express.Router();
 const controller = require('../controllers/membersPersonalDetailsController');
 const authMiddleware = require('../middleware/authMiddleware');
-const { gymOwnerOrAdmin } = require('../middleware/rbacMiddleware');
+const { gymOwnerOrAdmin, managerOrAbove, requireActiveGym } = require('../middleware/rbacMiddleware');
 
-router.post('/', authMiddleware, controller.create);
-router.get('/', authMiddleware, controller.getAll);
-router.get('/member/:memberId', authMiddleware, controller.getByMemberId);
-router.get('/:id', authMiddleware, controller.getOne);
-router.put('/member/:memberId', authMiddleware, controller.updateByMemberId);
-router.patch('/member/:memberId', authMiddleware, controller.updateByMemberId);
-router.put('/:id', authMiddleware, controller.update);
-router.delete('/:id', authMiddleware, gymOwnerOrAdmin, controller.remove);
+router.post('/', authMiddleware, managerOrAbove, requireActiveGym, controller.create);
+router.get('/', authMiddleware, managerOrAbove, controller.getAll);
+router.get('/member/:memberId', authMiddleware, managerOrAbove, controller.getByMemberId);
+router.get('/:id', authMiddleware, managerOrAbove, controller.getOne);
+router.put('/member/:memberId', authMiddleware, managerOrAbove, requireActiveGym, controller.updateByMemberId);
+router.patch('/member/:memberId', authMiddleware, managerOrAbove, requireActiveGym, controller.updateByMemberId);
+router.put('/:id', authMiddleware, managerOrAbove, requireActiveGym, controller.update);
+router.delete('/:id', authMiddleware, gymOwnerOrAdmin, requireActiveGym, controller.remove);
 
 module.exports = router;

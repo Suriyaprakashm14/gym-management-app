@@ -2,16 +2,63 @@ const Member = require('../models/member');
 const Details = require('../models/membersPersonalDetails');
 const Payment = require('../models/payment');
 const MembershipPrice = require('../models/membershipPrice');
+const User = require('../models/user');
+const Branch = require('../models/branch');
 const axios = require('axios');
 const FormData = require('form-data');
 const multer = require('multer');
+const mongoose = require('mongoose');
 
 const LUXAND_TOKEN = process.env.LUXAND_TOKEN;
-const { getCurrentPeriodForDate } = require('../utils/subscriptionPeriods');
 const { normalizeIndianMobile } = require('../utils/indianPhone');
 
+function toId(value) {
+  return value == null ? null : String(value);
+}
+
+async function resolveScopeUser(req) {
+  const dbUser = req.currentUser || (req.user?.id ? await User.findById(req.user.id).select('id role gymId branchId').lean() : null);
+  const source = dbUser || req.user || {};
+  return {
+    id: toId(source.id || source._id),
+    role: String(source.role || ''),
+    gymId: toId(source.gymId),
+    branchId: toId(source.branchId),
+  };
+}
+
+function ensureRoleAllowed(scopeUser, allowedRoles) {
+  return allowedRoles.includes(scopeUser.role);
+}
+
+function canAccessMember(scopeUser, memberDoc) {
+  const memberGymId = toId(memberDoc?.gymId);
+  const memberBranchId = toId(memberDoc?.branchId);
+  if (scopeUser.role === 'gym_owner') {
+    return !!scopeUser.gymId && scopeUser.gymId === memberGymId;
+  }
+  if (scopeUser.role === 'manager' || scopeUser.role === 'staff') {
+    return !!scopeUser.gymId && !!scopeUser.branchId && scopeUser.gymId === memberGymId && scopeUser.branchId === memberBranchId;
+  }
+  return false;
+}
+
+function isTransactionUnsupported(err) {
+  const msg = String(err?.message || '');
+  return msg.includes('Transaction numbers are only allowed on a replica set member or mongos');
+}
+
 // Multer setup for in-memory file storage
-const upload = multer({ storage: multer.memoryStorage() });
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 5 * 1024 * 1024 },
+  fileFilter: (req, file, cb) => {
+    if (!file || !file.mimetype || !file.mimetype.startsWith('image/')) {
+      return cb(new Error('Only image uploads are allowed'));
+    }
+    return cb(null, true);
+  },
+});
 exports.uploadMiddleware = upload.single('image');
 
 // Test Luxand connectivity
@@ -67,37 +114,37 @@ exports.create = async (req, res) => {
   }
 
   const allowedRoles = ['gym_owner', 'manager', 'staff'];
-  if (!allowedRoles.includes(req.user.role)) {
+  const scopeUser = await resolveScopeUser(req);
+  if (!ensureRoleAllowed(scopeUser, allowedRoles)) {
     return res.status(403).json({ error: "Access denied. Only gym_owner, staff or manager can create members." });
   }
 
   // For managers, ensure they can only create members in their branch
-  if (req.user.role === 'manager') {
+  if (scopeUser.role === 'manager') {
     console.log('Manager validation:', {
-      userBranchId: req.user.branchId,
+      userBranchId: scopeUser.branchId,
       requestBranchId: branchId,
-      match: req.user.branchId && req.user.branchId.toString() === branchId
+      match: scopeUser.branchId && toId(scopeUser.branchId) === toId(branchId)
     });
-    if (req.user.branchId && req.user.branchId.toString() !== branchId) {
-      return res.status(403).json({ error: `Access denied. You can only create members in branch ${req.user.branchId}, but requested branch is ${branchId}.` });
+    if (!scopeUser.branchId || toId(scopeUser.branchId) !== toId(branchId)) {
+      return res.status(403).json({ error: `Access denied. You can only create members in your own branch.` });
     }
   }
 
   // For gym_owners, ensure they can only create members in their gym
-  if (req.user.role === 'gym_owner' && req.user.gymId) {
+  if (scopeUser.role === 'gym_owner') {
     try {
-      const Branch = require('../models/branch');
       const branch = await Branch.findById(branchId);
       console.log('Gym owner validation:', {
         branchId,
         branch: branch ? { id: branch._id, gymId: branch.gymId, name: branch.name } : null,
-        userGymId: req.user.gymId
+        userGymId: scopeUser.gymId
       });
       if (!branch) {
         return res.status(404).json({ error: `Branch with ID ${branchId} not found.` });
       }
-      if (branch.gymId !== req.user.gymId) {
-        return res.status(403).json({ error: `Access denied. Branch belongs to gym ${branch.gymId}, but you belong to gym ${req.user.gymId}.` });
+      if (toId(branch.gymId) !== toId(scopeUser.gymId)) {
+        return res.status(403).json({ error: `Access denied. Branch belongs to another gym.` });
       }
     } catch (error) {
       console.error('Branch validation error:', error);
@@ -181,7 +228,17 @@ exports.create = async (req, res) => {
     }
 
     // Get gymId from user context
-    const gymId = req.user.gymId || req.user.branchId; // For legacy users, branchId might be used as gymId
+    const branchDoc = await Branch.findById(branchId).select('_id gymId').lean();
+    if (!branchDoc) {
+      return res.status(404).json({ error: 'Branch not found' });
+    }
+    const gymId = toId(branchDoc.gymId);
+    if (!gymId) {
+      return res.status(400).json({ error: 'Invalid branch gym mapping' });
+    }
+    if (scopeUser.gymId && toId(scopeUser.gymId) !== gymId) {
+      return res.status(403).json({ error: 'Access denied. Branch belongs to another gym.' });
+    }
 
     // Calculate age from dateOfBirth if provided (FormData may send as string YYYY-MM-DD)
     let profile = rest.profile || {};
@@ -253,22 +310,40 @@ exports.getAll = async (req, res) => {
 
     let filter = {};
 
-    if (req.user.role === 'manager' || req.user.role === 'staff') {
+    // Resolve current tenant scope from DB first (more reliable than stale JWT payload).
+    const effectiveUser = await resolveScopeUser(req);
+    const effectiveRole = effectiveUser.role;
+    const effectiveGymId = effectiveUser.gymId;
+    const effectiveBranchId = effectiveUser.branchId;
+
+    if (!allowedRoles.includes(effectiveRole)) {
+      return res.status(403).json({ error: "Access denied. Only gym_owner, manager, or staff can view members." });
+    }
+
+    if (effectiveRole === 'manager' || effectiveRole === 'staff') {
       // Managers and staff can only see members from their own branch
-      filter.branchId = req.user.branchId;
-    } else if (req.user.role === 'gym_owner') {
+      if (!effectiveBranchId || !effectiveGymId) {
+        return res.status(403).json({
+          error: 'Access denied. Missing branch or gym scope for this account.',
+        });
+      }
+      filter.gymId = effectiveGymId;
+      filter.branchId = effectiveBranchId;
+    } else if (effectiveRole === 'gym_owner') {
       // Gym owners can view members from all branches of their gym
+      if (!effectiveGymId) {
+        return res.status(403).json({
+          error: 'Access denied. Missing gym scope for this account.',
+        });
+      }
+      filter.gymId = effectiveGymId;
       if (req.query.branchId) {
         // Validate that the branch belongs to their gym
-        const Branch = require('../models/branch');
         const branch = await Branch.findById(req.query.branchId);
-        if (!branch || branch.gymId !== req.user.gymId) {
+        if (!branch || String(branch.gymId) !== String(effectiveGymId)) {
           return res.status(403).json({ error: "Access denied. Cannot view members from branches outside your gym." });
         }
         filter.branchId = req.query.branchId;
-      } else {
-        // If no specific branch requested, show all members from their gym
-        filter.gymId = req.user.gymId;
       }
     }
 
@@ -277,29 +352,15 @@ exports.getAll = async (req, res) => {
     if (statusFilter === 'recentlyExpired') statusFilter = 'inactiveUsers';
     if (statusFilter === 'archivedUsers') statusFilter = 'longTimeInactiveUsers';
 
-    const now = new Date();
-    const ninetyDaysAgo = new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000);
-
     if (statusFilter === 'allMembers' || statusFilter === 'all') {
       // No status filter: return all members (filtered by gym/branch only)
     } else if (statusFilter === 'activeUsers') {
-      filter.status = { $nin: ['inactive', 'long term inactive'] };
-      filter.$or = [
-        { 'membership.endDate': null },
-        { 'membership.endDate': { $gt: now } },
-      ];
+      filter.status = 'active';
+      filter['membership.isActive'] = true;
     } else if (statusFilter === 'inactiveUsers') {
-      // Recently expired (1–90 days) or already status 'inactive'
-      filter.$or = [
-        { status: 'inactive' },
-        { 'membership.endDate': { $gte: ninetyDaysAgo, $lte: now } },
-      ];
+      filter.status = 'inactive';
     } else if (statusFilter === 'longTimeInactiveUsers') {
-      // Expired >90 days ago or already status 'long term inactive'
-      filter.$or = [
-        { status: 'long term inactive' },
-        { 'membership.endDate': { $lt: ninetyDaysAgo } },
-      ];
+      filter.status = 'long term inactive';
     }
 
     const page = Math.max(1, parseInt(req.query.page, 10) || 1);
@@ -334,75 +395,6 @@ exports.getAll = async (req, res) => {
       if (details) {
         if (!m.profile) m.profile = {};
         if (details.phoneNumber) m.profile.phone = details.phoneNumber;
-        if (!m.membership) m.membership = {};
-        if (details.membership) m.membership.type = details.membership;
-
-        const periodInfo = Array.isArray(details.subscriptionPeriods) && details.subscriptionPeriods.length > 0
-          ? getCurrentPeriodForDate(details.subscriptionPeriods, now)
-          : null;
-
-        if (periodInfo) {
-          // Active only when now is within [periodStart, periodEnd]. Upcoming before start; inactive/expired after end.
-          m.membership.startDate = periodInfo.periodStart;
-          m.membership.endDate = periodInfo.periodEnd;
-          m.membership.isActive = periodInfo.isActive;
-          const suspended = String(m.status) === 'suspended';
-          if (periodInfo.isActive) {
-            m.status = suspended ? 'suspended' : 'active';
-          } else {
-            if (now > periodInfo.periodEnd) {
-              m.status = periodInfo.periodEnd < ninetyDaysAgo ? 'long term inactive' : 'inactive';
-            } else {
-              m.status = 'upcoming'; // not yet started (now < periodStart)
-            }
-          }
-          await Details.findOneAndUpdate(
-            { memberId: m._id },
-            { membership_start_date: periodInfo.periodStart, membership_end_date: periodInfo.periodEnd }
-          );
-          await Member.findByIdAndUpdate(m._id, {
-            'membership.type': details.membership || m.membership?.type,
-            'membership.startDate': periodInfo.periodStart,
-            'membership.endDate': periodInfo.periodEnd,
-            'membership.isActive': m.membership.isActive,
-            status: m.status
-          });
-        } else {
-          // No subscription periods: use membership_start_date / membership_end_date as before
-          if (details.membership_start_date != null) m.membership.startDate = details.membership_start_date;
-          if (details.membership_end_date != null) m.membership.endDate = details.membership_end_date;
-          const effectiveStart = details.membership_start_date ? new Date(details.membership_start_date) : null;
-          const effectiveEndRaw = details.membership_end_date ?? m.membership?.endDate;
-          const effectiveEnd = effectiveEndRaw ? new Date(effectiveEndRaw) : null;
-          const isExpired = effectiveEnd && effectiveEnd < now;
-          const notStarted = effectiveStart && now < effectiveStart;
-          const newStatus = notStarted
-            ? 'upcoming'
-            : isExpired
-              ? (effectiveEnd < ninetyDaysAgo ? 'long term inactive' : 'inactive')
-              : (String(m.status) === 'suspended' ? 'suspended' : 'active');
-          m.membership.isActive = !isExpired && !notStarted;
-          m.status = newStatus;
-          await Member.findByIdAndUpdate(m._id, {
-            'membership.type': details.membership || m.membership?.type,
-            'membership.startDate': details.membership_start_date ?? m.membership?.startDate,
-            'membership.endDate': details.membership_end_date ?? m.membership?.endDate,
-            'membership.isActive': !isExpired,
-            status: newStatus
-          });
-        }
-      }
-      // When no details: if effective end date has expired, set status in DB and on object
-      const effectiveEndRaw = details?.membership_end_date ?? m.membership?.endDate;
-      const effectiveEnd = effectiveEndRaw ? new Date(effectiveEndRaw) : null;
-      if (!details && effectiveEnd && effectiveEnd < now && String(m.status) !== 'inactive' && String(m.status) !== 'long term inactive') {
-        const newStatus = effectiveEnd < ninetyDaysAgo ? 'long term inactive' : 'inactive';
-        await Member.findByIdAndUpdate(m._id, {
-          'membership.isActive': false,
-          status: newStatus
-        });
-        m.status = newStatus;
-        if (m.membership) m.membership.isActive = false;
       }
       const payment = paymentByMemberId[m._id];
       const totalAmount = details && (details.totalAmount != null) ? Number(details.totalAmount) : 0;
@@ -433,8 +425,9 @@ exports.getAll = async (req, res) => {
 exports.getOne = async (req, res) => {
   try {
     // Check authorization - only gym_owner and manager roles
-    const allowedRoles = ['gym_owner', 'manager'];
-    if (!allowedRoles.includes(req.user.role)) {
+    const allowedRoles = ['gym_owner', 'manager', 'staff'];
+    const scopeUser = await resolveScopeUser(req);
+    if (!ensureRoleAllowed(scopeUser, allowedRoles)) {
       return res.status(403).json({ error: "Access denied. Only gym_owner or manager can view members." });
     }
 
@@ -442,66 +435,14 @@ exports.getOne = async (req, res) => {
     if (!member) return res.status(404).json({ error: 'Member not found' });
 
     // Check access permissions
-    if (req.user.role === 'manager' && member.branchId.toString() !== req.user.branchId.toString()) {
+    if (!canAccessMember(scopeUser, member)) {
       return res.status(403).json({ error: 'Access denied: Not authorized for this member' });
     }
 
-    if (req.user.role === 'gym_owner' && member.gymId !== req.user.gymId) {
-      return res.status(403).json({ error: 'Access denied: Not authorized for this member' });
-    }
-
-    const now = new Date();
-    const ninetyDaysAgo = new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000);
     const details = await Details.findOne({ memberId: member._id }).lean();
     if (details) {
-      if (!member.membership) member.membership = {};
-      if (details.membership) member.membership.type = details.membership;
-
-      const periodInfo = Array.isArray(details.subscriptionPeriods) && details.subscriptionPeriods.length > 0
-        ? getCurrentPeriodForDate(details.subscriptionPeriods, now)
-        : null;
-
-      if (periodInfo) {
-        member.membership.startDate = periodInfo.periodStart;
-        member.membership.endDate = periodInfo.periodEnd;
-        member.membership.isActive = periodInfo.isActive;
-        if (periodInfo.isActive) {
-          member.status = String(member.status) === 'suspended' ? 'suspended' : 'active';
-        } else {
-          member.status = now > periodInfo.periodEnd
-            ? (periodInfo.periodEnd < ninetyDaysAgo ? 'long term inactive' : 'inactive')
-            : 'inactive';
-        }
-        await Details.findOneAndUpdate(
-          { memberId: member._id },
-          { membership_start_date: periodInfo.periodStart, membership_end_date: periodInfo.periodEnd }
-        );
-        await Member.findByIdAndUpdate(member._id, {
-          'membership.type': details.membership || member.membership?.type,
-          'membership.startDate': periodInfo.periodStart,
-          'membership.endDate': periodInfo.periodEnd,
-          'membership.isActive': member.membership.isActive,
-          status: member.status
-        });
-      } else {
-        if (details.membership_start_date != null) member.membership.startDate = details.membership_start_date;
-        if (details.membership_end_date != null) member.membership.endDate = details.membership_end_date;
-        const effectiveEndRaw = details.membership_end_date ?? member.membership?.endDate;
-        const effectiveEnd = effectiveEndRaw ? new Date(effectiveEndRaw) : null;
-        const isExpired = effectiveEnd && effectiveEnd < now;
-        const newStatus = isExpired
-          ? (effectiveEnd < ninetyDaysAgo ? 'long term inactive' : 'inactive')
-          : (String(member.status) === 'suspended' ? 'suspended' : 'active');
-        member.membership.isActive = !isExpired;
-        member.status = newStatus;
-        await Member.findByIdAndUpdate(member._id, {
-          'membership.type': details.membership || member.membership?.type,
-          'membership.startDate': details.membership_start_date ?? member.membership?.startDate,
-          'membership.endDate': details.membership_end_date ?? member.membership?.endDate,
-          'membership.isActive': !isExpired,
-          status: newStatus
-        });
-      }
+      if (!member.profile) member.profile = {};
+      if (details.phoneNumber) member.profile.phone = details.phoneNumber;
     }
 
     res.json(member);
@@ -513,8 +454,9 @@ exports.getOne = async (req, res) => {
 exports.update = async (req, res) => {
   try {
     // Check authorization - only gym_owner and manager roles
-    const allowedRoles = ['gym_owner', 'manager'];
-    if (!allowedRoles.includes(req.user.role)) {
+    const allowedRoles = ['gym_owner', 'manager', 'staff'];
+    const scopeUser = await resolveScopeUser(req);
+    if (!ensureRoleAllowed(scopeUser, allowedRoles)) {
       return res.status(403).json({ error: "Access denied. Only gym_owner or manager can update members." });
     }
 
@@ -522,16 +464,12 @@ exports.update = async (req, res) => {
     if (!member) return res.status(404).json({ error: 'Member not found' });
 
     // Check access permissions
-    if (req.user.role === 'manager' && member.branchId.toString() !== req.user.branchId.toString()) {
-      return res.status(403).json({ error: 'Access denied: Not authorized to update this member' });
-    }
-
-    if (req.user.role === 'gym_owner' && member.gymId !== req.user.gymId) {
+    if (!canAccessMember(scopeUser, member)) {
       return res.status(403).json({ error: 'Access denied: Not authorized to update this member' });
     }
 
     // Additional validation for managers
-    if (req.user.role === 'manager' && req.body.branchId && req.body.branchId.toString() !== req.user.branchId.toString()) {
+    if ((scopeUser.role === 'manager' || scopeUser.role === 'staff') && req.body.branchId && toId(req.body.branchId) !== scopeUser.branchId) {
       return res.status(403).json({ error: 'Cannot change branch of member outside your branch' });
     }
 
@@ -545,8 +483,9 @@ exports.update = async (req, res) => {
 exports.patch = async (req, res) => {
   try {
     // Check authorization - only gym_owner and manager roles
-    const allowedRoles = ['gym_owner', 'manager'];
-    if (!allowedRoles.includes(req.user.role)) {
+    const allowedRoles = ['gym_owner', 'manager', 'staff'];
+    const scopeUser = await resolveScopeUser(req);
+    if (!ensureRoleAllowed(scopeUser, allowedRoles)) {
       return res.status(403).json({ error: "Access denied. Only gym_owner or manager can update members." });
     }
 
@@ -554,16 +493,12 @@ exports.patch = async (req, res) => {
     if (!member) return res.status(404).json({ error: 'Member not found' });
 
     // Check access permissions
-    if (req.user.role === 'manager' && member.branchId.toString() !== req.user.branchId.toString()) {
-      return res.status(403).json({ error: 'Access denied: Not authorized to update this member' });
-    }
-
-    if (req.user.role === 'gym_owner' && member.gymId !== req.user.gymId) {
+    if (!canAccessMember(scopeUser, member)) {
       return res.status(403).json({ error: 'Access denied: Not authorized to update this member' });
     }
 
     // Additional validation for managers - prevent changing branch
-    if (req.user.role === 'manager' && req.body.branchId && req.body.branchId.toString() !== req.user.branchId.toString()) {
+    if ((scopeUser.role === 'manager' || scopeUser.role === 'staff') && req.body.branchId && toId(req.body.branchId) !== scopeUser.branchId) {
       return res.status(403).json({ error: 'Cannot change branch of member outside your branch' });
     }
 
@@ -592,16 +527,14 @@ exports.patch = async (req, res) => {
 
 exports.updateProfileImage = async (req, res) => {
   try {
-    const allowedRoles = ['gym_owner', 'manager'];
-    if (!allowedRoles.includes(req.user.role)) {
+    const allowedRoles = ['gym_owner', 'manager', 'staff'];
+    const scopeUser = await resolveScopeUser(req);
+    if (!ensureRoleAllowed(scopeUser, allowedRoles)) {
       return res.status(403).json({ error: "Access denied." });
     }
     const member = await Member.findById(req.params.id);
     if (!member) return res.status(404).json({ error: 'Member not found' });
-    if (req.user.role === 'manager' && member.branchId.toString() !== req.user.branchId.toString()) {
-      return res.status(403).json({ error: 'Access denied: Not authorized for this member' });
-    }
-    if (req.user.role === 'gym_owner' && member.gymId !== req.user.gymId) {
+    if (!canAccessMember(scopeUser, member)) {
       return res.status(403).json({ error: 'Access denied: Not authorized for this member' });
     }
     if (!req.file || !req.file.buffer) {
@@ -623,7 +556,8 @@ exports.remove = async (req, res) => {
   try {
     // Check authorization - only gym_owner, manager and staff can delete members
     const allowedRoles = ['gym_owner', 'manager', 'staff'];
-    if (!allowedRoles.includes(req.user.role)) {
+    const scopeUser = await resolveScopeUser(req);
+    if (!ensureRoleAllowed(scopeUser, allowedRoles)) {
       return res.status(403).json({ error: "Access denied. Only gym_owner, manager and staff can delete members. Managers cannot delete members." });
     }
 
@@ -631,11 +565,14 @@ exports.remove = async (req, res) => {
     if (!member) return res.status(404).json({ error: 'Member not found' });
 
     // Check access permissions - gym_owner can only delete members from their gym
-    if (member.gymId !== req.user.gymId) {
+    if (!canAccessMember(scopeUser, member)) {
       return res.status(403).json({ error: 'Access denied: Not authorized to delete this member' });
     }
 
-    await Member.findByIdAndDelete(req.params.id);
+    await Promise.all([
+      Member.findByIdAndDelete(req.params.id),
+      Details.findOneAndDelete({ memberId: req.params.id }),
+    ]);
     res.json({ message: 'Member deleted' });
   } catch (err) {
     res.status(400).json({ error: err.message });
@@ -646,12 +583,13 @@ exports.remove = async (req, res) => {
 exports.renew = async (req, res) => {
   try {
     const allowedRoles = ['gym_owner', 'manager'];
-    if (!allowedRoles.includes(req.user.role)) {
+    const scopeUser = await resolveScopeUser(req);
+    if (!ensureRoleAllowed(scopeUser, allowedRoles)) {
       return res.status(403).json({ error: 'Access denied. Only gym_owner or manager can renew memberships.' });
     }
 
     const memberId = req.params.id;
-    const { membership, planQuantity, paidAmount, membershipStartDate: startDateBody } = req.body;
+    const { membership, paidAmount, membershipStartDate: startDateBody } = req.body;
 
     const membershipTrimmed = membership ? String(membership).trim() : '';
     if (!membershipTrimmed) {
@@ -661,10 +599,7 @@ exports.renew = async (req, res) => {
     const member = await Member.findById(memberId);
     if (!member) return res.status(404).json({ error: 'Member not found' });
 
-    if (req.user.role === 'manager' && member.branchId.toString() !== req.user.branchId.toString()) {
-      return res.status(403).json({ error: 'Access denied: Not authorized for this member' });
-    }
-    if (req.user.role === 'gym_owner' && member.gymId !== req.user.gymId) {
+    if (!canAccessMember(scopeUser, member)) {
       return res.status(403).json({ error: 'Access denied: Not authorized for this member' });
     }
 
@@ -677,36 +612,24 @@ exports.renew = async (req, res) => {
       return res.status(400).json({ error: `Membership type '${membershipTrimmed}' not found` });
     }
 
-    const quantity = Math.max(1, parseInt(planQuantity, 10) || 1);
     const durationDays = priceDoc.duration || 30;
-    let periodStart;
+    let membershipStartDate;
     if (startDateBody) {
-      periodStart = new Date(startDateBody);
-      if (!Number.isNaN(periodStart.getTime())) {
-        periodStart.setHours(0, 0, 0, 0);
+      membershipStartDate = new Date(startDateBody);
+      if (!Number.isNaN(membershipStartDate.getTime())) {
+        membershipStartDate.setHours(0, 0, 0, 0);
       } else {
-        periodStart = new Date();
-        periodStart.setHours(0, 0, 0, 0);
+        membershipStartDate = new Date();
+        membershipStartDate.setHours(0, 0, 0, 0);
       }
     } else {
-      periodStart = new Date();
-      periodStart.setHours(0, 0, 0, 0);
+      membershipStartDate = new Date();
+      membershipStartDate.setHours(0, 0, 0, 0);
     }
-    const subscriptionPeriods = [];
-    let membershipStartDate = null;
-    let membershipEndDate = null;
-    for (let i = 0; i < quantity; i++) {
-      const periodEnd = new Date(periodStart);
-      periodEnd.setDate(periodEnd.getDate() + durationDays);
-      subscriptionPeriods.push({ startDate: new Date(periodStart), endDate: new Date(periodEnd) });
-      if (i === 0) {
-        membershipStartDate = new Date(periodStart);
-        membershipEndDate = new Date(periodEnd);
-      }
-      periodStart = new Date(periodEnd);
-    }
+    const membershipEndDate = new Date(membershipStartDate);
+    membershipEndDate.setDate(membershipEndDate.getDate() + durationDays);
 
-    const newTotal = priceDoc.price * quantity;
+    const newTotal = priceDoc.price;
     const paid = Math.max(0, Number(paidAmount) || 0);
 
     if (paid > newTotal) {
@@ -717,33 +640,23 @@ exports.renew = async (req, res) => {
       });
     }
 
-    let details = await Details.findOne({ memberId });
-    if (!details) {
-      details = new Details({
-        memberId,
-        membership: membershipTrimmed,
-        branchId: member.branchId,
-        totalAmount: newTotal,
-        paidAmount: paid,
-        membership_start_date: membershipStartDate,
-        membership_end_date: membershipEndDate,
-        planQuantity: quantity,
-        subscriptionPeriods,
-      });
-      await details.save();
-    } else {
-      details.membership = membershipTrimmed;
-      details.membership_start_date = membershipStartDate;
-      details.membership_end_date = membershipEndDate;
-      details.subscriptionPeriods = subscriptionPeriods;
-      details.planQuantity = quantity;
-      details.totalAmount = (details.totalAmount || 0) + newTotal;
-      details.paidAmount = (details.paidAmount || 0) + paid;
-      await details.save();
-    }
+    const applyRenewalWithoutSession = async () => {
+      details = await Details.findOne({ memberId });
+      if (!details) {
+        details = new Details({
+          memberId,
+          branchId: member.branchId,
+          totalAmount: newTotal,
+          paidAmount: paid,
+        });
+        await details.save();
+      } else {
+        details.totalAmount = (details.totalAmount || 0) + newTotal;
+        details.paidAmount = (details.paidAmount || 0) + paid;
+        await details.save();
+      }
 
-    if (paid > 0 && member.branchId) {
-      try {
+      if (paid > 0 && member.branchId) {
         const payment = new Payment({
           memberId: String(memberId),
           branchId: String(member.branchId),
@@ -754,21 +667,73 @@ exports.renew = async (req, res) => {
           paidAmount: paid,
         });
         await payment.save();
-      } catch (paymentErr) {
-        console.error('Failed to create renewal payment record:', paymentErr);
       }
-    }
 
-    // If start date is in the future (e.g. 2 days later), member is inactive until that date
-    const now = new Date();
-    const periodHasStarted = membershipStartDate && membershipStartDate <= now;
-    await Member.findByIdAndUpdate(memberId, {
-      'membership.type': membershipTrimmed,
-      'membership.startDate': membershipStartDate,
-      'membership.endDate': membershipEndDate,
-      'membership.isActive': !!periodHasStarted,
-      status: periodHasStarted ? 'active' : 'inactive',
-    });
+      const now = new Date();
+      const periodHasStarted = membershipStartDate <= now;
+      await Member.findByIdAndUpdate(memberId, {
+        'membership.type': membershipTrimmed,
+        'membership.startDate': membershipStartDate,
+        'membership.endDate': membershipEndDate,
+        'membership.isActive': !!periodHasStarted,
+        status: periodHasStarted ? 'active' : 'inactive',
+      });
+    };
+
+    let details;
+    const canUseTransactions = mongoose.connection && mongoose.connection.readyState === 1;
+    if (canUseTransactions) {
+      const session = await mongoose.startSession();
+      try {
+        await session.withTransaction(async () => {
+          details = await Details.findOne({ memberId }).session(session);
+          if (!details) {
+            details = new Details({
+              memberId,
+              branchId: member.branchId,
+              totalAmount: newTotal,
+              paidAmount: paid,
+            });
+            await details.save({ session });
+          } else {
+            details.totalAmount = (details.totalAmount || 0) + newTotal;
+            details.paidAmount = (details.paidAmount || 0) + paid;
+            await details.save({ session });
+          }
+
+          if (paid > 0 && member.branchId) {
+            const payment = new Payment({
+              memberId: String(memberId),
+              branchId: String(member.branchId),
+              name: `${member.firstName || ''} ${member.lastName || ''}`.trim() || 'Member',
+              detailsId: String(details._id),
+              membership: membershipTrimmed,
+              totalAmount: newTotal,
+              paidAmount: paid,
+            });
+            await payment.save({ session });
+          }
+
+          // If start date is in the future (e.g. 2 days later), member is inactive until that date
+          const now = new Date();
+          const periodHasStarted = membershipStartDate <= now;
+          await Member.findByIdAndUpdate(memberId, {
+            'membership.type': membershipTrimmed,
+            'membership.startDate': membershipStartDate,
+            'membership.endDate': membershipEndDate,
+            'membership.isActive': !!periodHasStarted,
+            status: periodHasStarted ? 'active' : 'inactive',
+          }, { session });
+        });
+      } catch (txnErr) {
+        if (!isTransactionUnsupported(txnErr)) throw txnErr;
+        await applyRenewalWithoutSession();
+      } finally {
+        await session.endSession();
+      }
+    } else {
+      await applyRenewalWithoutSession();
+    }
 
     res.status(200).json({
       success: true,

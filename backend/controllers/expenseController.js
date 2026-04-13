@@ -1,4 +1,5 @@
 const Expense = require('../models/expense');
+const Branch = require('../models/branch');
 
 function normalizeId(val) {
   if (val == null) return null;
@@ -84,6 +85,10 @@ exports.create = async (req, res) => {
     if (req.user.role === 'manager') {
       branchIdFinal = normalizeId(req.user.branchId) || req.user.branchId;
     } else if (req.user.role === 'gym_owner' && branchId) {
+      const allowedBranch = await Branch.findOne({ _id: branchId, gymId }).select('_id');
+      if (!allowedBranch) {
+        return res.status(403).json({ error: 'Access denied: branch not in your gym' });
+      }
       branchIdFinal = branchId;
     }
 

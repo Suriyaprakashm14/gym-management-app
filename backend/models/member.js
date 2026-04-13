@@ -1,6 +1,7 @@
 const mongoose = require("mongoose");
 const { v4: uuidv4 } = require("uuid");
 const bcrypt = require("bcrypt");
+const { todayMidnightIST, ninetyDaysAgoIST } = require('../utils/istTime');
 
 const memberSchema = new mongoose.Schema({
   _id: { type: String, default: uuidv4 },
@@ -65,7 +66,7 @@ const memberSchema = new mongoose.Schema({
   membership: {
     type: {
       type: String,
-      enum: ['basic', 'premium', 'vip'],
+      trim: true,
       default: 'basic'
     },
     startDate: {
@@ -91,7 +92,7 @@ const memberSchema = new mongoose.Schema({
   // Member status (inactive = expired ≤90 days; long term inactive = expired >90 days)
   status: {
     type: String,
-    enum: ['active', 'inactive', 'long term inactive', 'suspended', 'expired'],
+    enum: ['active', 'inactive', 'long term inactive', 'suspended'],
     default: 'active'
   },
   isActive: {
@@ -149,132 +150,58 @@ memberSchema.virtual('fullName').get(function() {
 
 // Virtual for membership status
 memberSchema.virtual('isMembershipActive').get(function() {
-  if (!this.membership.isActive) return false;
-  if (this.membership.endDate && this.membership.endDate < new Date()) return false;
-  return true;
+  if (!this.membership?.isActive) return false;
+  if (!this.membership?.startDate || !this.membership?.endDate) return false;
+  const today = todayMidnightIST();
+  const start = new Date(this.membership.startDate);
+  const end = new Date(this.membership.endDate);
+  return start <= today && end >= today;
 });
 
-// Static method to check and update expired memberships.
-// Uses the same subscriptionPeriods ordering as member flows (utils/subscriptionPeriods).
-// Skips suspended / already inactive members for revenue-critical safety.
+// Batch expiry sync using Member.membership as the only source of truth.
 memberSchema.statics.checkAndUpdateExpiredMemberships = async function() {
   try {
-    const { getCurrentPeriodForDate } = require('../utils/subscriptionPeriods');
-    const now = new Date();
-    const today = new Date(now);
-    today.setHours(0, 0, 0, 0);
-    const asOfLocalDate = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
-
-    const Details = require('./membersPersonalDetails');
-
-    const skipStatuses = new Set(['suspended', 'inactive', 'long term inactive']);
-
-    async function syncActiveWindow(memberId, periodStart, periodEnd) {
-      await Details.findOneAndUpdate(
-        { memberId },
-        { membership_start_date: periodStart, membership_end_date: periodEnd }
-      );
-      await this.findByIdAndUpdate(memberId, {
-        'membership.startDate': periodStart,
-        'membership.endDate': periodEnd,
-        'membership.isActive': true,
-        status: 'active',
-      });
-    }
-
-    /**
-     * If subscriptionPeriods says there is a current or upcoming paid window, sync docs; else queue inactive.
-     */
-    const considerDetailAndMember = async (detail, memberDoc) => {
-      if (!memberDoc || skipStatuses.has(memberDoc.status)) return { advanced: false, inactive: false };
-      if (memberDoc.role && memberDoc.role !== 'member') return { advanced: false, inactive: false };
-
-      const periods = detail.subscriptionPeriods;
-      if (Array.isArray(periods) && periods.length > 0) {
-        const cur = getCurrentPeriodForDate(periods, now);
-        if (cur && cur.isActive) {
-          await syncActiveWindow.call(this, detail.memberId, cur.periodStart, cur.periodEnd);
-          return { advanced: true, inactive: false };
-        }
-        if (cur && !cur.isActive && now < cur.periodStart) {
-          await syncActiveWindow.call(this, detail.memberId, cur.periodStart, cur.periodEnd);
-          return { advanced: true, inactive: false };
-        }
-      }
-      return { advanced: false, inactive: true };
-    };
-
-    let advancedCount = 0;
-    const toMarkInactiveSet = new Set();
-
-    const expiredPersonalDetails = await Details.find({
-      membership_end_date: { $lt: today },
-      membership: { $exists: true, $ne: null },
-    });
-
-    for (const detail of expiredPersonalDetails) {
-      const memberDoc = await this.findById(detail.memberId);
-      const { advanced, inactive } = await considerDetailAndMember.call(this, detail, memberDoc);
-      if (advanced) advancedCount++;
-      if (inactive && memberDoc && !skipStatuses.has(memberDoc.status)) {
-        toMarkInactiveSet.add(String(detail.memberId));
-      }
-    }
-
-    // Members whose Member record shows an expired end date but were not fixed above (no Details row, drift, etc.)
-    const memberOnlyExpired = await this.find({
-      role: 'member',
-      status: { $nin: ['inactive', 'long term inactive', 'suspended'] },
-      membership: { $exists: true },
-      'membership.isActive': true,
-      'membership.endDate': { $exists: true, $lt: today },
-    });
-
-    for (const memberDoc of memberOnlyExpired) {
-      const mid = String(memberDoc._id);
-      if (toMarkInactiveSet.has(mid)) continue;
-
-      const detail = await Details.findOne({ memberId: mid });
-      if (!detail || !detail.membership) {
-        toMarkInactiveSet.add(mid);
-        continue;
-      }
-
-      if (detail.membership_end_date && new Date(detail.membership_end_date) >= today) {
-        await this.findByIdAndUpdate(mid, {
-          'membership.startDate': detail.membership_start_date,
-          'membership.endDate': detail.membership_end_date,
-          'membership.isActive': true,
-        });
-        continue;
-      }
-
-      const { advanced, inactive } = await considerDetailAndMember.call(this, detail, memberDoc);
-      if (advanced) advancedCount++;
-      else if (inactive) toMarkInactiveSet.add(mid);
-    }
-
-    const toMarkInactive = Array.from(toMarkInactiveSet);
+    const today = todayMidnightIST();
+    const ninetyDaysAgo = ninetyDaysAgoIST();
+    const asOfLocalDate = today.toISOString().slice(0, 10);
 
     const expiredMembers = await this.find({
-      _id: { $in: toMarkInactive },
-      status: { $nin: ['inactive', 'long term inactive', 'suspended'] },
-    });
+      role: 'member',
+      status: { $nin: ['suspended', 'inactive', 'long term inactive'] },
+      'membership.isActive': true,
+      'membership.endDate': { $exists: true, $ne: null, $lt: today },
+    }).select('_id membership.endDate');
 
-    const ninetyDaysAgo = new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000);
+    const inactiveIds = [];
+    const longTermInactiveIds = [];
     for (const member of expiredMembers) {
-      const endDate = member.membership?.endDate ? new Date(member.membership.endDate) : null;
-      member.status = endDate && endDate < ninetyDaysAgo ? 'long term inactive' : 'inactive';
-      member.membership.isActive = false;
-      await member.save();
+      const endDate = member?.membership?.endDate ? new Date(member.membership.endDate) : null;
+      if (endDate && endDate < ninetyDaysAgo) {
+        longTermInactiveIds.push(member._id);
+      } else {
+        inactiveIds.push(member._id);
+      }
+    }
+
+    if (inactiveIds.length > 0) {
+      await this.updateMany(
+        { _id: { $in: inactiveIds } },
+        { $set: { 'membership.isActive': false, status: 'inactive' } }
+      );
+    }
+    if (longTermInactiveIds.length > 0) {
+      await this.updateMany(
+        { _id: { $in: longTermInactiveIds } },
+        { $set: { 'membership.isActive': false, status: 'long term inactive' } }
+      );
     }
 
     return {
       success: true,
       asOfLocalDate,
-      expiredCount: expiredMembers.length,
-      advancedCount,
-      message: `Advanced or repaired ${advancedCount} membership window(s); marked ${expiredMembers.length} member(s) inactive`,
+      inactiveCount: inactiveIds.length,
+      longTermInactiveCount: longTermInactiveIds.length,
+      message: `Marked ${inactiveIds.length} inactive and ${longTermInactiveIds.length} long term inactive`,
     };
   } catch (error) {
     console.error('Error checking expired memberships:', error);
@@ -337,11 +264,10 @@ memberSchema.statics.findActiveMembers = function() {
 
 memberSchema.statics.findExpiredMembers = function() {
   return this.find({
-    $or: [
-      { 'membership.isActive': false },
-      { 'membership.endDate': { $lt: new Date() } }
-    ]
+    status: { $in: ['inactive', 'long term inactive'] }
   });
 };
+
+memberSchema.index({ role: 1, status: 1, 'membership.endDate': 1 });
 
 module.exports = mongoose.model("Member", memberSchema);

@@ -8,13 +8,22 @@ jest.mock('../models/member', () => ({
   find: jest.fn(),
 }));
 
+jest.mock('../models/branch', () => ({
+  findOne: jest.fn(),
+}));
+
 const Attendance = require('../models/attendance');
 const Member = require('../models/member');
 const attendanceController = require('../controllers/attendanceController');
 
 describe('Attendance - report', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
   it('returns attendance summary with present and absent members', async () => {
     const req = {
+      user: { role: 'manager', gymId: 'gym-1', branchId: 'branch-1' },
       query: {
         period: 'day',
         date: '2026-02-24',
@@ -58,5 +67,54 @@ describe('Attendance - report', () => {
     expect(res.body.data.summary.totalMembers).toBe(2);
     expect(res.body.data.summary.presentCount).toBe(1);
     expect(res.body.data.summary.absentCount).toBe(1);
+    expect(Attendance.find).toHaveBeenCalledWith(
+      expect.objectContaining({
+        gymId: 'gym-1',
+        'location.branchId': 'branch-1',
+      })
+    );
+    expect(Member.find).toHaveBeenCalledWith(
+      expect.objectContaining({
+        gymId: 'gym-1',
+        branchId: 'branch-1',
+      })
+    );
+  });
+
+  it('uses gym-wide filter for gym owner without branch query', async () => {
+    const req = {
+      user: { role: 'gym_owner', gymId: 'gym-1' },
+      query: { period: 'day', date: '2026-02-24' },
+    };
+    const res = createMockRes();
+
+    Attendance.find.mockReturnValue({
+      populate: jest.fn().mockReturnValue({
+        populate: jest.fn().mockReturnValue({
+          sort: jest.fn().mockResolvedValue([]),
+        }),
+      }),
+    });
+    Member.find.mockReturnValue({
+      populate: jest.fn().mockReturnValue({
+        select: jest.fn().mockResolvedValue([]),
+      }),
+    });
+
+    await attendanceController.getAttendanceReport(req, res);
+
+    expect(res.body.success).toBe(true);
+    expect(Attendance.find).toHaveBeenCalledWith(
+      expect.objectContaining({
+        gymId: 'gym-1',
+      })
+    );
+    expect(Attendance.find.mock.calls[0][0]['location.branchId']).toBeUndefined();
+    expect(Member.find).toHaveBeenCalledWith(
+      expect.objectContaining({
+        gymId: 'gym-1',
+      })
+    );
+    expect(Member.find.mock.calls[0][0].branchId).toBeUndefined();
   });
 });

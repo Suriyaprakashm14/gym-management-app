@@ -27,8 +27,40 @@ function getEffectiveBranchId(req) {
   return null;
 }
 
+function getEffectiveGymId(req) {
+  const user = req.user;
+  if (!user) return null;
+  return user.gymId ? String(user.gymId) : null;
+}
+
+function hasMemberScopeAccess(req, member) {
+  if (!req.user || !member) return false;
+  const role = String(req.user.role || '');
+  const userGymId = req.user.gymId ? String(req.user.gymId) : null;
+  const userBranchId = req.user.branchId ? String(req.user.branchId) : null;
+  const memberGymId = member.gymId ? String(member.gymId) : null;
+  const memberBranchId = member.branchId ? String(member.branchId) : null;
+
+  if (role === 'gym_owner') {
+    return !!userGymId && !!memberGymId && userGymId === memberGymId;
+  }
+  if (role === 'manager' || role === 'staff') {
+    return !!userGymId && !!userBranchId && userGymId === memberGymId && userBranchId === memberBranchId;
+  }
+  return false;
+}
+
 // Multer middleware for image upload
-const upload = multer({ storage: multer.memoryStorage() });
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 5 * 1024 * 1024 },
+  fileFilter: (req, file, cb) => {
+    if (!file || !file.mimetype || !file.mimetype.startsWith('image/')) {
+      return cb(new Error('Only image uploads are allowed'));
+    }
+    return cb(null, true);
+  },
+});
 exports.uploadMiddleware = upload.single('image');
 
 exports.markAttendanceWithFace = async (req, res) => {
@@ -49,6 +81,9 @@ exports.markAttendanceWithFace = async (req, res) => {
         error: "Member not found",
         details: `No member found with ID: ${memberId}. Please check if the member exists and the ID format is correct.`
       });
+    }
+    if (!hasMemberScopeAccess(req, member)) {
+      return res.status(403).json({ error: 'Access denied for this member' });
     }
 
     if (!member.personId) {
@@ -181,6 +216,9 @@ exports.checkMemberReference = async (req, res) => {
         details: `No member found with ID: ${memberId}`
       });
     }
+    if (!hasMemberScopeAccess(req, member)) {
+      return res.status(403).json({ error: 'Access denied for this member' });
+    }
 
     const hasReferenceImage = !!member.personId;
     
@@ -282,6 +320,9 @@ exports.enrollMemberFace = async (req, res) => {
         details: `No member found with ID: ${memberId}`
       });
     }
+    if (!hasMemberScopeAccess(req, member)) {
+      return res.status(403).json({ error: 'Access denied for this member' });
+    }
 
     // Create form data for Luxand API
     const formData = new FormData();
@@ -355,7 +396,13 @@ exports.listAllMembers = async (req, res) => {
     return res.status(404).json({ success: false, error: "Not found" });
   }
   try {
-    const members = await Member.find({})
+    const query = {};
+    const effectiveGymId = getEffectiveGymId(req);
+    if (effectiveGymId) query.gymId = effectiveGymId;
+    const effectiveBranchId = getEffectiveBranchId(req);
+    if (effectiveBranchId) query.branchId = effectiveBranchId;
+
+    const members = await Member.find(query)
       .select('_id firstName lastName role')
       .limit(20); // Limit to first 20 members
     
@@ -371,7 +418,7 @@ exports.listAllMembers = async (req, res) => {
       success: true,
       message: `Found ${members.length} members (showing first 20)`,
       data: {
-        totalMembers: await Member.countDocuments(),
+        totalMembers: await Member.countDocuments(query),
         members: memberList
       }
     });
@@ -399,6 +446,9 @@ exports.markAttendanceDualAuth = async (req, res) => {
         error: "Member not found",
         details: `No member found with ID: ${memberId}. Please check if the member exists and the ID format is correct.`
       });
+    }
+    if (!hasMemberScopeAccess(req, member)) {
+      return res.status(403).json({ error: 'Access denied for this member' });
     }
 
     // Check if member has both authentication methods
@@ -572,6 +622,9 @@ exports.markAttendanceWithPhotoOnly = async (req, res) => {
         }
       });
     }
+    if (!hasMemberScopeAccess(req, member)) {
+      return res.status(403).json({ error: 'Access denied for this member' });
+    }
 
     // Validate membership using our comprehensive validation
     const membershipValidation = await checkMembershipStatus(member._id);
@@ -677,6 +730,14 @@ exports.checkMembershipStatus = async (req, res) => {
       });
     }
 
+    const scopedMember = await Member.findById(memberId).select('_id gymId branchId firstName lastName');
+    if (!scopedMember) {
+      return res.status(404).json({ error: 'Member not found' });
+    }
+    if (!hasMemberScopeAccess(req, scopedMember)) {
+      return res.status(403).json({ error: 'Access denied for this member' });
+    }
+
     const membershipValidation = await checkMembershipStatus(memberId);
     
     if (membershipValidation.isValid) {
@@ -712,6 +773,13 @@ exports.getAttendanceReport = async (req, res) => {
   try {
     const { period = 'day', branchId: queryBranchId, date } = req.query;
     const roleBranchId = getEffectiveBranchId(req);
+    const effectiveGymId = getEffectiveGymId(req);
+    if (req.user.role === 'gym_owner' && queryBranchId) {
+      const allowedBranch = await Branch.findOne({ _id: queryBranchId, gymId: req.user.gymId }).select('_id');
+      if (!allowedBranch) {
+        return res.status(403).json({ error: 'Access denied. Branch not in your gym.' });
+      }
+    }
     // For managers/staff, always scope to their own branch; gym_owner may optionally pass branchId
     const effectiveBranchId = roleBranchId || (queryBranchId || null);
     
@@ -751,6 +819,9 @@ exports.getAttendanceReport = async (req, res) => {
     const attendanceQuery = {
       attendanceDate: { $gte: startDate, $lte: endDate }
     };
+    if (effectiveGymId) {
+      attendanceQuery.gymId = effectiveGymId;
+    }
     
     if (effectiveBranchId) {
       attendanceQuery['location.branchId'] = effectiveBranchId;
@@ -765,7 +836,9 @@ exports.getAttendanceReport = async (req, res) => {
     debug(`Attendance report: ${attendanceRecords.length} records for period ${period}`);
 
     // Get all members for the branch (to identify absent members). Exclude upcoming and inactive from check-in list.
-    const memberQuery = effectiveBranchId ? { branchId: effectiveBranchId } : {};
+    const memberQuery = {};
+    if (effectiveGymId) memberQuery.gymId = effectiveGymId;
+    if (effectiveBranchId) memberQuery.branchId = effectiveBranchId;
     memberQuery.status = { $nin: ['inactive', 'long term inactive', 'upcoming'] };
     const allMembers = await Member.find(memberQuery)
       .populate('branchId', 'name')
@@ -910,6 +983,7 @@ exports.getAttendanceReport = async (req, res) => {
 exports.getWeeklyAttendanceReport = async (req, res) => {
   try {
     const { weekStart, branchId: queryBranchId } = req.query;
+    const effectiveGymId = getEffectiveGymId(req);
     
     let startDate, endDate;
     
@@ -938,8 +1012,17 @@ exports.getWeeklyAttendanceReport = async (req, res) => {
         $lte: endDate
       }
     };
+    if (effectiveGymId) {
+      query.gymId = effectiveGymId;
+    }
     
     const roleBranchId = getEffectiveBranchId(req);
+    if (req.user.role === 'gym_owner' && queryBranchId) {
+      const allowedBranch = await Branch.findOne({ _id: queryBranchId, gymId: req.user.gymId }).select('_id');
+      if (!allowedBranch) {
+        return res.status(403).json({ error: 'Access denied. Branch not in your gym.' });
+      }
+    }
     const effectiveBranchId = roleBranchId || (queryBranchId || null);
     
     // Add branch filter if specified
@@ -954,6 +1037,9 @@ exports.getWeeklyAttendanceReport = async (req, res) => {
     
     // Get all members for comparison
     let memberQuery = { role: 'member' };
+    if (effectiveGymId) {
+      memberQuery.gymId = effectiveGymId;
+    }
     if (effectiveBranchId) {
       memberQuery.branchId = effectiveBranchId;
     }

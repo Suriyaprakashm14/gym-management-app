@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-/** Must match backend `PORT` default (`backend/index.js` uses 5001 when PORT is unset). */
-const DEFAULT_LOCAL_API_PORT = '5001';
+/** Must match backend dev env (`backend/.env` currently uses PORT=5050). */
+const DEFAULT_LOCAL_API_PORT = '5050';
 const RAW_API_BASE = process.env.NEXT_PUBLIC_API_URL;
 // Backend mounts routes at /api (e.g. /api/auth/signup). Ensure base URL ends with /api.
 const ENV_API_BASE_URL =
@@ -11,22 +11,25 @@ const DEFAULT_API_TIMEOUT_MS = Number(process.env.NEXT_PUBLIC_API_TIMEOUT_MS || 
 const IS_DEV = process.env.NODE_ENV !== 'production';
 
 const resolveApiBaseUrls = (): string[] => {
-  if (ENV_API_BASE_URL) {
-    return [ENV_API_BASE_URL];
-  }
+  const envBase = ENV_API_BASE_URL ? [ENV_API_BASE_URL] : [];
 
   if (typeof window === 'undefined') {
-    return [`http://localhost:${DEFAULT_LOCAL_API_PORT}/api`];
+    // SSR/route handlers in dev should still default to local backend.
+    const localDefault = `http://localhost:${DEFAULT_LOCAL_API_PORT}/api`;
+    return IS_DEV ? Array.from(new Set([localDefault, ...envBase])) : (envBase.length ? envBase : [localDefault]);
   }
 
   const host = window.location.hostname || 'localhost';
-  const candidates = [
+  const localCandidates = [
     `http://${host}:${DEFAULT_LOCAL_API_PORT}/api`,
     `http://localhost:${DEFAULT_LOCAL_API_PORT}/api`,
     `http://127.0.0.1:${DEFAULT_LOCAL_API_PORT}/api`,
   ];
 
-  return Array.from(new Set(candidates));
+  // In development, prefer local backend first even if NEXT_PUBLIC_API_URL is stale.
+  // In production, keep explicit env URL as the primary target.
+  const prioritized = IS_DEV ? [...localCandidates, ...envBase] : [...envBase, ...localCandidates];
+  return Array.from(new Set(prioritized));
 };
 
 type ApiEnvelope<T = any> = {
@@ -525,12 +528,11 @@ export const api = {
         method: 'DELETE',
       }),
 
-    renew: (memberId: string, data: { membership: string; planQuantity?: number; paidAmount?: number }) =>
+    renew: (memberId: string, data: { membership: string; paidAmount?: number }) =>
       api.request(`/members/${memberId}/renew`, {
         method: 'POST',
         body: JSON.stringify({
           membership: data.membership,
-          planQuantity: data.planQuantity ?? 1,
           paidAmount: data.paidAmount ?? 0,
         }),
       }),
