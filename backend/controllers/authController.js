@@ -485,6 +485,12 @@ exports.resetPassword = async (req, res) => {
     }
 
     const normalizedResetEmail = String(email).toLowerCase().trim();
+    const tokenEmail = req.resetEmail ? String(req.resetEmail).toLowerCase().trim() : null;
+    if (tokenEmail && tokenEmail !== normalizedResetEmail) {
+      return res.status(403).json({
+        error: 'Reset token does not match the requested account',
+      });
+    }
 
     // Verify OTP
     try {
@@ -836,21 +842,48 @@ exports.signup = async (req, res) => {
       await gymOwner.save();
       userPersisted = true;
     } catch (saveErr) {
-      await Gym.findByIdAndDelete(gym._id).catch(() => {});
-      gymCreated = null;
-      if (isUserEmailDuplicateKey(saveErr)) {
-        return res.status(409).json({
-          error: 'EMAIL_ALREADY_REGISTERED',
-          message: 'An account with this email already exists. Try logging in instead.',
-        });
+      // Some older DBs still have a legacy non-sparse unique email index.
+      // For phone-only owners, that index causes false duplicate-email errors.
+      const isLegacyEmailIndexConflict = !normalizedOptionalEmail && isUserEmailDuplicateKey(saveErr);
+      if (isLegacyEmailIndexConflict) {
+        try {
+          await User.syncIndexes();
+          await gymOwner.save();
+          userPersisted = true;
+        } catch (retryErr) {
+          await Gym.findByIdAndDelete(gym._id).catch(() => {});
+          gymCreated = null;
+          if (isUserEmailDuplicateKey(retryErr)) {
+            return res.status(409).json({
+              error: 'EMAIL_ALREADY_REGISTERED',
+              message: 'An account with this email already exists. Try logging in instead.',
+            });
+          }
+          if (isUserPhoneDuplicateKey(retryErr)) {
+            return res.status(409).json({
+              error: 'PHONE_ALREADY_REGISTERED',
+              message: 'An account with this phone number already exists. Try logging in instead.',
+            });
+          }
+          throw retryErr;
+        }
+      } else {
+        await Gym.findByIdAndDelete(gym._id).catch(() => {});
+        gymCreated = null;
+        if (isUserEmailDuplicateKey(saveErr)) {
+          return res.status(409).json({
+            error: 'EMAIL_ALREADY_REGISTERED',
+            message: 'An account with this email already exists. Try logging in instead.',
+          });
+        }
+        if (isUserPhoneDuplicateKey(saveErr)) {
+          return res.status(409).json({
+            error: 'PHONE_ALREADY_REGISTERED',
+            message: 'An account with this phone number already exists. Try logging in instead.',
+          });
+        }
+        throw saveErr;
       }
-      if (isUserPhoneDuplicateKey(saveErr)) {
-        return res.status(409).json({
-          error: 'PHONE_ALREADY_REGISTERED',
-          message: 'An account with this phone number already exists. Try logging in instead.',
-        });
-      }
-      throw saveErr;
     }
 
     return res.status(201).json({
@@ -884,6 +917,16 @@ exports.createManager = async (req, res) => {
     const { email, password, firstName, lastName, gymId, branchId } = req.body;
     
     if (!email || !password || !firstName || !lastName || !gymId || !branchId) {
+    const requester = req.currentUser || req.user || {};
+    const requesterGymId = requester.gymId ? String(requester.gymId) : null;
+    const targetGymId = String(gymId);
+    if (!requesterGymId || requesterGymId !== targetGymId) {
+      return res.status(403).json({
+        error: 'Access denied',
+        message: 'You can create managers only for your own gym',
+      });
+    }
+
       return res.status(400).json({ 
         error: 'Missing required fields: email, password, firstName, lastName, gymId, branchId' 
       });
@@ -907,7 +950,7 @@ exports.createManager = async (req, res) => {
       });
     }
 
-    if (branch.gymId !== gymId) {
+    if (String(branch.gymId) !== targetGymId) {
       return res.status(400).json({ 
         error: 'Invalid branch',
         message: 'Branch does not belong to the specified gym'

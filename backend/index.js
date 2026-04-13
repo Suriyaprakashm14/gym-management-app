@@ -40,8 +40,12 @@ const expenseCategoryRoutes = require('./routes/expenseCategoryRoutes');
 const staffRoutes = require('./routes/staffRoutes');
 const userRoutes = require('./routes/userRoutes');
 
-const port = process.env.PORT || 5001;
+const port = process.env.PORT || 5050;
 const MONGODB_URI = getMongoUri();
+const MEMBERSHIP_EXPIRY_INTERVAL_MS = 4 * 60 * 60 * 1000;
+const MEMBERSHIP_EXPIRY_MIN_TRIGGER_INTERVAL_MS = Number(
+  process.env.MEMBERSHIP_EXPIRY_MIN_TRIGGER_INTERVAL_MS || 6 * 60 * 60 * 1000
+);
 
 
 
@@ -135,6 +139,13 @@ const authRateLimiter = rateLimit({
 });
 
 app.use('/api', globalRateLimiter);
+app.use('/api', (req, res, next) => {
+  const path = String(req.path || '').toLowerCase();
+  if (path !== '/health') {
+    triggerMembershipExpirySyncIfStale(`request:${req.method}:${path}`);
+  }
+  next();
+});
 
 
 
@@ -174,6 +185,8 @@ app.get('/api/health', (req, res) => {
 
 const Member = require('./models/member');
 const tokenBlacklist = require('./middleware/tokenBlacklist');
+let lastMembershipExpirySyncAt = 0;
+let membershipExpirySyncInFlight = false;
 
 async function checkExpiredMemberships() {
   try {
@@ -183,6 +196,7 @@ async function checkExpiredMemberships() {
     }
     console.log('Running membership expiry check (calendar-day sweep)...');
     const result = await Member.checkAndUpdateExpiredMemberships();
+    lastMembershipExpirySyncAt = Date.now();
     const day = result.asOfLocalDate ? ` as of local date ${result.asOfLocalDate}` : '';
     console.log(`Membership expiry check completed:${day}`, result.message);
   } catch (error) {
@@ -190,12 +204,28 @@ async function checkExpiredMemberships() {
   }
 }
 
+function triggerMembershipExpirySyncIfStale(reason) {
+  const now = Date.now();
+  const staleForMs = now - lastMembershipExpirySyncAt;
+  if (membershipExpirySyncInFlight) return;
+  if (staleForMs < MEMBERSHIP_EXPIRY_MIN_TRIGGER_INTERVAL_MS) return;
+
+  membershipExpirySyncInFlight = true;
+  Promise.resolve()
+    .then(async () => {
+      console.log(
+        `Triggering membership expiry sync (${reason}); last sync ${Math.floor(staleForMs / 1000)}s ago`
+      );
+      await checkExpiredMemberships();
+    })
+    .finally(() => {
+      membershipExpirySyncInFlight = false;
+    });
+}
+
 // 404 and error handling should be last in middleware chain
 app.use(notFoundHandler);
 app.use(errorHandler);
-
-// Runs once before accepting traffic (syncs expired vs current calendar day), then every 4h while up.
-const MEMBERSHIP_EXPIRY_INTERVAL_MS = 4 * 60 * 60 * 1000;
 
 async function startServer() {
   try {

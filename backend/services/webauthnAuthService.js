@@ -4,10 +4,15 @@ const {
   generateAuthenticationOptions,
   verifyAuthenticationResponse,
 } = require('@simplewebauthn/server');
+const {
+  getWebAuthnOrigin,
+  getWebAuthnRpId,
+  getWebAuthnRpName,
+} = require('../utils/webauthnConfig');
 
-const RP_ID = 'localhost';
-const EXPECTED_ORIGIN = 'http://localhost:3000';
-const RP_NAME = 'FitForge';
+const RP_ID = getWebAuthnRpId();
+const EXPECTED_ORIGIN = getWebAuthnOrigin();
+const RP_NAME = getWebAuthnRpName();
 const CHALLENGE_TTL_MS = 5 * 60 * 1000; // 5 minutes
 
 const SESSION_KEY = 'webauthnAuth';

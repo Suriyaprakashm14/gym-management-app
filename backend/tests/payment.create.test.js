@@ -47,13 +47,14 @@ describe('Payment - create', () => {
         firstName: 'John',
         lastName: 'Doe',
         branchId: 'branch-1',
+        membership: { type: 'monthly' },
       }),
     });
 
     const detailsDoc = {
       _id: 'details-1',
-      membership: 'monthly',
       paidAmount: 100,
+      totalAmount: 1000,
       save: jest.fn().mockResolvedValue(true),
     };
     Details.findOne.mockResolvedValue(detailsDoc);

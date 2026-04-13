@@ -16,6 +16,7 @@ function mapErrorToStatus(err) {
   const c = String(err?.code || '');
   if (c === 'MEMBER_NOT_FOUND') return 404;
   if (c === 'BAD_CHALLENGE') return 400;
+  if (c === 'FORBIDDEN_MEMBER_SCOPE') return 403;
   if (c === 'AUTH_FAILED' || c === 'CREDENTIAL_NOT_FOUND') return 401;
   return 500;
 }

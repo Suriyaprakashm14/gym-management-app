@@ -18,10 +18,11 @@ exports.create = async (req, res) => {
       });
     }
 
-    // For gym owners, add gymId to the membership price
-    if (req.user.role === 'gym_owner' && req.user.gymId) {
-      req.body.gymId = req.user.gymId;
+    // Enforce gym scope for both owners and managers
+    if (!req.user.gymId) {
+      return res.status(400).json({ error: 'Gym context required' });
     }
+    req.body.gymId = req.user.gymId;
 
     // Check if price already exists for this gym and type
     const existingPrice = await MembershipPrice.findOne({ 
@@ -56,28 +57,23 @@ exports.getAll = async (req, res) => {
       return res.status(403).json({ error: "Access denied. Only gym_owner or manager can view membership prices." });
     }
 
-    let filter = {};
-
-    // Gym owners can only see prices from their gym
-    if (req.user.role === 'gym_owner' && req.user.gymId) {
-      filter.gymId = req.user.gymId;
+    if (!req.user.gymId) {
+      return res.status(400).json({ error: 'Gym context required' });
     }
-
-    // Managers can only see prices from their gym (via gymId from branch)
-    if (req.user.role === 'manager' && req.user.gymId) {
-      filter.gymId = req.user.gymId;
-    }
+    const filter = { gymId: req.user.gymId };
 
     // Gym owners and managers see only their gym's prices (filter applied)
     const prices = await MembershipPrice.find(filter).lean();
     const now = new Date();
     const pricesWithCount = await Promise.all(
       prices.map(async (p) => {
-        const gymMemberIds = await Member.find({ gymId: p.gymId }).distinct('_id');
-        const activeCount = await Details.countDocuments({
-          memberId: { $in: gymMemberIds.map((id) => id.toString()) },
-          membership: p.type,
-          membership_end_date: { $gt: now },
+        const activeCount = await Member.countDocuments({
+          gymId: p.gymId,
+          role: 'member',
+          status: 'active',
+          'membership.isActive': true,
+          'membership.type': p.type,
+          'membership.endDate': { $gt: now },
         });
         return { ...p, activeCount };
       })
@@ -100,11 +96,7 @@ exports.getOne = async (req, res) => {
     if (!price) return res.status(404).json({ error: 'Membership Price not found' });
 
     // Check access permissions
-    if (req.user.role === 'gym_owner' && price.gymId !== req.user.gymId) {
-      return res.status(403).json({ error: 'Access denied: Not authorized to view this membership price' });
-    }
-
-    if (req.user.role === 'manager' && price.gymId !== req.user.gymId) {
+    if (String(price.gymId) !== String(req.user.gymId)) {
       return res.status(403).json({ error: 'Access denied: Not authorized to view this membership price' });
     }
 
@@ -126,7 +118,7 @@ exports.update = async (req, res) => {
     if (!price) return res.status(404).json({ error: 'Membership Price not found' });
 
     // Check access permissions - gym owners can only update their own gym's prices
-    if (req.user.role === 'gym_owner' && price.gymId !== req.user.gymId) {
+    if (String(price.gymId) !== String(req.user.gymId)) {
       return res.status(403).json({ error: 'Access denied: Not authorized to update this membership price' });
     }
 
@@ -149,7 +141,7 @@ exports.remove = async (req, res) => {
     if (!price) return res.status(404).json({ error: 'Membership Price not found' });
 
     // Check access permissions - gym owners can only delete their own gym's prices
-    if (req.user.role === 'gym_owner' && price.gymId !== req.user.gymId) {
+    if (String(price.gymId) !== String(req.user.gymId)) {
       return res.status(403).json({ error: 'Access denied: Not authorized to delete this membership price' });
     }
 
@@ -162,11 +154,13 @@ exports.remove = async (req, res) => {
     }
 
     // Block delete if any active users are assigned to this plan (subscription not yet expired)
-    const gymMemberIds = await Member.find({ gymId: price.gymId }).distinct('_id');
-    const activeCount = await Details.countDocuments({
-      memberId: { $in: gymMemberIds.map((id) => id.toString()) },
-      membership: price.type,
-      membership_end_date: { $gt: new Date() },
+    const activeCount = await Member.countDocuments({
+      gymId: price.gymId,
+      role: 'member',
+      status: 'active',
+      'membership.isActive': true,
+      'membership.type': price.type,
+      'membership.endDate': { $gt: new Date() },
     });
     if (activeCount > 0) {
       return res.status(400).json({

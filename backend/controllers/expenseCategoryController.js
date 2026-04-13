@@ -3,9 +3,10 @@ const ExpenseCategory = require('../models/expenseCategory');
 const allowedRoles = ['gym_owner', 'manager'];
 
 function getGymFilter(req) {
-  if (req.user.role === 'gym_owner' && req.user.gymId) return { gymId: req.user.gymId };
-  if (req.user.role === 'manager' && req.user.gymId) return { gymId: req.user.gymId };
-  return {};
+  if ((req.user.role === 'gym_owner' || req.user.role === 'manager') && req.user.gymId) {
+    return { gymId: req.user.gymId };
+  }
+  return null;
 }
 
 exports.list = async (req, res) => {
@@ -14,6 +15,7 @@ exports.list = async (req, res) => {
       return res.status(403).json({ error: 'Access denied' });
     }
     const filter = getGymFilter(req);
+    if (!filter) return res.status(400).json({ error: 'Gym context required' });
     const categories = await ExpenseCategory.find(filter).sort({ name: 1 }).lean();
     res.json(categories);
   } catch (err) {
@@ -54,7 +56,7 @@ exports.update = async (req, res) => {
     }
     const category = await ExpenseCategory.findById(req.params.id);
     if (!category) return res.status(404).json({ error: 'Category not found' });
-    if (category.gymId !== req.user.gymId) {
+    if (String(category.gymId) !== String(req.user.gymId)) {
       return res.status(403).json({ error: 'Not authorized for this category' });
     }
     const name = (req.body.name || '').trim();
@@ -74,7 +76,7 @@ exports.delete = async (req, res) => {
     }
     const category = await ExpenseCategory.findById(req.params.id);
     if (!category) return res.status(404).json({ error: 'Category not found' });
-    if (category.gymId !== req.user.gymId) {
+    if (String(category.gymId) !== String(req.user.gymId)) {
       return res.status(403).json({ error: 'Not authorized for this category' });
     }
     await ExpenseCategory.findByIdAndDelete(req.params.id);

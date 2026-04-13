@@ -81,10 +81,7 @@ async function buildMemberViewModels(members) {
         : null;
 
     // Membership info
-    const membershipType =
-      details?.membership ||
-      m.membership?.type ||
-      null;
+    const membershipType = m.membership?.type || null;
 
     // Last visit: prefer personal details.last_visit, then latest attendance
     const lastVisitRaw =
@@ -109,7 +106,7 @@ async function buildMemberViewModels(members) {
       if (totalPaid >= totalAmount) {
         billingStatus = 'paid';
       } else {
-        const membershipEnd = details?.membership_end_date || m.membership?.endDate;
+        const membershipEnd = m.membership?.endDate;
         if (membershipEnd && new Date(membershipEnd) < now) {
           billingStatus = 'overdue';
         } else {

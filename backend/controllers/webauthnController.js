@@ -43,6 +43,21 @@ function consumeChallenge(challengeId) {
   return entry;
 }
 
+function canAccessMember(req, member) {
+  const user = req?.currentUser || req?.user;
+  if (!user || !member) return false;
+  const role = String(user.role || '');
+  const userGymId = user.gymId ? String(user.gymId) : null;
+  const userBranchId = user.branchId ? String(user.branchId) : null;
+  const memberGymId = member.gymId ? String(member.gymId) : null;
+  const memberBranchId = member.branchId ? String(member.branchId) : null;
+  if (role === 'gym_owner') return !!userGymId && userGymId === memberGymId;
+  if (role === 'manager' || role === 'staff') {
+    return !!userGymId && !!userBranchId && userGymId === memberGymId && userBranchId === memberBranchId;
+  }
+  return false;
+}
+
 function issueAttendanceToken(memberId) {
   const token = randomId(24);
   ATTENDANCE_TOKENS.set(token, {
@@ -70,6 +85,9 @@ async function registerStart(req, res) {
     const member = await Member.findById(memberId);
     if (!member) {
       return res.status(404).json({ success: false, message: 'Member not found' });
+    }
+    if (!canAccessMember(req, member)) {
+      return res.status(403).json({ success: false, message: 'Access denied for this member' });
     }
 
     const existingCreds = await MemberWebAuthnCredential.find({ memberId: member._id });
@@ -108,8 +126,16 @@ async function registerVerify(req, res) {
     }
 
     const ch = consumeChallenge(challengeId);
-    if (!ch || ch.memberId !== memberId) {
+    if (!ch || String(ch.memberId) !== String(memberId)) {
       return res.status(400).json({ success: false, message: 'Invalid or expired challenge' });
+    }
+
+    const member = await Member.findById(memberId).select('_id gymId branchId');
+    if (!member) {
+      return res.status(404).json({ success: false, message: 'Member not found' });
+    }
+    if (!canAccessMember(req, member)) {
+      return res.status(403).json({ success: false, message: 'Access denied for this member' });
     }
 
     const verification = await verifyRegistrationResponse({

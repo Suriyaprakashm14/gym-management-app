@@ -1,4 +1,92 @@
 const Member = require('../models/member');
+const { todayMidnightIST } = require('../utils/istTime');
+
+function validateMemberAccess(member) {
+  if (!member) {
+    return { isValid: false, status: 404, error: 'Member not found', message: 'The specified member does not exist' };
+  }
+  if (!member.isActive) {
+    return {
+      isValid: false,
+      status: 403,
+      error: 'Member inactive',
+      message: 'Your account is inactive. Please contact your gym owner or manager.',
+      data: { memberId: member._id, memberName: `${member.firstName} ${member.lastName}`, status: member.status },
+    };
+  }
+  if (member.status === 'suspended') {
+    return {
+      isValid: false,
+      status: 403,
+      error: 'Membership suspended',
+      message: 'Your membership is suspended. Please contact the gym.',
+      data: { memberId: member._id, memberName: `${member.firstName} ${member.lastName}`, status: member.status },
+    };
+  }
+  if (!member.membership || !member.membership.startDate || !member.membership.endDate) {
+    return {
+      isValid: false,
+      status: 403,
+      error: 'No active membership',
+      message: 'You do not have an active membership plan. Please renew your membership.',
+      data: { memberId: member._id, memberName: `${member.firstName} ${member.lastName}`, membershipStatus: 'none' },
+    };
+  }
+  if (!member.membership.isActive) {
+    return {
+      isValid: false,
+      status: 403,
+      error: 'Membership inactive',
+      message: 'Your membership is inactive. Please renew your membership.',
+      data: {
+        memberId: member._id,
+        memberName: `${member.firstName} ${member.lastName}`,
+        membershipStatus: 'inactive',
+        membershipType: member.membership.type,
+        membershipStartDate: member.membership.startDate,
+        membershipEndDate: member.membership.endDate,
+      },
+    };
+  }
+
+  const today = todayMidnightIST();
+  const startDate = new Date(member.membership.startDate);
+  const endDate = new Date(member.membership.endDate);
+  if (startDate > today) {
+    return {
+      isValid: false,
+      status: 400,
+      error: 'Membership not started',
+      message: 'Membership not started yet',
+      data: {
+        memberId: member._id,
+        memberName: `${member.firstName} ${member.lastName}`,
+        membershipStatus: 'upcoming',
+        membershipStartDate: member.membership.startDate,
+        membershipEndDate: member.membership.endDate,
+      },
+    };
+  }
+  if (endDate < today) {
+    return {
+      isValid: false,
+      status: 403,
+      error: 'Membership expired',
+      message: 'Your membership has expired. Please renew your membership to access the gym.',
+      data: {
+        memberId: member._id,
+        memberName: `${member.firstName} ${member.lastName}`,
+        membershipStatus: 'expired',
+        membershipType: member.membership.type,
+        membershipStartDate: member.membership.startDate,
+        membershipEndDate: member.membership.endDate,
+        expiredOn: member.membership.endDate,
+      },
+    };
+  }
+
+  return { isValid: true, member };
+}
 
 /**
  * Middleware to validate if a member has an active membership
@@ -25,78 +113,9 @@ const validateMembership = async (req, res, next) => {
       });
     }
 
-    // Check if member is active
-    if (!member.isActive) {
-      return res.status(403).json({
-        error: 'Member inactive',
-        message: 'Your account is inactive. Please contact your gym owner or manager.',
-        data: {
-          memberId: member._id,
-          memberName: `${member.firstName} ${member.lastName}`,
-          status: member.status
-        }
-      });
-    }
-
-    // Check if member has a membership
-    if (!member.membership) {
-      return res.status(403).json({
-        error: 'No membership found',
-        message: 'You do not have any membership plan. Please choose a membership plan to access the gym.',
-        data: {
-          memberId: member._id,
-          memberName: `${member.firstName} ${member.lastName}`,
-          membershipStatus: 'none'
-        }
-      });
-    }
-
-    // Check if membership is active
-    if (!member.membership.isActive) {
-      return res.status(403).json({
-        error: 'Membership inactive',
-        message: 'Your membership is inactive. Please contact the gym to reactivate your membership.',
-        data: {
-          memberId: member._id,
-          memberName: `${member.firstName} ${member.lastName}`,
-          membershipStatus: 'inactive',
-          membershipType: member.membership.type,
-          membershipStartDate: member.membership.startDate,
-          membershipEndDate: member.membership.endDate
-        }
-      });
-    }
-
-    // Check if membership has not started yet
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const startDate = member.membership.startDate ? new Date(member.membership.startDate) : null;
-    if (startDate) {
-      startDate.setHours(0, 0, 0, 0);
-      if (today < startDate) {
-        return res.status(400).json({
-          success: false,
-          error: 'Membership not started',
-          message: 'Membership not started yet'
-        });
-      }
-    }
-
-    // Check if membership has expired
-    if (member.membership.endDate && member.membership.endDate < new Date()) {
-      return res.status(403).json({
-        error: 'Membership expired',
-        message: 'Your membership has expired. Please renew your membership to access the gym.',
-        data: {
-          memberId: member._id,
-          memberName: `${member.firstName} ${member.lastName}`,
-          membershipStatus: 'expired',
-          membershipType: member.membership.type,
-          membershipStartDate: member.membership.startDate,
-          membershipEndDate: member.membership.endDate,
-          expiredOn: member.membership.endDate
-        }
-      });
+    const membershipResult = validateMemberAccess(member);
+    if (!membershipResult.isValid) {
+      return res.status(membershipResult.status || 403).json(membershipResult);
     }
 
     // Check if member's gym is frozen
@@ -144,78 +163,9 @@ const validateMembershipForFaceRecognition = async (req, res, next) => {
       });
     }
 
-    // Check if member is active
-    if (!member.isActive) {
-      return res.status(403).json({
-        error: 'Member inactive',
-        message: 'Your account is inactive. Please contact your gym owner or manager.',
-        data: {
-          memberId: member._id,
-          memberName: `${member.firstName} ${member.lastName}`,
-          status: member.status
-        }
-      });
-    }
-
-    // Check if member has a membership
-    if (!member.membership) {
-      return res.status(403).json({
-        error: 'No membership found',
-        message: 'You do not have any membership plan. Please choose a membership plan to access the gym.',
-        data: {
-          memberId: member._id,
-          memberName: `${member.firstName} ${member.lastName}`,
-          membershipStatus: 'none'
-        }
-      });
-    }
-
-    // Check if membership is active
-    if (!member.membership.isActive) {
-      return res.status(403).json({
-        error: 'Membership inactive',
-        message: 'Your membership is inactive. Please contact the gym to reactivate your membership.',
-        data: {
-          memberId: member._id,
-          memberName: `${member.firstName} ${member.lastName}`,
-          membershipStatus: 'inactive',
-          membershipType: member.membership.type,
-          membershipStartDate: member.membership.startDate,
-          membershipEndDate: member.membership.endDate
-        }
-      });
-    }
-
-    // Check if membership has not started yet
-    const todayForFace = new Date();
-    todayForFace.setHours(0, 0, 0, 0);
-    const startDateFace = member.membership.startDate ? new Date(member.membership.startDate) : null;
-    if (startDateFace) {
-      startDateFace.setHours(0, 0, 0, 0);
-      if (todayForFace < startDateFace) {
-        return res.status(400).json({
-          success: false,
-          error: 'Membership not started',
-          message: 'Membership not started yet'
-        });
-      }
-    }
-
-    // Check if membership has expired
-    if (member.membership.endDate && member.membership.endDate < new Date()) {
-      return res.status(403).json({
-        error: 'Membership expired',
-        message: 'Your membership has expired. Please renew your membership to access the gym.',
-        data: {
-          memberId: member._id,
-          memberName: `${member.firstName} ${member.lastName}`,
-          membershipStatus: 'expired',
-          membershipType: member.membership.type,
-          membershipStartDate: member.membership.startDate,
-          membershipEndDate: member.membership.endDate,
-          expiredOn: member.membership.endDate
-        }
-      });
+    const membershipResult = validateMemberAccess(member);
+    if (!membershipResult.isValid) {
+      return res.status(membershipResult.status || 403).json(membershipResult);
     }
 
     // Check if member's gym is frozen
@@ -252,93 +202,8 @@ const checkMembershipStatus = async (memberId) => {
   try {
     const member = await Member.findById(memberId);
     
-    if (!member) {
-      return {
-        isValid: false,
-        error: 'Member not found',
-        message: 'The specified member does not exist'
-      };
-    }
-
-    if (!member.isActive) {
-      return {
-        isValid: false,
-        error: 'Member inactive',
-        message: 'Your account is inactive. Please contact your gym owner or manager.',
-        data: {
-          memberId: member._id,
-          memberName: `${member.firstName} ${member.lastName}`,
-          status: member.status
-        }
-      };
-    }
-
-    if (!member.membership) {
-      return {
-        isValid: false,
-        error: 'No membership found',
-        message: 'You do not have any membership plan. Please choose a membership plan to access the gym.',
-        data: {
-          memberId: member._id,
-          memberName: `${member.firstName} ${member.lastName}`,
-          membershipStatus: 'none'
-        }
-      };
-    }
-
-    if (!member.membership.isActive) {
-      return {
-        isValid: false,
-        error: 'Membership inactive',
-        message: 'Your membership is inactive. Please contact the gym to reactivate your membership.',
-        data: {
-          memberId: member._id,
-          memberName: `${member.firstName} ${member.lastName}`,
-          membershipStatus: 'inactive',
-          membershipType: member.membership.type,
-          membershipStartDate: member.membership.startDate,
-          membershipEndDate: member.membership.endDate
-        }
-      };
-    }
-
-    const todayCheck = new Date();
-    todayCheck.setHours(0, 0, 0, 0);
-    const startDateCheck = member.membership.startDate ? new Date(member.membership.startDate) : null;
-    if (startDateCheck) {
-      startDateCheck.setHours(0, 0, 0, 0);
-      if (todayCheck < startDateCheck) {
-        return {
-          isValid: false,
-          error: 'Membership not started',
-          message: 'Membership not started yet',
-          data: {
-            memberId: member._id,
-            memberName: `${member.firstName} ${member.lastName}`,
-            membershipStatus: 'upcoming',
-            membershipStartDate: member.membership.startDate,
-            membershipEndDate: member.membership.endDate
-          }
-        };
-      }
-    }
-
-    if (member.membership.endDate && member.membership.endDate < new Date()) {
-      return {
-        isValid: false,
-        error: 'Membership expired',
-        message: 'Your membership has expired. Please renew your membership to access the gym.',
-        data: {
-          memberId: member._id,
-          memberName: `${member.firstName} ${member.lastName}`,
-          membershipStatus: 'expired',
-          membershipType: member.membership.type,
-          membershipStartDate: member.membership.startDate,
-          membershipEndDate: member.membership.endDate,
-          expiredOn: member.membership.endDate
-        }
-      };
-    }
+    const membershipResult = validateMemberAccess(member);
+    if (!membershipResult.isValid) return membershipResult;
 
     const isGymFrozen = await member.isFrozen();
     if (isGymFrozen) {
@@ -370,6 +235,7 @@ const checkMembershipStatus = async (memberId) => {
 };
 
 module.exports = {
+  validateMemberAccess,
   validateMembership,
   validateMembershipForFaceRecognition,
   checkMembershipStatus
