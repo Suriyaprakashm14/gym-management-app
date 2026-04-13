@@ -116,6 +116,9 @@ export default function BranchesContent() {
         };
       });
       setBranches(branchesData);
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new Event('branches:changed'));
+      }
     } catch (err) {
       message.error('Failed to load branches. Please try again.');
       setBranches([]);

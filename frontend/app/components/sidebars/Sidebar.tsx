@@ -99,6 +99,11 @@ const Sidebar: React.FC<SidebarProps> = ({ collapsed, onCollapse }) => {
         }
 
         setBranches(mapped);
+        // If previously selected branch is no longer available, fall back to Overall
+        // to avoid showing empty member/staff lists with a stale branch filter.
+        if (selectedBranch && !mapped.some((b) => String(b._id) === String(selectedBranch))) {
+          setSelectedBranch(null);
+        }
       } catch {
         if (!cancelled) {
           setBranches([]);
@@ -110,10 +115,22 @@ const Sidebar: React.FC<SidebarProps> = ({ collapsed, onCollapse }) => {
       }
     };
     fetchBranches();
+
+    // Keep branch dropdown in sync right after branch create/update/delete.
+    const handleBranchesChanged = () => {
+      fetchBranches();
+    };
+    if (typeof window !== 'undefined') {
+      window.addEventListener('branches:changed', handleBranchesChanged);
+    }
+
     return () => {
       cancelled = true;
+      if (typeof window !== 'undefined') {
+        window.removeEventListener('branches:changed', handleBranchesChanged);
+      }
     };
-  }, [isGymOwner, currentUser.gymId]);
+  }, [isGymOwner, currentUser.gymId, selectedBranch, setSelectedBranch]);
 
   const baseDashboardItem = {
     key: '/dashboard',

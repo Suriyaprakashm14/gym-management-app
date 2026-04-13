@@ -82,6 +82,16 @@ export default function SignupPage() {
     });
   };
 
+  const assertSignupSucceeded = (response: any) => {
+    if (!response || response.success === false) {
+      const msg =
+        (typeof response?.error === 'string' && response.error) ||
+        (typeof response?.message === 'string' && response.message) ||
+        'Signup failed. Please try again.';
+      throw new Error(msg);
+    }
+  };
+
   const handleGymFinish = async (values: GymSetupFormValues, logoFile: File | null) => {
     setLoading(true);
     setErrorMessage('');
@@ -89,7 +99,7 @@ export default function SignupPage() {
       const gymIcon =
         logoFile ? await fileToDataUrl(logoFile) : (formData.gymLogo ?? undefined);
       const gymName = (values.gymName ?? '').trim() || 'My Gym';
-      await submitSignup({
+      const response = await submitSignup({
         firstName: formData.firstName,
         lastName: formData.lastName,
         phone: formData.phone,
@@ -98,6 +108,7 @@ export default function SignupPage() {
         gymName,
         gymIcon,
       });
+      assertSignupSucceeded(response);
       message.success('Account created! Please log in.');
       router.push('/login?signedup=1');
     } catch (error: unknown) {
@@ -115,7 +126,7 @@ export default function SignupPage() {
     setLoading(true);
     setErrorMessage('');
     try {
-      await submitSignup({
+      const response = await submitSignup({
         firstName: formData.firstName,
         lastName: formData.lastName,
         phone: formData.phone,
@@ -123,6 +134,7 @@ export default function SignupPage() {
         password: formData.password,
         gymName: 'My Gym',
       });
+      assertSignupSucceeded(response);
       message.success('Account created! Please log in.');
       router.push('/login?signedup=1');
     } catch (error: unknown) {

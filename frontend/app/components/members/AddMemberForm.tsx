@@ -20,6 +20,7 @@ import dayjs from 'dayjs';
 import {
   UploadOutlined,
   HomeOutlined,
+  PhoneOutlined,
   PlusOutlined,
   MinusCircleOutlined,
   CheckOutlined,
@@ -28,10 +29,9 @@ import {
 import { useAuth } from '../../contexts/AuthContext';
 import { api } from '../../utils/api';
 import {
-  emailRule,
-  emailPatternRule,
   mobileRequiredRule,
-  dobValidator,
+  mobilePatternRule,
+  normalizeIndianMobileDigits,
   sanitizeIndianMobileDigits,
   indianMobileTenDigitsRule,
   blockNonDigitKeysOnPhoneField,
@@ -221,7 +221,6 @@ export default function AddMemberForm({ visible = true, onSuccess, onCancel }: A
             ? new Date(values.dateOfBirth).toISOString().split('T')[0]
             : '',
           membership: values.membership ? String(values.membership).trim() : '',
-          planQuantity: values.planQuantity ?? 1,
           paidAmount: values.paidAmount ? String(values.paidAmount) : '0',
           membershipStartDate: values.membershipStartDate
             ? (values.membershipStartDate instanceof Date
@@ -303,7 +302,7 @@ export default function AddMemberForm({ visible = true, onSuccess, onCancel }: A
 
   const handleFaceCaptured = async (blob: Blob) => {
     try {
-      await form.validateFields(['firstName', 'lastName', 'email', 'branchId']);
+      await form.validateFields(['firstName', 'lastName', 'phoneNumber', 'branchId']);
       setFaceScanning(true);
       const result = await api.biometrics.createFacePerson(blob);
       if (result && typeof result === 'object' && (result as { success?: boolean }).success === false) {
@@ -518,23 +517,7 @@ export default function AddMemberForm({ visible = true, onSuccess, onCancel }: A
               />
             </Form.Item>
           </Col>
-          <Col span={10}>
-            <Form.Item
-              label="Quantity (periods)"
-              name="planQuantity"
-              initialValue={1}
-              tooltip="Consecutive periods; after one ends, the next starts automatically."
-              rules={[
-                { type: 'number', min: 1, max: 12, message: 'Between 1 and 12' },
-              ]}
-            >
-              <InputNumber
-                style={{ width: '100%' }}
-                min={1}
-                max={12}
-              />
-            </Form.Item>
-          </Col>
+          <Col span={10} />
         </Row>
         <Form.Item
           label="Start date"
@@ -546,17 +529,14 @@ export default function AddMemberForm({ visible = true, onSuccess, onCancel }: A
         </Form.Item>
         <Form.Item
           noStyle
-          shouldUpdate={(prev, curr) =>
-            prev.membership !== curr.membership || prev.planQuantity !== curr.planQuantity
-          }
+          shouldUpdate={(prev, curr) => prev.membership !== curr.membership}
         >
           {() => {
             const plan = membershipTypes.find(
               (m: any) => m.type === form.getFieldValue('membership')
             );
-            const qty = form.getFieldValue('planQuantity') || 1;
             const maxAmount =
-              plan && typeof plan.price === 'number' ? plan.price * qty : null;
+              plan && typeof plan.price === 'number' ? plan.price : null;
             return maxAmount != null ? (
               <div style={{ marginBottom: 12 }}>
                 <Text type="secondary">Maximum amount for selected plan: </Text>
@@ -577,11 +557,10 @@ export default function AddMemberForm({ visible = true, onSuccess, onCancel }: A
                   return Promise.resolve();
                 }
                 const selectedType = form.getFieldValue('membership');
-                const quantity = form.getFieldValue('planQuantity') || 1;
                 if (!selectedType) return Promise.resolve();
                 const plan = membershipTypes.find((m: any) => m.type === selectedType);
                 if (!plan || typeof plan.price !== 'number') return Promise.resolve();
-                const maxAmount = plan.price * quantity;
+                const maxAmount = plan.price;
                 if (value > maxAmount) {
                   return Promise.reject(
                     new Error(`Cannot exceed maximum (₹${maxAmount.toLocaleString('en-IN')})`),

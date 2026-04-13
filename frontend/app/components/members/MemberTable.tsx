@@ -111,15 +111,12 @@ const MemberTable: React.FC = () => {
   const [renewLoading, setRenewLoading] = useState(false);
   const [membershipTypes, setMembershipTypes] = useState<Array<{ id: string; type: string; price: number; duration: number }>>([]);
   const [renewForm] = Form.useForm();
-  const watchedRenewPlan = Form.useWatch(['membership', 'planQuantity'], renewForm);
-  const renewPlanType = Array.isArray(watchedRenewPlan) ? watchedRenewPlan[0] : undefined;
-  const renewPlanQty = Array.isArray(watchedRenewPlan) ? watchedRenewPlan[1] : (watchedRenewPlan as number | undefined);
+  const renewPlanType = Form.useWatch('membership', renewForm);
   const renewMaxAmount =
     renewPlanType && membershipTypes.length > 0
       ? (() => {
           const plan = membershipTypes.find((p: any) => p.type === renewPlanType);
-          const qty = typeof renewPlanQty === 'number' && renewPlanQty >= 1 ? renewPlanQty : 1;
-          return plan && typeof plan.price === 'number' ? plan.price * qty : null;
+          return plan && typeof plan.price === 'number' ? plan.price : null;
         })()
       : null;
   const [page, setPage] = useState(1);
@@ -140,12 +137,18 @@ const MemberTable: React.FC = () => {
         limit: size,
         status: filter,
       };
+      if (user?.gymId) {
+        params.gymId = user.gymId;
+      }
       if (isOwner && selectedBranch) {
         params.branchId = selectedBranch;
       }
+      if ((user?.role === 'manager' || user?.role === 'staff') && user?.branchId) {
+        params.branchId = user.branchId;
+      }
       return params;
     },
-    [filter, isOwner, selectedBranch]
+    [filter, isOwner, selectedBranch, user?.gymId, user?.branchId, user?.role]
   );
 
   const loadPage = useCallback(
@@ -221,7 +224,7 @@ const MemberTable: React.FC = () => {
 
   const handleOpenRenew = useCallback((record: Member) => {
     setRenewMember(record);
-    renewForm.setFieldsValue({ membership: undefined, planQuantity: 1, paidAmount: 0 });
+    renewForm.setFieldsValue({ membership: undefined, paidAmount: 0 });
     setRenewModalVisible(true);
   }, [renewForm]);
 
@@ -239,7 +242,6 @@ const MemberTable: React.FC = () => {
     try {
       await api.members.renew(renewMember.key, {
         membership: values.membership,
-        planQuantity: values.planQuantity ?? 1,
         paidAmount: values.paidAmount ?? 0,
       });
       message.success('Member renewed successfully');
@@ -636,7 +638,7 @@ const MemberTable: React.FC = () => {
             Renew membership for <strong>{renewMember.name}</strong>.
           </p>
         )}
-        <Form form={renewForm} layout="vertical" initialValues={{ planQuantity: 1, paidAmount: 0 }}>
+        <Form form={renewForm} layout="vertical" initialValues={{ paidAmount: 0 }}>
           <Form.Item
             name="membership"
             label="Plan"
@@ -650,16 +652,13 @@ const MemberTable: React.FC = () => {
               }))}
             />
           </Form.Item>
-          <Form.Item name="planQuantity" label="Quantity" rules={[{ required: true }]}>
-            <InputNumber min={1} style={{ width: '100%' }} />
-          </Form.Item>
           <Form.Item name="membershipStartDate" label="Start date" tooltip="Membership period starts from this date. Leave empty for today.">
             <DatePicker style={{ width: '100%' }} format="DD-MM-YYYY" />
           </Form.Item>
           <Form.Item
             name="paidAmount"
             label="Amount paid (₹)"
-            dependencies={['membership', 'planQuantity']}
+            dependencies={['membership']}
             extra={
               renewMaxAmount != null ? (
                 <span style={{ color: 'var(--ant-color-text-secondary)', fontSize: 12 }}>
@@ -673,11 +672,10 @@ const MemberTable: React.FC = () => {
                 validator(_: unknown, value: number | string) {
                   if (value == null || value === '' || !membershipTypes.length) return Promise.resolve();
                   const planType = renewForm.getFieldValue('membership');
-                  const qty = renewForm.getFieldValue('planQuantity') ?? 1;
                   if (!planType) return Promise.resolve();
                   const plan = membershipTypes.find((p: any) => p.type === planType);
                   if (!plan || typeof plan.price !== 'number') return Promise.resolve();
-                  const maxAmount = plan.price * qty;
+                  const maxAmount = plan.price;
                   if (Number(value) > maxAmount) {
                     return Promise.reject(new Error(`Cannot exceed maximum for selected plan (₹${maxAmount.toLocaleString('en-IN')})`));
                   }
