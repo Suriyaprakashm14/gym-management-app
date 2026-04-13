@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { Button, Form, Input, Steps, Typography, App } from 'antd';
-import { Mail, KeyRound, Lock } from 'lucide-react';
+import { Smartphone, KeyRound, Lock } from 'lucide-react';
 import { api } from '../utils/api';
 import { AuthShell } from '../components/auth/AuthShell';
 
@@ -12,12 +12,22 @@ const { Title, Text } = Typography;
 
 type Step = 1 | 2 | 3;
 
+const INDIAN_MOBILE = /^[6-9]\d{9}$/;
+
+function normalizePhoneDigits(raw: string): string {
+  const digits = String(raw || '').replace(/\D/g, '');
+  if (digits.length === 12 && digits.startsWith('91')) return digits.slice(2);
+  if (digits.length === 11 && digits.startsWith('0')) return digits.slice(1);
+  return digits;
+}
+
 export default function ForgotPasswordPage() {
   const [step, setStep] = useState<Step>(1);
-  const [email, setEmail] = useState('');
+  const [otpRecipientEmail, setOtpRecipientEmail] = useState('');
   const [otp, setOtp] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [forgotResendPayload, setForgotResendPayload] = useState<{ email?: string; phone?: string }>({});
   const router = useRouter();
   const searchParams = useSearchParams();
   const { message } = App.useApp();
@@ -26,26 +36,52 @@ export default function ForgotPasswordPage() {
   const [form3] = Form.useForm();
 
   const emailFromUrl = searchParams.get('email')?.trim() || '';
+  const phoneFromUrl = searchParams.get('phone')?.trim() || '';
+
   useEffect(() => {
-    if (emailFromUrl) {
-      form1.setFieldsValue({ email: emailFromUrl });
+    if (phoneFromUrl && INDIAN_MOBILE.test(phoneFromUrl)) {
+      form1.setFieldsValue({ mobileOrEmail: phoneFromUrl });
+    } else if (emailFromUrl) {
+      form1.setFieldsValue({ mobileOrEmail: emailFromUrl });
     }
-  }, [emailFromUrl]);
+  }, [emailFromUrl, phoneFromUrl, form1]);
 
   const handleStep1 = async () => {
     setError('');
     try {
       const values = await form1.validateFields();
-      const e = (values.email as string).toLowerCase().trim();
-      setLoading(true);
-      const res = await api.auth.forgotPassword(e);
-      const data = res as { success?: boolean; error?: string; message?: string };
-      if (data?.success) {
-        setEmail(e);
-        setStep(2);
-        message.success('OTP sent to your email');
+      const raw = String(values.mobileOrEmail || '').trim();
+      let payload: { email?: string; phone?: string };
+      if (raw.includes('@')) {
+        payload = { email: raw.toLowerCase() };
       } else {
-        setError((data?.error as string) || data?.message || 'Failed to send OTP');
+        const local = normalizePhoneDigits(raw);
+        if (!INDIAN_MOBILE.test(local)) {
+          message.error('Enter a valid Indian mobile or recovery email');
+          return;
+        }
+        payload = { phone: local };
+      }
+
+      setLoading(true);
+      const res = (await api.auth.forgotPassword(payload)) as {
+        email?: string;
+        success?: boolean;
+        error?: string;
+        message?: string;
+      };
+
+      if (res && typeof res === 'object' && res.email) {
+        setForgotResendPayload(payload);
+        setOtpRecipientEmail(res.email);
+        setStep(2);
+        message.success('OTP sent to your recovery email');
+      } else {
+        setError(
+          (typeof res?.error === 'string' && res.error) ||
+            (typeof res?.message === 'string' && res.message) ||
+            'Failed to send OTP'
+        );
       }
     } catch (err: unknown) {
       if ((err as { errorFields?: unknown[] })?.errorFields) return;
@@ -63,14 +99,18 @@ export default function ForgotPasswordPage() {
       const values = await form2.validateFields();
       const otpVal = String(values.otp).trim();
       setLoading(true);
-      const res = await api.auth.verifyOtp(email, otpVal, 'password_reset');
-      const data = res as { success?: boolean; error?: string; message?: string };
-      if (data?.success) {
+      const res = (await api.auth.verifyOtp(otpRecipientEmail, otpVal, 'password_reset')) as {
+        success?: boolean;
+        error?: string;
+        message?: string;
+        token?: string;
+      };
+      if (res?.token) {
         setOtp(otpVal);
         setStep(3);
         message.success('OTP verified');
       } else {
-        setError((data?.error as string) || data?.message || 'Invalid or expired OTP');
+        setError((res?.error as string) || res?.message || 'Invalid or expired OTP');
       }
     } catch (err: unknown) {
       if ((err as { errorFields?: unknown[] })?.errorFields) return;
@@ -92,14 +132,19 @@ export default function ForgotPasswordPage() {
         return;
       }
       setLoading(true);
-      const res = await api.auth.resetPassword(email, otp, values.newPassword);
-      const data = res as { success?: boolean; error?: string; message?: string };
-      if (data?.success) {
+      const res = (await api.auth.resetPassword(otpRecipientEmail, otp, values.newPassword)) as {
+        success?: boolean;
+        error?: string;
+        message?: string;
+        resetAt?: string;
+        email?: string;
+      };
+      if (res?.resetAt || res?.email) {
         message.success('Password updated successfully');
         router.replace('/login');
         return;
       }
-      setError((data?.error as string) || data?.message || 'Failed to reset password');
+      setError((res?.error as string) || res?.message || 'Failed to reset password');
     } catch (err: unknown) {
       if ((err as { errorFields?: unknown[] })?.errorFields) return;
       const msg = (err as Error)?.message || 'Failed to reset password';
@@ -114,12 +159,17 @@ export default function ForgotPasswordPage() {
     setError('');
     try {
       setLoading(true);
-      const res = await api.auth.resendOtp(email);
-      const data = res as { success?: boolean; error?: string; message?: string };
-      if (data?.success) {
+      const res = (await api.auth.resendOtp(forgotResendPayload)) as {
+        success?: boolean;
+        error?: string;
+        message?: string;
+        email?: string;
+        expiresIn?: string;
+      };
+      if (res && (res.email || res.expiresIn)) {
         message.success('New OTP sent to your email');
       } else {
-        setError((data?.error as string) || data?.message || 'Failed to resend OTP');
+        setError((res?.error as string) || res?.message || 'Failed to resend OTP');
       }
     } catch (err: unknown) {
       const msg = (err as Error)?.message || 'Failed to resend OTP';
@@ -131,7 +181,7 @@ export default function ForgotPasswordPage() {
   };
 
   const steps = [
-    { title: 'Enter email', content: null },
+    { title: 'Identify account', content: null },
     { title: 'Verify OTP', content: null },
     { title: 'New password', content: null },
   ];
@@ -155,13 +205,17 @@ export default function ForgotPasswordPage() {
     >
       <div className="text-center mb-6">
         <Title level={5} className="!mb-1 !text-foreground !font-display">
-          {step === 1 ? 'Enter your email' : step === 2 ? 'Verify OTP' : 'Set a new password'}
+          {step === 1
+            ? 'Mobile or recovery email'
+            : step === 2
+              ? 'Verify OTP'
+              : 'Set a new password'}
         </Title>
         <Text className="!text-muted-foreground text-sm">
           {step === 1
-            ? 'We’ll send a 6-digit code to your email.'
+            ? 'Use the Indian mobile you signed up with, or your recovery email. OTP is always sent to your recovery email.'
             : step === 2
-              ? `We sent a code to ${email || 'your email'}.`
+              ? `We sent a code to ${otpRecipientEmail ? `${otpRecipientEmail.slice(0, 2)}•••@${otpRecipientEmail.split('@')[1] || '…'}` : 'your email'}.`
               : 'Choose a strong password you don’t use elsewhere.'}
         </Text>
       </div>
@@ -173,7 +227,10 @@ export default function ForgotPasswordPage() {
       </Steps>
 
       {error && (
-        <div className="mb-4 rounded-xl px-4 py-3 text-sm border border-destructive/30 bg-destructive/10 text-foreground" role="alert">
+        <div
+          className="mb-4 rounded-xl px-4 py-3 text-sm border border-destructive/30 bg-destructive/10 text-foreground"
+          role="alert"
+        >
           {error}
         </div>
       )}
@@ -181,23 +238,25 @@ export default function ForgotPasswordPage() {
       {step === 1 && (
         <Form form={form1} layout="vertical" onFinish={handleStep1} requiredMark={false} size="large">
           <Form.Item
-            name="email"
-            label={<span className="text-sm text-muted-foreground">Email</span>}
-            rules={[
-              { required: true, message: 'Enter your email' },
-              { type: 'email', message: 'Enter a valid email' },
-            ]}
+            name="mobileOrEmail"
+            label={<span className="text-sm text-muted-foreground">Mobile (India) or recovery email</span>}
+            rules={[{ required: true, message: 'Enter your mobile number or recovery email' }]}
           >
             <Input
-              placeholder="you@company.com"
-              type="email"
-              autoComplete="email"
-              prefix={<Mail className="w-4 h-4 text-muted-foreground" />}
+              placeholder="9876543210 or owner@example.com"
+              autoComplete="username"
+              prefix={<Smartphone className="w-4 h-4 text-muted-foreground" />}
               className="!bg-secondary/40 !border-border/60 !text-foreground placeholder:!text-muted-foreground/70 !rounded-xl"
             />
           </Form.Item>
           <Form.Item style={{ marginBottom: 0 }}>
-            <Button type="primary" htmlType="submit" block loading={loading} className="!h-11 !rounded-xl !font-semibold !shadow-md hover:!opacity-95">
+            <Button
+              type="primary"
+              htmlType="submit"
+              block
+              loading={loading}
+              className="!h-11 !rounded-xl !font-semibold !shadow-md hover:!opacity-95"
+            >
               Send OTP
             </Button>
           </Form.Item>
@@ -223,7 +282,13 @@ export default function ForgotPasswordPage() {
             />
           </Form.Item>
           <Form.Item style={{ marginBottom: 12 }}>
-            <Button type="primary" htmlType="submit" block loading={loading} className="!h-11 !rounded-xl !font-semibold !shadow-md hover:!opacity-95">
+            <Button
+              type="primary"
+              htmlType="submit"
+              block
+              loading={loading}
+              className="!h-11 !rounded-xl !font-semibold !shadow-md hover:!opacity-95"
+            >
               Verify OTP
             </Button>
           </Form.Item>
@@ -272,7 +337,13 @@ export default function ForgotPasswordPage() {
             />
           </Form.Item>
           <Form.Item style={{ marginBottom: 0 }}>
-            <Button type="primary" htmlType="submit" block loading={loading} className="!h-11 !rounded-xl !font-semibold !shadow-md hover:!opacity-95">
+            <Button
+              type="primary"
+              htmlType="submit"
+              block
+              loading={loading}
+              className="!h-11 !rounded-xl !font-semibold !shadow-md hover:!opacity-95"
+            >
               Reset Password
             </Button>
           </Form.Item>

@@ -7,32 +7,8 @@ const FormData = require('form-data');
 const multer = require('multer');
 
 const LUXAND_TOKEN = process.env.LUXAND_TOKEN;
-
-/**
- * Find the subscription period that applies at `now` from subscriptionPeriods.
- * Active only when now is within [periodStart, periodEnd]. Inactive when before first period starts or after last period ends.
- * @param {Array<{ startDate: Date, endDate: Date }>} subscriptionPeriods
- * @param {Date} now
- * @returns {{ periodStart: Date, periodEnd: Date, isActive: boolean } | null} isActive true when now is inside the period
- */
-function getCurrentPeriodForDate(subscriptionPeriods, now) {
-  if (!Array.isArray(subscriptionPeriods) || subscriptionPeriods.length === 0) return null;
-  const sorted = [...subscriptionPeriods]
-    .filter((p) => p && (p.startDate != null || p.endDate != null))
-    .map((p) => ({
-      start: new Date(p.startDate),
-      end: p.endDate ? new Date(p.endDate) : null
-    }))
-    .filter((p) => p.end != null)
-    .sort((a, b) => a.start.getTime() - b.start.getTime());
-  if (sorted.length === 0) return null;
-  for (const p of sorted) {
-    if (now >= p.start && now <= p.end) return { periodStart: p.start, periodEnd: p.end, isActive: true };
-    if (now < p.start) return { periodStart: p.start, periodEnd: p.end, isActive: false }; // not yet started
-  }
-  const last = sorted[sorted.length - 1];
-  return { periodStart: last.start, periodEnd: last.end, isActive: false }; // past all periods
-}
+const { getCurrentPeriodForDate } = require('../utils/subscriptionPeriods');
+const { normalizeIndianMobile } = require('../utils/indianPhone');
 
 // Multer setup for in-memory file storage
 const upload = multer({ storage: multer.memoryStorage() });
@@ -83,7 +59,7 @@ exports.testLuxand = async (req, res) => {
 };
 
 exports.create = async (req, res) => {
-  const { firstName, lastName, role, branchId, email, ...rest } = req.body;
+  const { firstName, lastName, role, branchId, email, phone, ...rest } = req.body;
 
   // Check authorization - only gym_owner and manager roles
   if (!req.user) {
@@ -132,6 +108,11 @@ exports.create = async (req, res) => {
   if (!branchId) return res.status(400).json({ error: "branchId is required" });
   if (!firstName || !lastName || !role)
     return res.status(400).json({ error: "First name, last name, and role are required" });
+
+  const normalizedPhone = normalizeIndianMobile(phone);
+  if (!normalizedPhone) {
+    return res.status(400).json({ error: 'Valid 10-digit Indian mobile number is required' });
+  }
   
   // Validate role - only member and trainer are allowed in member model
   if (!['member', 'trainer'].includes(role)) {
@@ -204,6 +185,13 @@ exports.create = async (req, res) => {
 
     // Calculate age from dateOfBirth if provided (FormData may send as string YYYY-MM-DD)
     let profile = rest.profile || {};
+    if (typeof profile === 'string') {
+      try {
+        profile = JSON.parse(profile);
+      } catch {
+        profile = {};
+      }
+    }
     if (req.body.dateOfBirth) {
       const dob = new Date(req.body.dateOfBirth);
       if (!Number.isNaN(dob.getTime())) {
@@ -214,7 +202,8 @@ exports.create = async (req, res) => {
         profile = { ...profile, dateOfBirth: dob, age: Math.max(0, age) };
       }
     }
-    if (Object.keys(profile).length > 0) rest.profile = profile;
+    profile = { ...profile, phone: normalizedPhone };
+    rest.profile = profile;
     delete rest.dateOfBirth; // only store in profile
 
     const member = new Member({
@@ -222,7 +211,7 @@ exports.create = async (req, res) => {
       gymId,
       firstName,
       lastName,
-      email: email ? email.toLowerCase() : undefined,
+      email: email ? String(email).toLowerCase().trim() : undefined,
       role,
       image: req.file ? req.file.buffer.toString('base64') : undefined,
       personId: personId || undefined,

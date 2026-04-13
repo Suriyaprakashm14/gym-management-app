@@ -15,7 +15,8 @@ const { Title, Text } = Typography;
 export interface SignupFormData {
   firstName: string;
   lastName: string;
-  email: string;
+  phone: string;
+  email?: string;
   password: string;
   gymName: string;
   gymLogo: string | null;
@@ -24,6 +25,7 @@ export interface SignupFormData {
 const INITIAL_FORM_DATA: SignupFormData = {
   firstName: '',
   lastName: '',
+  phone: '',
   email: '',
   password: '',
   gymName: '',
@@ -52,7 +54,8 @@ export default function SignupPage() {
       ...prev,
       firstName: values.firstName.trim(),
       lastName: values.lastName.trim(),
-      email: values.email.trim(),
+      phone: values.phone.trim(),
+      email: (values.email || '').trim(),
       password: values.password,
     }));
     setErrorMessage('');
@@ -62,7 +65,8 @@ export default function SignupPage() {
   const submitSignup = async (payload: {
     firstName: string;
     lastName: string;
-    email: string;
+    phone: string;
+    email?: string;
     password: string;
     gymName: string;
     gymIcon?: string;
@@ -70,9 +74,10 @@ export default function SignupPage() {
     return api.auth.signup({
       firstName: payload.firstName,
       lastName: payload.lastName,
-      email: payload.email.trim(),
+      phone: payload.phone.trim(),
       password: payload.password,
       gymName: payload.gymName,
+      ...(payload.email ? { email: payload.email } : {}),
       ...(payload.gymIcon ? { gymIcon: payload.gymIcon } : {}),
     });
   };
@@ -87,7 +92,8 @@ export default function SignupPage() {
       await submitSignup({
         firstName: formData.firstName,
         lastName: formData.lastName,
-        email: formData.email,
+        phone: formData.phone,
+        email: formData.email || undefined,
         password: formData.password,
         gymName,
         gymIcon,
@@ -112,7 +118,8 @@ export default function SignupPage() {
       await submitSignup({
         firstName: formData.firstName,
         lastName: formData.lastName,
-        email: formData.email,
+        phone: formData.phone,
+        email: formData.email || undefined,
         password: formData.password,
         gymName: 'My Gym',
       });
@@ -177,6 +184,7 @@ export default function SignupPage() {
           initialValues={{
             firstName: formData.firstName,
             lastName: formData.lastName,
+            phone: formData.phone,
             email: formData.email,
             password: formData.password,
           }}

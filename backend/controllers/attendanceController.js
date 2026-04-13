@@ -7,6 +7,8 @@ const User = require("../models/user");
 const Gym = require("../models/gym");
 const Branch = require("../models/branch");
 const { checkMembershipStatus } = require("../middleware/membershipValidation");
+const { debug } = require("../utils/logger");
+const { isProduction } = require("../config/env");
 
 const LUXAND_TOKEN = (process.env.LUXAND_TOKEN || '').trim();
 
@@ -37,29 +39,19 @@ exports.markAttendanceWithFace = async (req, res) => {
   }
 
   try {
-    console.log("===== FACE ATTENDANCE REQUEST =====");
-    console.log("Member ID:", memberId);
-    console.log("Looking for member with ID:", memberId);
-    console.log("ID type:", typeof memberId, "Length:", memberId.length);
-    
+    debug("===== FACE ATTENDANCE REQUEST =====", { memberId });
+
     // Try to find member by ID (works for both ObjectId and String IDs)
     const member = await Member.findById(memberId);
-    
+
     if (!member) {
-      console.log("Member not found with ID:", memberId);
-      
-      // Try alternative search methods for debugging
-      const allMembers = await Member.find({}).limit(5);
-      console.log("Sample member IDs in database:", allMembers.map(m => ({ id: m._id, type: typeof m._id })));
-      
-      return res.status(404).json({ 
+      return res.status(404).json({
         error: "Member not found",
         details: `No member found with ID: ${memberId}. Please check if the member exists and the ID format is correct.`
       });
     }
 
     if (!member.personId) {
-      console.log("Member found but no personId:", member.firstName, member.lastName);
       return res.status(404).json({ 
         error: "Reference image not found",
         details: `Member ${member.firstName} ${member.lastName} does not have a reference image for face recognition. Please update the member's profile with a new image.`
@@ -76,13 +68,12 @@ exports.markAttendanceWithFace = async (req, res) => {
       }
     }
 
-    console.log("Member found:", member.firstName, member.lastName);
-    console.log("Stored member.personId:", member.personId);
+    debug("Member found for face attendance", { memberId: member._id, hasPersonId: !!member.personId });
 
     const formData = new FormData();
     formData.append("photo", req.file.buffer, { filename: req.file.originalname });
 
-    console.log("Sending image to Luxand API (search v2)...");
+    debug("Sending image to Luxand API (search v2)");
     const response = await axios.post(
       "https://api.luxand.cloud/photo/search/v2",
       formData,
@@ -95,7 +86,7 @@ exports.markAttendanceWithFace = async (req, res) => {
     );
 
     const matches = response.data;
-    console.log("Luxand response (search results):", matches);
+    debug("Luxand search result count", Array.isArray(matches) ? matches.length : "non-array");
 
     if (!Array.isArray(matches) || matches.length === 0) {
       return res.status(400).json({ error: "No face detected in the image" });
@@ -104,10 +95,10 @@ exports.markAttendanceWithFace = async (req, res) => {
     // Match using uuid
     const match = matches.find(f => f.uuid === member.personId);
 
-    console.log("Face match result:", match || null);
+    debug("Face match against member personId", { matched: !!match });
 
     if (match) {
-      console.log("Match found with confidence:", match.confidence || 95);
+      debug("Face match confidence", match.confidence || 95);
 
       const now = new Date();
       const oneMinuteAgo = new Date(now.getTime() - 60 * 1000);
@@ -120,7 +111,7 @@ exports.markAttendanceWithFace = async (req, res) => {
       });
 
       if (existing) {
-        console.log("Recent attendance already exists for member:", member._id, "attendanceId:", existing._id);
+        debug("Recent face attendance already exists", { memberId: member._id, attendanceId: existing._id });
         return res.json({
           success: true,
           message: "Attendance already marked recently",
@@ -155,7 +146,7 @@ exports.markAttendanceWithFace = async (req, res) => {
           deviceId: "face_recognition_camera"
         }
       });
-      console.log("Attendance record created successfully for member:", member._id, "attendanceId:", attendance._id);
+      debug("Face attendance record created", { memberId: member._id, attendanceId: attendance._id });
       return res.json({ 
         success: true, 
         message: "Attendance marked successfully with face recognition",
@@ -281,8 +272,8 @@ exports.enrollMemberFace = async (req, res) => {
   }
 
   try {
-    console.log("Enrolling face for member ID:", memberId);
-    
+    debug("Enrolling face for member ID", memberId);
+
     const member = await Member.findById(memberId);
     
     if (!member) {
@@ -316,7 +307,7 @@ exports.enrollMemberFace = async (req, res) => {
     );
 
     const personData = response.data;
-    console.log("Luxand person creation response:", personData);
+    debug("Luxand person creation response keys", personData && typeof personData === "object" ? Object.keys(personData) : personData);
 
     if (!personData.uuid) {
       return res.status(400).json({ 
@@ -360,6 +351,9 @@ exports.enrollMemberFace = async (req, res) => {
 
 // Helper endpoint to list all members (for debugging ID issues)
 exports.listAllMembers = async (req, res) => {
+  if (isProduction()) {
+    return res.status(404).json({ success: false, error: "Not found" });
+  }
   try {
     const members = await Member.find({})
       .select('_id firstName lastName role')
@@ -396,19 +390,12 @@ exports.markAttendanceDualAuth = async (req, res) => {
   }
 
   try {
-    console.log("Dual authentication for member ID:", memberId);
-    console.log("ID type:", typeof memberId, "Length:", memberId.length);
-    
+    debug("Dual authentication for member ID", memberId);
+
     const member = await Member.findById(memberId);
-    
+
     if (!member) {
-      console.log("Member not found with ID:", memberId);
-      
-      // Try alternative search methods for debugging
-      const allMembers = await Member.find({}).limit(5);
-      console.log("Sample member IDs in database:", allMembers.map(m => ({ id: m._id, type: typeof m._id })));
-      
-      return res.status(404).json({ 
+      return res.status(404).json({
         error: "Member not found",
         details: `No member found with ID: ${memberId}. Please check if the member exists and the ID format is correct.`
       });
@@ -440,7 +427,7 @@ exports.markAttendanceDualAuth = async (req, res) => {
     }
 
     // Step 1: Face Recognition
-    console.log("Step 1: Verifying face recognition...");
+    debug("Step 1: Verifying face recognition");
     const formData = new FormData();
     formData.append("photo", req.file.buffer, { filename: req.file.originalname });
 
@@ -456,7 +443,7 @@ exports.markAttendanceDualAuth = async (req, res) => {
     );
 
     const faceMatches = faceResponse.data;
-    console.log("Face recognition response:", faceMatches);
+    debug("Face recognition response count", Array.isArray(faceMatches) ? faceMatches.length : "n/a");
 
     if (!Array.isArray(faceMatches) || faceMatches.length === 0) {
       return res.status(400).json({ error: "No face detected in the image" });
@@ -468,7 +455,7 @@ exports.markAttendanceDualAuth = async (req, res) => {
     }
 
     // Step 2: Fingerprint Verification
-    console.log("Step 2: Verifying fingerprint...");
+    debug("Step 2: Verifying fingerprint");
     const ZKJUBAER = require('zk-jubaer');
     const device = new ZKJUBAER(
       process.env.ZKFINGER_IP || '192.168.1.201', // Device ip
@@ -537,7 +524,7 @@ exports.markAttendanceWithPhotoOnly = async (req, res) => {
   }
 
   try {
-    console.log("Processing face recognition attendance with photo only...");
+    debug("Processing face recognition attendance with photo only");
 
     // Create form data for Luxand API
     const formData = new FormData();
@@ -556,7 +543,7 @@ exports.markAttendanceWithPhotoOnly = async (req, res) => {
     );
 
     const matches = response.data;
-    console.log("Luxand search response:", matches);
+    debug("Luxand search response count", Array.isArray(matches) ? matches.length : "n/a");
 
     if (!Array.isArray(matches) || matches.length === 0) {
       return res.status(400).json({ 
@@ -570,7 +557,7 @@ exports.markAttendanceWithPhotoOnly = async (req, res) => {
       (prev.confidence > current.confidence) ? prev : current
     );
 
-    console.log("Best match found:", bestMatch);
+    debug("Best Luxand match", bestMatch && { uuid: bestMatch.uuid, confidence: bestMatch.confidence });
 
     // Find member by personId (Luxand UUID) - no authentication required
     const member = await Member.findOne({ personId: bestMatch.uuid });
@@ -775,7 +762,7 @@ exports.getAttendanceReport = async (req, res) => {
       .populate('location.branchId', 'name')
       .sort({ attendanceDate: -1 });
 
-    console.log(`Found ${attendanceRecords.length} attendance records for period ${period}`);
+    debug(`Attendance report: ${attendanceRecords.length} records for period ${period}`);
 
     // Get all members for the branch (to identify absent members). Exclude upcoming and inactive from check-in list.
     const memberQuery = effectiveBranchId ? { branchId: effectiveBranchId } : {};

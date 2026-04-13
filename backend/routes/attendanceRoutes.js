@@ -1,5 +1,6 @@
 const express = require('express');
 const router = express.Router();
+const { isProduction } = require('../config/env');
 
 const attendanceController = require('../controllers/attendanceController');
 const { validateMembership } = require('../middleware/membershipValidation');
@@ -30,7 +31,9 @@ router.get('/report', attendanceController.getAttendanceReport);
 // GET route to get weekly attendance report
 router.get('/report/weekly', attendanceController.getWeeklyAttendanceReport);
 
-// GET route to list all members (for debugging ID issues)
-router.get('/members', attendanceController.listAllMembers);
+// GET route to list members (debug only; disabled in production)
+if (!isProduction()) {
+  router.get('/members', attendanceController.listAllMembers);
+}
 
 module.exports = router;

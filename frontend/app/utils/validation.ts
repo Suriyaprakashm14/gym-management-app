@@ -85,6 +85,14 @@ function normalizePhone(value: string): string {
   return digits;
 }
 
+/** Same normalization for form submit / display (e.g. +91 prefix typed separately). */
+export function normalizeIndianMobileDigits(raw: string | undefined | null): string {
+  const digits = String(raw ?? '').replace(/\D/g, '');
+  if (digits.length === 12 && digits.startsWith('91')) return digits.slice(2);
+  if (digits.length === 11 && digits.startsWith('0')) return digits.slice(1);
+  return digits;
+}
+
 export function isValidEmail(value: string | undefined | null): boolean {
   if (value == null || typeof value !== 'string') return false;
   const trimmed = value.trim();

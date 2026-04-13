@@ -85,11 +85,14 @@ describe('E2E flow - login to attendance report', () => {
       branchId: { _id: 'branch-1', name: 'Main Branch' },
     };
 
-    User.findOne.mockReturnValue({
-      populate: jest.fn().mockReturnValue({
-        populate: jest.fn().mockResolvedValue(userDoc),
-      }),
+    const userQuery = {
+      collation: jest.fn().mockReturnThis(),
+      populate: jest.fn(),
+    };
+    userQuery.populate.mockReturnValue({
+      populate: jest.fn().mockResolvedValue(userDoc),
     });
+    User.findOne.mockReturnValue(userQuery);
 
     mockMemberSave.mockResolvedValue({
       _id: 'member-1',
@@ -148,6 +151,7 @@ describe('E2E flow - login to attendance report', () => {
       lastName: 'Doe',
       role: 'member',
       branchId: 'branch-1',
+      phone: '9876543210',
     });
     expect(createMemberRes.status).toBe(201);
 

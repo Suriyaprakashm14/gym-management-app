@@ -1,5 +1,5 @@
 # Render Blueprint: backend only. Connect repo with Root Directory = backend, or use a repo that contains only this backend.
-# Set MONGODB_URI, JWTSECRET, FRONTEND_URL in Render Environment.
+# Set MONGODB_URI, JWTSECRET, SESSION_SECRET, FRONTEND_URL in Render Environment.
 services:
   - type: web
     name: gym-backend
@@ -13,6 +13,8 @@ services:
       - key: MONGODB_URI
         sync: false
       - key: JWTSECRET
+        sync: false
+      - key: SESSION_SECRET
         sync: false
       - key: FRONTEND_URL
         sync: false
