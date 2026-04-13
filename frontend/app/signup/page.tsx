@@ -41,6 +41,76 @@ function fileToDataUrl(file: File): Promise<string> {
   });
 }
 
+/** Map backend error codes to user-friendly messages. */
+const ERROR_CODE_MESSAGES: Record<string, string> = {
+  PHONE_ALREADY_REGISTERED: 'An account with this phone number already exists. Try logging in instead.',
+  EMAIL_ALREADY_REGISTERED: 'An account with this email already exists. Try logging in instead.',
+  USER_ALREADY_EXISTS: 'An account with these details already exists. Try logging in instead.',
+  INVALID_CREDENTIALS: 'Invalid phone number or password.',
+  ACCOUNT_DEACTIVATED: 'Your account has been deactivated. Contact support.',
+};
+
+function getApiErrorMessage(errorLike: unknown): string {
+  if (typeof errorLike === 'string' && errorLike.trim()) {
+    return ERROR_CODE_MESSAGES[errorLike.trim()] ?? errorLike.trim();
+  }
+
+  if (errorLike && typeof errorLike === 'object') {
+    const errObj = errorLike as {
+      message?: unknown;
+      error?: unknown;
+      details?: unknown;
+    };
+
+    // Check if message itself is a known error code
+    if (typeof errObj.message === 'string' && errObj.message.trim()) {
+      const msg = errObj.message.trim();
+      return ERROR_CODE_MESSAGES[msg] ?? msg;
+    }
+
+    // Nested error object: { error: { message: "CODE", details: { message: "Human text" } } }
+    if (errObj.error && typeof errObj.error === 'object') {
+      const nestedError = errObj.error as { message?: unknown; details?: unknown };
+      // details.message is always the human-readable text — check it first
+      if (nestedError.details && typeof nestedError.details === 'object') {
+        const nestedDetails = nestedError.details as { message?: unknown; error?: unknown };
+        if (typeof nestedDetails.message === 'string' && nestedDetails.message.trim()) {
+          return nestedDetails.message.trim();
+        }
+        if (typeof nestedDetails.error === 'string' && nestedDetails.error.trim()) {
+          const code = nestedDetails.error.trim();
+          return ERROR_CODE_MESSAGES[code] ?? code;
+        }
+      }
+      // Fall back to the nested error message (may be a code)
+      if (typeof nestedError.message === 'string' && nestedError.message.trim()) {
+        const msg = nestedError.message.trim();
+        return ERROR_CODE_MESSAGES[msg] ?? msg;
+      }
+    }
+
+    // Flat error string: { error: "PHONE_ALREADY_REGISTERED" }
+    if (typeof errObj.error === 'string' && errObj.error.trim()) {
+      const code = errObj.error.trim();
+      return ERROR_CODE_MESSAGES[code] ?? code;
+    }
+
+    // Top-level details
+    if (errObj.details && typeof errObj.details === 'object') {
+      const details = errObj.details as { message?: unknown; error?: unknown };
+      if (typeof details.message === 'string' && details.message.trim()) {
+        return details.message.trim();
+      }
+      if (typeof details.error === 'string' && details.error.trim()) {
+        const code = details.error.trim();
+        return ERROR_CODE_MESSAGES[code] ?? code;
+      }
+    }
+  }
+
+  return 'Something went wrong. Please try again.';
+}
+
 export default function SignupPage() {
   const [currentStep, setCurrentStep] = useState(0);
   const [formData, setFormData] = useState<SignupFormData>(INITIAL_FORM_DATA);
@@ -71,7 +141,7 @@ export default function SignupPage() {
     gymName: string;
     gymIcon?: string;
   }) => {
-    return api.auth.signup({
+    const response = await api.auth.signup({
       firstName: payload.firstName,
       lastName: payload.lastName,
       phone: payload.phone.trim(),
@@ -80,6 +150,17 @@ export default function SignupPage() {
       ...(payload.email ? { email: payload.email } : {}),
       ...(payload.gymIcon ? { gymIcon: payload.gymIcon } : {}),
     });
+
+    if (
+      response &&
+      typeof response === 'object' &&
+      'success' in response &&
+      (response as { success?: boolean }).success === false
+    ) {
+      throw new Error(getApiErrorMessage(response));
+    }
+
+    return response;
   };
 
   const handleGymFinish = async (values: GymSetupFormValues, logoFile: File | null) => {
@@ -101,9 +182,7 @@ export default function SignupPage() {
       message.success('Account created! Please log in.');
       router.push('/login?signedup=1');
     } catch (error: unknown) {
-      const err = error as { message?: string };
-      const errorMsg =
-        typeof err?.message === 'string' ? err.message : 'Something went wrong. Please try again.';
+      const errorMsg = getApiErrorMessage(error);
       setErrorMessage(errorMsg);
       message.error(errorMsg);
     } finally {
@@ -126,9 +205,7 @@ export default function SignupPage() {
       message.success('Account created! Please log in.');
       router.push('/login?signedup=1');
     } catch (error: unknown) {
-      const err = error as { message?: string };
-      const errorMsg =
-        typeof err?.message === 'string' ? err.message : 'Something went wrong. Please try again.';
+      const errorMsg = getApiErrorMessage(error);
       setErrorMessage(errorMsg);
       message.error(errorMsg);
     } finally {

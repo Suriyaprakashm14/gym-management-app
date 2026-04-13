@@ -30,8 +30,13 @@ import {
   ManOutlined,
   WomanOutlined,
 } from '@ant-design/icons';
-import { api } from '../../utils/api';
-import { useAppSelector } from '../../redux/hooks';
+import { useAppDispatch, useAppSelector } from '../../redux/hooks';
+import {
+  clearPersonalDetails,
+  fetchMemberPersonalDetailsAsync,
+  selectMemberPersonalDetails,
+  selectMemberPersonalDetailsLoading,
+} from '../../redux/membersSlice';
 
 const { Title, Text } = Typography;
 
@@ -101,37 +106,28 @@ const MemberDetailsModal: React.FC<MemberDetailsModalProps> = ({
   onClose,
   memberId,
 }) => {
-  const [personalDetails, setPersonalDetails] = useState<MemberPersonalDetails | null>(null);
-  const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const dispatch = useAppDispatch();
   
   // Get member data from Redux store
   const { members } = useAppSelector((state) => state.members);
   const memberDetails = members.find((m: any) => m.id === memberId);
+  const personalDetails = useAppSelector(selectMemberPersonalDetails) as MemberPersonalDetails | null;
+  const loading = useAppSelector(selectMemberPersonalDetailsLoading);
 
   useEffect(() => {
     if (visible && memberId) {
-      fetchPersonalDetails();
+      setError(null);
+      dispatch(fetchMemberPersonalDetailsAsync(memberId))
+        .unwrap()
+        .catch(() => {
+          setError(null);
+        });
     }
-  }, [visible, memberId]);
-
-  const fetchPersonalDetails = async () => {
-    if (!memberId) return;
-
-    setLoading(true);
-    setError(null);
-
-    try {
-      // Fetch personal details
-      const personalResponse = await api.membersPersonalDetails.getByMemberId(memberId);
-      setPersonalDetails(personalResponse.data || personalResponse);
-    } catch (personalError) {
-      console.log('No personal details found for this member');
-      setPersonalDetails(null);
-    } finally {
-      setLoading(false);
+    if (!visible) {
+      dispatch(clearPersonalDetails());
     }
-  };
+  }, [visible, memberId, dispatch]);
 
 
   const getStatusColor = (status: string) => {

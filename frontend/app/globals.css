@@ -142,6 +142,42 @@ html {
   color: #fff !important;
 }
 
+.app-sidebar-menu.ant-menu-dark,
+.app-sidebar-menu.ant-menu-dark .ant-menu-sub {
+  background: transparent !important;
+}
+
+.app-sidebar-menu.ant-menu-dark .ant-menu-item,
+.app-sidebar-menu.ant-menu-dark .ant-menu-submenu-title {
+  border-radius: 10px;
+  margin-inline: 6px;
+  width: calc(100% - 12px);
+  transition: background-color 0.2s ease, color 0.2s ease, transform 0.2s ease;
+}
+
+.app-sidebar-menu.ant-menu-dark .ant-menu-item:hover,
+.app-sidebar-menu.ant-menu-dark .ant-menu-submenu-title:hover {
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.12), rgba(64, 169, 255, 0.14)) !important;
+  color: #ffffff !important;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08);
+}
+
+.app-sidebar-menu.ant-menu-dark .ant-menu-item:hover .ant-menu-title-content,
+.app-sidebar-menu.ant-menu-dark .ant-menu-item:hover .anticon,
+.app-sidebar-menu.ant-menu-dark .ant-menu-submenu-title:hover .ant-menu-title-content,
+.app-sidebar-menu.ant-menu-dark .ant-menu-submenu-title:hover .anticon {
+  color: #ffffff !important;
+}
+
+.app-sidebar-menu.ant-menu-dark .ant-menu-item-selected {
+  background: linear-gradient(135deg, rgba(24, 144, 255, 0.26), rgba(19, 194, 194, 0.22)) !important;
+  color: #ffffff !important;
+}
+
+.app-sidebar-menu.ant-menu-dark .ant-menu-item-selected::after {
+  border-inline-end: 3px solid #40a9ff !important;
+}
+
 /* Auth pages (scoped) — ensure AntD text is readable on dark glass */
 .ff-auth {
   color: hsl(var(--foreground));
@@ -199,6 +235,53 @@ html {
   box-shadow: 0 0 0 3px hsla(250, 75%, 62%, 0.18) !important;
 }
 
+.member-phone-field__addon {
+  background: #fafafa !important;
+  border-color: #d9d9d9 !important;
+  color: rgba(0, 0, 0, 0.65) !important;
+}
+
+.member-phone-field__input.ant-input {
+  background: #ffffff !important;
+  border-color: #d9d9d9 !important;
+  color: rgba(0, 0, 0, 0.88) !important;
+}
+
+.member-phone-field__input.ant-input::placeholder {
+  color: rgba(0, 0, 0, 0.35) !important;
+}
+
+.member-phone-field:hover .member-phone-field__addon,
+.member-phone-field:hover .member-phone-field__input.ant-input {
+  border-color: #4096ff !important;
+}
+
+.member-phone-field__input.ant-input:focus,
+.member-phone-field__input.ant-input:focus-within {
+  border-color: #1677ff !important;
+  box-shadow: none !important;
+}
+
+.member-phone-field.ant-space-compact > *:not(:last-child) {
+  border-inline-end-width: 0 !important;
+}
+
+.ff-auth .member-phone-field__addon {
+  background: hsla(220, 12%, 10%, 0.5) !important;
+  border-color: hsla(220, 12%, 12%, 0.7) !important;
+  color: hsl(var(--foreground)) !important;
+}
+
+.ff-auth .member-phone-field__input.ant-input {
+  background: hsla(220, 12%, 10%, 0.45) !important;
+  border-color: hsla(220, 12%, 12%, 0.7) !important;
+  color: hsl(var(--foreground)) !important;
+}
+
+.ff-auth .member-phone-field__input.ant-input::placeholder {
+  color: hsla(215, 12%, 70%, 0.75) !important;
+}
+
 .ff-auth .ant-steps .ant-steps-item-title,
 .ff-auth .ant-steps .ant-steps-item-description,
 .ff-auth .ant-steps .ant-steps-item-icon {
@@ -245,4 +328,125 @@ html {
 
 .add-member-modal .ant-modal-body::-webkit-scrollbar-thumb:hover {
   background: rgba(8, 151, 156, 0.7);
+}
+
+.add-member-modal,
+.add-member-modal *,
+.member-edit-modal,
+.member-edit-modal *,
+.staff-modal,
+.staff-modal * {
+  color-scheme: light !important;
+}
+
+.add-member-modal .ant-modal-content,
+.add-member-modal .ant-modal-body,
+.member-edit-modal .ant-modal-content,
+.member-edit-modal .ant-modal-body,
+.staff-modal .ant-modal-content,
+.staff-modal .ant-modal-body {
+  background: #ffffff !important;
+}
+
+.add-member-modal .ant-input,
+.add-member-modal .ant-input-outlined,
+.add-member-modal .ant-input-affix-wrapper,
+.add-member-modal .ant-input-affix-wrapper > input.ant-input,
+.add-member-modal .ant-input-number,
+.member-edit-modal .ant-input,
+.member-edit-modal .ant-input-outlined,
+.member-edit-modal .ant-input-affix-wrapper,
+.member-edit-modal .ant-input-affix-wrapper > input.ant-input,
+.member-edit-modal .ant-input-number,
+.staff-modal .ant-input,
+.staff-modal .ant-input-outlined,
+.staff-modal .ant-input-affix-wrapper,
+.staff-modal .ant-input-affix-wrapper > input.ant-input,
+.staff-modal .ant-input-number {
+  background: #ffffff !important;
+  color: rgba(0, 0, 0, 0.88) !important;
+}
+
+.add-member-modal input:-webkit-autofill,
+.add-member-modal input:-webkit-autofill:hover,
+.add-member-modal input:-webkit-autofill:focus,
+.add-member-modal textarea:-webkit-autofill,
+.add-member-modal select:-webkit-autofill,
+.add-member-modal .ant-input-affix-wrapper input:-webkit-autofill,
+.add-member-modal .ant-input:-webkit-autofill,
+.member-edit-modal input:-webkit-autofill,
+.member-edit-modal input:-webkit-autofill:hover,
+.member-edit-modal input:-webkit-autofill:focus,
+.member-edit-modal textarea:-webkit-autofill,
+.member-edit-modal select:-webkit-autofill,
+.member-edit-modal .ant-input-affix-wrapper input:-webkit-autofill,
+.member-edit-modal .ant-input:-webkit-autofill,
+.staff-modal input:-webkit-autofill,
+.staff-modal input:-webkit-autofill:hover,
+.staff-modal input:-webkit-autofill:focus,
+.staff-modal textarea:-webkit-autofill,
+.staff-modal select:-webkit-autofill,
+.staff-modal .ant-input-affix-wrapper input:-webkit-autofill,
+.staff-modal .ant-input:-webkit-autofill,
+.branch-modal input:-webkit-autofill,
+.branch-modal input:-webkit-autofill:hover,
+.branch-modal input:-webkit-autofill:focus,
+.branch-modal textarea:-webkit-autofill,
+.branch-modal select:-webkit-autofill,
+.branch-modal .ant-input-affix-wrapper input:-webkit-autofill,
+.branch-modal .ant-input:-webkit-autofill {
+  -webkit-text-fill-color: rgba(0, 0, 0, 0.88) !important;
+  box-shadow: 0 0 0 1000px #ffffff inset !important;
+  -webkit-box-shadow: 0 0 0 1000px #ffffff inset !important;
+  background-color: #ffffff !important;
+  background-clip: content-box !important;
+  caret-color: rgba(0, 0, 0, 0.88) !important;
+  transition: background-color 9999s ease-out 0s !important;
+}
+
+.add-member-modal .ant-input:autofill,
+.add-member-modal .ant-input-affix-wrapper > input.ant-input:autofill,
+.member-edit-modal .ant-input:autofill,
+.member-edit-modal .ant-input-affix-wrapper > input.ant-input:autofill,
+.staff-modal .ant-input:autofill,
+.staff-modal .ant-input-affix-wrapper > input.ant-input:autofill,
+.branch-modal .ant-input:autofill,
+.branch-modal .ant-input-affix-wrapper > input.ant-input:autofill {
+  -webkit-text-fill-color: rgba(0, 0, 0, 0.88) !important;
+  box-shadow: 0 0 0 1000px #ffffff inset !important;
+  -webkit-box-shadow: 0 0 0 1000px #ffffff inset !important;
+}
+
+.add-member-modal .member-phone-field__input.ant-input:-webkit-autofill,
+.add-member-modal .member-phone-field__input.ant-input:-webkit-autofill:hover,
+.add-member-modal .member-phone-field__input.ant-input:-webkit-autofill:focus,
+.member-edit-modal .member-phone-field__input.ant-input:-webkit-autofill,
+.member-edit-modal .member-phone-field__input.ant-input:-webkit-autofill:hover,
+.member-edit-modal .member-phone-field__input.ant-input:-webkit-autofill:focus {
+  border-color: #d9d9d9 !important;
+}
+
+.revenue-list-scroll {
+  padding-right: 12px;
+  scrollbar-gutter: stable;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(148, 163, 184, 0.55) transparent;
+}
+
+.revenue-list-scroll::-webkit-scrollbar {
+  width: 6px;
+}
+
+.revenue-list-scroll::-webkit-scrollbar-track {
+  background: transparent;
+  border-radius: 999px;
+}
+
+.revenue-list-scroll::-webkit-scrollbar-thumb {
+  background: rgba(148, 163, 184, 0.55);
+  border-radius: 999px;
+}
+
+.revenue-list-scroll::-webkit-scrollbar-thumb:hover {
+  background: rgba(100, 116, 139, 0.72);
 }

@@ -1,9 +1,9 @@
 'use client';
 
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useMemo } from 'react';
 import Link from 'next/link';
 import { Layout, Menu, Button, Typography, App, Modal, Form, Input, Space, Select } from 'antd';
-import { useRouter, usePathname } from 'next/navigation';
+import { usePathname } from 'next/navigation';
 import {
   DashboardOutlined,
   UserOutlined,
@@ -16,7 +16,15 @@ import {
 } from '@ant-design/icons';
 import { useAuth } from '../../contexts/AuthContext';
 import { useBranchContext } from '../../contexts/BranchContext';
-import { api } from '../../utils/api';
+import { useAppDispatch, useAppSelector } from '../../redux/hooks';
+import { fetchBranchesAsync, selectBranches, selectBranchesLoading } from '../../redux/branchesSlice';
+import {
+  logoutAsync,
+  removeGymLogoAsync,
+  selectGymLogoRemoving,
+  selectGymSaving,
+  updateGymAsync,
+} from '../../redux/gymSlice';
 
 const { Sider } = Layout;
 
@@ -38,19 +46,19 @@ interface SidebarProps {
 
 const Sidebar: React.FC<SidebarProps> = ({ collapsed, onCollapse }) => {
   const { message } = App.useApp();
-  const router = useRouter();
   const pathname = usePathname();
   const { user, logout, updateUser } = useAuth();
-  const [logoutLoading, setLogoutLoading] = useState(false);
   const [editGymModalVisible, setEditGymModalVisible] = useState(false);
-  const [editGymLoading, setEditGymLoading] = useState(false);
   const [editGymLogoFile, setEditGymLogoFile] = useState<File | null>(null);
   const [editGymLogoPreview, setEditGymLogoPreview] = useState<string | null>(null);
   const logoInputRef = useRef<HTMLInputElement>(null);
   const [editGymForm] = Form.useForm();
   const { selectedBranch, setSelectedBranch } = useBranchContext();
-  const [branches, setBranches] = useState<Array<{ _id: string; name: string }>>([]);
-  const [branchesLoading, setBranchesLoading] = useState(false);
+  const dispatch = useAppDispatch();
+  const allBranches = useAppSelector(selectBranches);
+  const branchesLoading = useAppSelector(selectBranchesLoading);
+  const gymSaving = useAppSelector(selectGymSaving);
+  const gymLogoRemoving = useAppSelector(selectGymLogoRemoving);
   
   // Use actual user data or fallback to mock for demo
   const currentUser = user ?? {
@@ -73,47 +81,26 @@ const Sidebar: React.FC<SidebarProps> = ({ collapsed, onCollapse }) => {
   // Owner-only: fetch branches for branch selector
   useEffect(() => {
     if (!isGymOwner || !currentUser.gymId) {
-      setBranches([]);
       return;
     }
-    const gymId = currentUser.gymId;
-    let cancelled = false;
-    const fetchBranches = async () => {
-      try {
-        setBranchesLoading(true);
-        const response = await api.branches.getByGym(gymId);
-        const branchList = Array.isArray(response)
-          ? response
-          : (response as any)?.data?.branches ?? (response as any)?.branches ?? [];
-        if (cancelled) return;
-        let mapped = (branchList as any[]).map((b: any) => ({
-          _id: b._id ?? b.id,
+    dispatch(fetchBranchesAsync(currentUser.gymId));
+  }, [dispatch, isGymOwner, currentUser.gymId]);
+
+  const branches = useMemo(() => {
+    let mapped = Array.isArray(allBranches)
+      ? allBranches.map((b) => ({
+          _id: b._id,
           name: b.name ?? 'Branch',
-        }));
+        }))
+      : [];
 
-        // If backend has restricted owner branches, only show branches they can actually access
-        const ownerBranches = (currentUser as any)?.branches as string[] | undefined;
-        if (Array.isArray(ownerBranches) && ownerBranches.length > 0) {
-          const allowedSet = new Set(ownerBranches.map((id) => id && id.toString()));
-          mapped = mapped.filter((b) => allowedSet.has(b._id && b._id.toString()));
-        }
-
-        setBranches(mapped);
-      } catch {
-        if (!cancelled) {
-          setBranches([]);
-        }
-      } finally {
-        if (!cancelled) {
-          setBranchesLoading(false);
-        }
-      }
-    };
-    fetchBranches();
-    return () => {
-      cancelled = true;
-    };
-  }, [isGymOwner, currentUser.gymId]);
+    const ownerBranches = (currentUser as any)?.branches as string[] | undefined;
+    if (Array.isArray(ownerBranches) && ownerBranches.length > 0) {
+      const allowedSet = new Set(ownerBranches.map((id) => id && id.toString()));
+      mapped = mapped.filter((b) => allowedSet.has(b._id && b._id.toString()));
+    }
+    return mapped;
+  }, [allBranches, currentUser]);
 
   const baseDashboardItem = {
     key: '/dashboard',
@@ -154,7 +141,7 @@ const Sidebar: React.FC<SidebarProps> = ({ collapsed, onCollapse }) => {
   const staffsMenuItem = {
     key: '/staffs',
     icon: <TeamOutlined />,
-    label: <Link href="/staffs" prefetch>Staffs</Link>,
+    label: <Link href="/staffs" prefetch>Staff/Manager</Link>,
   };
 
   const logoutMenuItem = {
@@ -211,14 +198,11 @@ const Sidebar: React.FC<SidebarProps> = ({ collapsed, onCollapse }) => {
   };
 
   const handleLogout = async () => {
-    setLogoutLoading(true);
     try {
-      await api.request('/auth/logout', { method: 'POST' });
+      await dispatch(logoutAsync()).unwrap();
       message.success('Logged out successfully');
     } catch {
       message.error('Logout failed, but clearing local session');
-    } finally {
-      setLogoutLoading(false);
     }
     // Clear local auth state and redirect (logout() in AuthContext does router.replace('/login'))
     logout();
@@ -252,8 +236,7 @@ const Sidebar: React.FC<SidebarProps> = ({ collapsed, onCollapse }) => {
   const handleRemoveGymLogo = async () => {
     if (!currentUser.gymId) return;
     try {
-      setEditGymLoading(true);
-      await api.gyms.removeLogo();
+      await dispatch(removeGymLogoAsync()).unwrap();
       setEditGymLogoFile(null);
       setEditGymLogoPreview(null);
       updateUser({
@@ -262,8 +245,6 @@ const Sidebar: React.FC<SidebarProps> = ({ collapsed, onCollapse }) => {
       message.success('Gym logo removed');
     } catch (err: any) {
       message.error(err?.message || 'Failed to remove gym logo');
-    } finally {
-      setEditGymLoading(false);
     }
   };
 
@@ -271,14 +252,13 @@ const Sidebar: React.FC<SidebarProps> = ({ collapsed, onCollapse }) => {
     if (!currentUser.gymId) return;
     try {
       const values = await editGymForm.validateFields();
-      setEditGymLoading(true);
       let logoUrl: string | null = null;
       if (editGymLogoFile) {
         logoUrl = await fileToDataUrl(editGymLogoFile);
       }
       const payload: { name?: string; logoUrl?: string | null } = { name: values.gymName?.trim() || undefined };
       if (logoUrl !== null) payload.logoUrl = logoUrl;
-      const res = await api.gyms.update(currentUser.gymId, payload);
+      const res = await dispatch(updateGymAsync({ gymId: currentUser.gymId, data: payload })).unwrap();
       type GymUpdateResponse = { data?: { name?: string; logoUrl?: string | null } } | { name?: string; logoUrl?: string | null };
       const raw = res as GymUpdateResponse;
       const data = (raw && typeof raw === 'object' && 'data' in raw && raw.data != null) ? raw.data : (raw as { name?: string; logoUrl?: string | null });
@@ -295,8 +275,6 @@ const Sidebar: React.FC<SidebarProps> = ({ collapsed, onCollapse }) => {
       } else {
         message.error(err?.message || 'Failed to update gym');
       }
-    } finally {
-      setEditGymLoading(false);
     }
   };
 
@@ -365,7 +343,7 @@ const Sidebar: React.FC<SidebarProps> = ({ collapsed, onCollapse }) => {
         open={editGymModalVisible}
         onCancel={() => setEditGymModalVisible(false)}
         onOk={handleEditGymSave}
-        confirmLoading={editGymLoading}
+        confirmLoading={gymSaving}
         okText="Save"
         destroyOnHidden
       >
@@ -424,7 +402,7 @@ const Sidebar: React.FC<SidebarProps> = ({ collapsed, onCollapse }) => {
                   danger
                   icon={<DeleteOutlined />}
                   onClick={handleRemoveGymLogo}
-                  loading={editGymLoading}
+                  loading={gymLogoRemoving}
                 >
                   Remove logo
                 </Button>
@@ -471,6 +449,7 @@ const Sidebar: React.FC<SidebarProps> = ({ collapsed, onCollapse }) => {
           </div>
         )}
         <Menu
+          className="app-sidebar-menu"
           theme="dark"
           mode="inline"
           inlineCollapsed={collapsed}

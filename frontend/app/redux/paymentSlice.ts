@@ -1,5 +1,6 @@
 import { createSlice, createAsyncThunk } from '@reduxjs/toolkit';
 import { api } from '../utils/api';
+import axiosClient from './axiosClient';
 
 // Types
 export interface Payment {
@@ -22,12 +23,25 @@ export interface PaymentStats {
   monthlyRevenue: Array<{ month: string; amount: number }>;
 }
 
+export interface OverdueMember {
+  memberId: string;
+  memberName: string;
+  totalAmount: number;
+  paidAmount: number;
+  overdueAmount: number;
+  membership: string;
+  branchId?: string;
+  branchName?: string;
+}
+
 interface PaymentState {
   payments: Payment[];
   recentPayments: Payment[];
   overduePayments: Payment[];
+  overdueMembers: OverdueMember[];
   stats: PaymentStats | null;
   loading: boolean;
+  createLoading: boolean;
   error: string | null;
   currentPage: number;
   totalPages: number;
@@ -41,8 +55,10 @@ const initialState: PaymentState = {
   payments: [],
   recentPayments: [],
   overduePayments: [],
+  overdueMembers: [],
   stats: null,
   loading: false,
+  createLoading: false,
   error: null,
   currentPage: 1,
   totalPages: 1,
@@ -121,6 +137,63 @@ export const createPayment = createAsyncThunk(
   }
 );
 
+export const fetchOverdueMembersAsync = createAsyncThunk(
+  'payments/fetchOverdueMembers',
+  async (
+    { role, branchId }: { role: string; branchId?: string },
+    { rejectWithValue }
+  ) => {
+    try {
+      if (role === 'gym_owner') {
+        const query = branchId ? `?branchId=${encodeURIComponent(branchId)}` : '';
+        const response = await axiosClient.get(`/payments/analytics/overdue/gym-owner${query}`);
+        const data = response.data?.data ?? response.data;
+        const list: OverdueMember[] = [];
+        if (Array.isArray(data?.branches)) {
+          data.branches.forEach((branch: any) => {
+            if (Array.isArray(branch?.overdueMembersList)) {
+              branch.overdueMembersList.forEach((member: any) => {
+                list.push({
+                  memberId: member.memberId,
+                  memberName: member.memberName,
+                  totalAmount: member.totalAmount,
+                  paidAmount: member.paidAmount,
+                  overdueAmount: member.overdueAmount,
+                  membership: member.membership,
+                  branchId: branch.branchId || branch._id,
+                  branchName: branch.branchName,
+                });
+              });
+            }
+          });
+        }
+        return list;
+      }
+
+      const response = await axiosClient.get('/payments/analytics/overdue/branch-manager');
+      const data = response.data?.data ?? response.data;
+      return (data?.members || data?.overdueMembers || []) as OverdueMember[];
+    } catch (err: unknown) {
+      return rejectWithValue(getErrorMessage(err, 'Failed to fetch pending members'));
+    }
+  }
+);
+
+export const createPaymentAsync = createAsyncThunk(
+  'payments/createDirect',
+  async (
+    { branchId, memberId, paidAmount }: { branchId: string; memberId: string; paidAmount: number },
+    { rejectWithValue }
+  ) => {
+    try {
+      const response = await axiosClient.post(`/payments/${branchId}`, { memberId, paidAmount });
+      return (response.data?.data ?? response.data) as Payment;
+    } catch (err: unknown) {
+      return rejectWithValue(getErrorMessage(err, 'Failed to create payment'));
+    }
+  }
+);
+
 export const updatePayment = createAsyncThunk(
   'payments/update',
   async ({ paymentId, data }: { paymentId: string; data: Partial<Payment> }, { rejectWithValue }) => {
@@ -177,8 +250,33 @@ const paymentSlice = createSlice({
         state.loading = false;
         state.error = (action.payload as string) || action.error.message || 'Failed to fetch stats';
       })
+      .addCase(fetchOverdueMembersAsync.pending, (state) => {
+        state.loading = true;
+        state.error = null;
+      })
+      .addCase(fetchOverdueMembersAsync.fulfilled, (state, action) => {
+        state.loading = false;
+        state.overdueMembers = (action.payload as OverdueMember[]) || [];
+      })
+      .addCase(fetchOverdueMembersAsync.rejected, (state, action) => {
+        state.loading = false;
+        state.error = (action.payload as string) || action.error.message || 'Failed to fetch pending members';
+        state.overdueMembers = [];
+      })
       .addCase(createPayment.fulfilled, (state, action) => {
         state.payments.unshift(action.payload);
+      })
+      .addCase(createPaymentAsync.pending, (state) => {
+        state.createLoading = true;
+        state.error = null;
+      })
+      .addCase(createPaymentAsync.fulfilled, (state, action) => {
+        state.createLoading = false;
+        state.payments.unshift(action.payload);
+      })
+      .addCase(createPaymentAsync.rejected, (state, action) => {
+        state.createLoading = false;
+        state.error = (action.payload as string) || action.error.message || 'Failed to create payment';
       })
       .addCase(updatePayment.fulfilled, (state, action) => {
         const index = state.payments.findIndex((p) => p._id === action.payload._id);
@@ -191,3 +289,7 @@ const paymentSlice = createSlice({
 
 export const { clearError } = paymentSlice.actions;
 export default paymentSlice.reducer;
+
+export const selectOverdueMembers = (state: any): OverdueMember[] => state.payments?.overdueMembers ?? [];
+export const selectPaymentsLoading = (state: any): boolean => state.payments?.loading ?? false;
+export const selectCreatePaymentLoading = (state: any): boolean => state.payments?.createLoading ?? false;

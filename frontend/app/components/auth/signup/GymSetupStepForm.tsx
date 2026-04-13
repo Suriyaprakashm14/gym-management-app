@@ -34,21 +34,25 @@ export function GymSetupStepForm({
   const [logoFile, setLogoFile] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(initialLogoUrl);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const onGymNameChangeRef = useRef(onGymNameChange);
-  onGymNameChangeRef.current = onGymNameChange;
-  const gymName = Form.useWatch('gymName', form);
 
   useEffect(() => {
     setPreviewUrl(initialLogoUrl);
   }, [initialLogoUrl]);
 
   useEffect(() => {
-    if (gymName !== undefined) onGymNameChangeRef.current?.((gymName ?? '').trim());
-  }, [gymName]);
+    const nextGymName = initialGymName ?? '';
+    if (form.getFieldValue('gymName') !== nextGymName) {
+      form.setFieldValue('gymName', nextGymName);
+    }
+  }, [form, initialGymName]);
 
   useEffect(() => {
-    form.setFieldsValue({ gymName: initialGymName ?? '' });
-  }, [form, initialGymName]);
+    return () => {
+      if (previewUrl && previewUrl.startsWith('blob:')) {
+        URL.revokeObjectURL(previewUrl);
+      }
+    };
+  }, [previewUrl]);
 
   const handleLogoClick = () => fileInputRef.current?.click();
 
@@ -96,6 +100,11 @@ export function GymSetupStepForm({
         requiredMark={false}
         size="large"
         initialValues={{ gymName: initialGymName }}
+        onValuesChange={(changedValues) => {
+          if (Object.prototype.hasOwnProperty.call(changedValues, 'gymName')) {
+            onGymNameChange?.(String(changedValues.gymName ?? '').trim());
+          }
+        }}
       >
         <Form.Item
           label={<span className="text-sm text-muted-foreground">Gym Name (optional)</span>}

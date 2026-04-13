@@ -168,10 +168,15 @@ export const api = {
                 'Account is deactivated. Contact your owner.';
               return { success: false, error: msg, status: response.status };
             }
+            // Prefer the human-readable message from nested details over the error code.
+            // Backend shape: { error: { code, message: "ERROR_CODE", details: { message: "Human text" } } }
             const errorMessage =
               (typeof rawPayload?.message === 'string' && rawPayload.message) ||
-              (typeof rawPayload?.error === 'string' ? rawPayload.error : rawPayload?.error?.message) ||
-              (typeof rawPayload?.error === 'object' && rawPayload?.error?.message) ||
+              (typeof rawPayload?.error === 'string'
+                ? rawPayload.error
+                : (typeof rawPayload?.error?.details?.message === 'string' && rawPayload?.error?.details?.message) ||
+                  (typeof rawPayload?.error?.details?.error === 'string' && rawPayload?.error?.details?.error) ||
+                  (typeof rawPayload?.error?.message === 'string' && rawPayload?.error?.message)) ||
               `HTTP error! status: ${response.status}`;
 
             // Friendly message for payload too large / entity too large
@@ -633,9 +638,9 @@ export const api = {
   // Expense categories (master data, like membership types)
   expenseCategories: {
     list: () => api.request('/expense-categories'),
-    create: (data: { name: string }) =>
+    create: (data: { name: string; description?: string }) =>
       api.request('/expense-categories', { method: 'POST', body: JSON.stringify(data) }),
-    update: (id: string, data: { name?: string; isActive?: boolean }) =>
+    update: (id: string, data: { name?: string; description?: string; isActive?: boolean }) =>
       api.request(`/expense-categories/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
     delete: (id: string) =>
       api.request(`/expense-categories/${id}`, { method: 'DELETE' }),

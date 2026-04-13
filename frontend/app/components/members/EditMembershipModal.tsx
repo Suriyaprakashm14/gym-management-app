@@ -1,9 +1,24 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
-import { Modal, Form, Button, Space, App, Select } from 'antd';
-import { EditOutlined } from '@ant-design/icons';
-import { api } from '../../utils/api';
+import React, { useEffect } from 'react';
+import {
+  App,
+  Modal,
+  Form,
+  Input,
+  InputNumber,
+  Button,
+  Space,
+  Select,
+} from 'antd';
+import { EditOutlined, CalendarOutlined } from '@ant-design/icons';
+import { useAppDispatch, useAppSelector } from '../../redux/hooks';
+import {
+  updateMembershipPriceAsync,
+  selectUpdateMembershipLoading,
+} from '../../redux/membershipsSlice';
+
+const { TextArea } = Input;
 
 interface EditMembershipModalProps {
   visible: boolean;
@@ -12,49 +27,58 @@ interface EditMembershipModalProps {
   membership: any;
 }
 
-type StatusValue = 'active' | 'inactive';
-
 const EditMembershipModal: React.FC<EditMembershipModalProps> = ({
   visible,
   onClose,
-  membership,
   onSuccess,
+  membership,
 }) => {
   const { message } = App.useApp();
   const [form] = Form.useForm();
-  const [loading, setLoading] = useState(false);
+  const dispatch = useAppDispatch();
+  const updateLoading = useAppSelector(selectUpdateMembershipLoading);
 
+  // ── Populate fields when modal opens ─────────────────────────────────────────
   useEffect(() => {
-    if (visible && membership) {
-      const originalMembership = membership.originalData || membership;
-      const isActive = originalMembership?.isActive ?? membership?.isActive ?? true;
-      form.setFieldsValue({
-        status: isActive ? 'active' : 'inactive',
-      });
-    }
+    if (!visible || !membership) return;
+    const src = membership.originalData || membership;
+    form.setFieldsValue({
+      type: src.type ?? '',
+      description: src.description ?? '',
+      status: (src.isActive ?? true) ? 'active' : 'inactive',
+      // read-only display fields
+      price: src.price ?? 0,
+      duration: src.duration ?? 0,
+    });
   }, [visible, membership, form]);
 
-  const handleSubmit = async (values: { status: StatusValue }) => {
-    if (!membership?.id) return;
-    setLoading(true);
+  // ── Handlers ─────────────────────────────────────────────────────────────────
+  const handleSubmit = async (values: {
+    type: string;
+    description: string;
+    status: 'active' | 'inactive';
+  }) => {
+    const id = membership?.id ?? membership?._id;
+    if (!id) return;
+
     try {
-      const originalMembership = membership.originalData || membership;
-      const payload = {
-        type: originalMembership?.type ?? membership?.type,
-        price: originalMembership?.price ?? membership?.price ?? 0,
-        description: originalMembership?.description ?? membership?.description ?? '',
-        duration: originalMembership?.duration ?? membership?.duration ?? 0,
-        isActive: values.status === 'active',
-      };
-      await api.membershipPrices.update(membership.id, payload);
-      message.success('Membership status updated successfully');
+      await dispatch(
+        updateMembershipPriceAsync({
+          id,
+          data: {
+            type: values.type.trim(),
+            description: values.description.trim(),
+            isActive: values.status === 'active',
+          },
+        })
+      ).unwrap();
+
+      message.success('Membership updated successfully');
       form.resetFields();
       onClose();
       onSuccess?.();
-    } catch (error: any) {
-      message.error(error?.message || 'Failed to update membership');
-    } finally {
-      setLoading(false);
+    } catch (err: any) {
+      message.error(err?.message || err || 'Failed to update membership');
     }
   };
 
@@ -63,37 +87,89 @@ const EditMembershipModal: React.FC<EditMembershipModalProps> = ({
     onClose();
   };
 
+  // ── Render ───────────────────────────────────────────────────────────────────
   return (
     <Modal
       title={
         <Space>
           <EditOutlined />
-          <span>Edit Membership Status</span>
+          <span>Edit Membership</span>
         </Space>
       }
       open={visible}
       onCancel={handleCancel}
       footer={null}
-      width={440}
+      width={600}
     >
-      <Form form={form} layout="vertical" onFinish={handleSubmit} initialValues={{ status: 'active' }}>
+      <Form
+        form={form}
+        layout="vertical"
+        onFinish={handleSubmit}
+        initialValues={{ status: 'active' }}
+      >
+        {/* Editable fields */}
+        <Form.Item
+          label="Membership Type"
+          name="type"
+          rules={[{ required: true, message: 'Please enter membership type' }]}
+        >
+          <Input placeholder="e.g., monthly, quarterly, yearly, basic, premium, vip" />
+        </Form.Item>
+
+        <Form.Item
+          label="Description"
+          name="description"
+          rules={[{ required: true, message: 'Please enter description' }]}
+        >
+          <TextArea rows={3} placeholder="Enter membership description" />
+        </Form.Item>
+
         <Form.Item
           label="Status"
           name="status"
           rules={[{ required: true, message: 'Please select status' }]}
         >
           <Select
-            placeholder="Select status"
             options={[
               { value: 'active', label: 'Active' },
               { value: 'inactive', label: 'Inactive' },
             ]}
+            placeholder="Select status"
           />
         </Form.Item>
+
+        {/* Read-only display fields (price & duration are immutable after creation) */}
+        <Form.Item
+          label="Price (₹)"
+          name="price"
+          tooltip="Price cannot be changed after creation."
+        >
+          <InputNumber
+            disabled
+            style={{ width: '100%' }}
+            prefix={<span style={{ fontWeight: 600 }}>₹</span>}
+            formatter={(v) => `${v}`.replace(/\B(?=(\d{3})+(?!\d))/g, ',')}
+            parser={(v) => (v?.replace(/₹\s?|(,*)/g, '') || '0') as any}
+          />
+        </Form.Item>
+
+        <Form.Item
+          label="Duration (Days)"
+          name="duration"
+          tooltip="Duration cannot be changed after creation."
+        >
+          <InputNumber
+            disabled
+            style={{ width: '100%' }}
+            prefix={<CalendarOutlined />}
+            placeholder="Duration in days"
+          />
+        </Form.Item>
+
         <Form.Item>
           <Space>
-            <Button type="primary" htmlType="submit" loading={loading} size="large">
-              Update Status
+            <Button type="primary" htmlType="submit" loading={updateLoading} size="large">
+              Update Membership
             </Button>
             <Button onClick={handleCancel} size="large">
               Cancel

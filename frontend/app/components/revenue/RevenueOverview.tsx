@@ -1,6 +1,9 @@
 'use client'
 
 import React, { useState, useEffect } from 'react'
+import { Select, Typography, Row, Col, Flex } from 'antd'
+
+const { Title } = Typography
 import { 
   AlertCircle, 
   CheckCircle, 
@@ -84,6 +87,20 @@ const BillingOverview: React.FC = () => {
   const [error, setError] = useState<string | null>(null)
   const [selectedYear, setSelectedYear] = useState(new Date().getFullYear())
   const [selectedMonth, setSelectedMonth] = useState<number | null>(() => new Date().getMonth() + 1)
+  const yearOptions = Array.from({ length: 5 }, (_, i) => {
+    const year = new Date().getFullYear() - i
+    return { value: year, label: String(year) }
+  })
+  const monthOptions = [
+    { value: '', label: 'All Months' },
+    ...Array.from({ length: 12 }, (_, i) => {
+      const month = i + 1
+      return {
+        value: String(month),
+        label: new Date(2000, month - 1, 1).toLocaleString('default', { month: 'long' })
+      }
+    })
+  ]
 
   // Fetch analytics data
   useEffect(() => {
@@ -536,107 +553,31 @@ const BillingOverview: React.FC = () => {
   }
 
   return (
-    <div style={{
-      minHeight: '100vh',
-      background: '#F8FAFC',
-      fontFamily: 'system-ui, -apple-system, sans-serif'
-    }}>
-      <div style={{
-        maxWidth: '90rem',
-        margin: '0 auto',
-        padding: 'clamp(1rem, 4vw, 2rem)'
-      }}>
-        
+    <div style={{ padding: '24px' }}>
+      <Row justify="space-between" align="middle" style={{ marginBottom: 16 }}>
+        <Col>
+          <Title level={4} style={{ margin: 0 }}>Financial Overview</Title>
+        </Col>
+        <Col>
+          <Flex align="center" gap={8}>
+            <Select
+              value={selectedYear}
+              options={yearOptions}
+              onChange={(value) => setSelectedYear(Number(value))}
+              style={{ minWidth: 130 }}
+            />
+            <Select
+              value={selectedMonth != null ? String(selectedMonth) : ''}
+              options={monthOptions}
+              onChange={(value) => setSelectedMonth(value ? Number(value) : null)}
+              style={{ minWidth: 180 }}
+            />
+          </Flex>
+        </Col>
+      </Row>
 
-
-        {/* Stats Section */}
-        <div style={{marginBottom: 'clamp(2rem, 5vw, 3rem)'}}>
-          <div style={{
-            display: 'flex',
-            flexDirection: 'row',
-            justifyContent: 'space-between',
-            alignItems: 'center',
-            gap: 'clamp(1rem, 3vw, 1.5rem)',
-            marginBottom: 'clamp(2rem, 5vw, 2.5rem)',
-            flexWrap: 'wrap'
-          }}>
-            <div>
-              <h2 style={{
-                fontSize: 'clamp(1.5rem, 4vw, 2rem)',
-                fontWeight: 'bold',
-                color: '#1E293B',
-                margin: '0 0 0.25rem 0'
-              }}>
-                Financial Overview
-              </h2>
-              <p style={{
-                color: '#64748B',
-                fontSize: 'clamp(0.875rem, 2vw, 1rem)',
-                margin: 0
-              }}>
-                Track your gym's revenue and payment statistics
-              </p>
-            </div>
-            <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
-              <select 
-                style={{
-                  background: 'white',
-                  border: '1px solid #E2E8F0',
-                  color: '#1E293B',
-                  padding: 'clamp(0.5rem, 2vw, 0.75rem) clamp(1rem, 3vw, 1.5rem)',
-                  borderRadius: '0.5rem',
-                  fontSize: 'clamp(0.875rem, 2vw, 1rem)',
-                  cursor: 'pointer',
-                  outline: 'none',
-                  boxShadow: '0 1px 3px rgba(0, 0, 0, 0.05)'
-                }}
-                value={selectedYear}
-                onChange={(e) => setSelectedYear(Number(e.target.value))}
-                onFocus={(e) => {
-                  e.currentTarget.style.borderColor = '#3B82F6';
-                  e.currentTarget.style.boxShadow = '0 0 0 3px rgba(59, 130, 246, 0.1)';
-                }}
-                onBlur={(e) => {
-                  e.currentTarget.style.borderColor = '#E2E8F0';
-                  e.currentTarget.style.boxShadow = '0 1px 3px rgba(0, 0, 0, 0.05)';
-                }}>
-                {Array.from({ length: 5 }, (_, i) => new Date().getFullYear() - i).map(year => (
-                  <option key={year} value={year}>{year}</option>
-                ))}
-              </select>
-              
-              <select 
-                style={{
-                  background: 'white',
-                  border: '1px solid #E2E8F0',
-                  color: '#1E293B',
-                  padding: 'clamp(0.5rem, 2vw, 0.75rem) clamp(1rem, 3vw, 1.5rem)',
-                  borderRadius: '0.5rem',
-                  fontSize: 'clamp(0.875rem, 2vw, 1rem)',
-                  cursor: 'pointer',
-                  outline: 'none',
-                  boxShadow: '0 1px 3px rgba(0, 0, 0, 0.05)'
-                }}
-                value={selectedMonth || ''}
-                onChange={(e) => setSelectedMonth(e.target.value ? Number(e.target.value) : null)}
-                onFocus={(e) => {
-                  e.currentTarget.style.borderColor = '#3B82F6';
-                  e.currentTarget.style.boxShadow = '0 0 0 3px rgba(59, 130, 246, 0.1)';
-                }}
-                onBlur={(e) => {
-                  e.currentTarget.style.borderColor = '#E2E8F0';
-                  e.currentTarget.style.boxShadow = '0 1px 3px rgba(0, 0, 0, 0.05)';
-                }}>
-                <option value="">All Months</option>
-                {Array.from({ length: 12 }, (_, i) => i + 1).map(month => (
-                  <option key={month} value={month}>
-                    {new Date(2000, month - 1, 1).toLocaleString('default', { month: 'long' })}
-                  </option>
-                ))}
-              </select>
-            </div>
-          </div>
-
+      {/* Stats Section */}
+      <div style={{marginBottom: 'clamp(2rem, 5vw, 3rem)'}}>
           {/* Financial Overview: Revenue=received, Pending=unpaid, Expenses=tracked expenses (separate) */}
           <div style={{
             display: 'grid',
@@ -816,7 +757,7 @@ const BillingOverview: React.FC = () => {
             </div>
           </div>
           
-          <div style={{ maxHeight: '400px', overflowY: 'auto' }}>
+          <div className="revenue-list-scroll" style={{ maxHeight: '400px', overflowY: 'auto', overflowX: 'hidden' }}>
             {analyticsData?.branches && analyticsData.branches.length > 0 ? (
               analyticsData.branches.map((branch: any, index: number) => (
                 <div key={index} style={{
@@ -967,7 +908,7 @@ const BillingOverview: React.FC = () => {
               </div>
             </div>
             
-            <div style={{ maxHeight: '400px', overflowY: 'auto' }}>
+            <div className="revenue-list-scroll" style={{ maxHeight: '400px', overflowY: 'auto', overflowX: 'hidden' }}>
               {analyticsData?.paidMembers && analyticsData.paidMembers.length > 0 ? (
                 analyticsData.paidMembers.map((member: any, index: number) => (
                   <div key={index} style={{
@@ -1135,7 +1076,7 @@ const BillingOverview: React.FC = () => {
               </div>
             )}
 
-            <div style={{ maxHeight: '400px', overflowY: 'auto' }}>
+            <div className="revenue-list-scroll" style={{ maxHeight: '400px', overflowY: 'auto', overflowX: 'hidden' }}>
               {analyticsData?.pendingMembers && analyticsData.pendingMembers.length > 0 ? (
                 analyticsData.pendingMembers.map((member: any, index: number) => (
                   <div key={index} style={{
@@ -1238,7 +1179,6 @@ const BillingOverview: React.FC = () => {
           </div>
         )}
       </div>
-    </div>
   )
 }
 

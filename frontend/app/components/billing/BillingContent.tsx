@@ -1,12 +1,19 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { Table, Button, Modal, Form, InputNumber, App, Card, Typography, Space, Tag } from 'antd';
-import { PlusOutlined, ClockCircleOutlined } from '@ant-design/icons';
+import { Table, Button, Modal, Form, InputNumber, App, Card, Typography, Space, Tag, Row, Col, Flex } from 'antd';
+import { PlusOutlined } from '@ant-design/icons';
 import { useAuth } from '../../contexts/AuthContext';
 import { useBranchContext } from '../../contexts/BranchContext';
-import { api } from '../../utils/api';
 import PageLoader from '../PageLoader';
+import { useAppDispatch, useAppSelector } from '../../redux/hooks';
+import {
+  createPaymentAsync,
+  fetchOverdueMembersAsync,
+  selectCreatePaymentLoading,
+  selectOverdueMembers,
+  selectPaymentsLoading,
+} from '../../redux/paymentSlice';
 
 const { Title } = Typography;
 
@@ -25,60 +32,29 @@ export default function BillingContent() {
   const { message } = App.useApp();
   const { user } = useAuth();
   const { selectedBranch } = useBranchContext();
-  const [pendingMembers, setPendingMembers] = useState<PendingMember[]>([]);
-  const [loading, setLoading] = useState(true);
   const [selectedMember, setSelectedMember] = useState<PendingMember | null>(null);
   const [paymentModalVisible, setPaymentModalVisible] = useState(false);
-  const [paymentLoading, setPaymentLoading] = useState(false);
   const [form] = Form.useForm();
-
-  const fetchPendingMembers = async () => {
-    if (!user) {
-      setLoading(false);
-      return;
-    }
-    try {
-      setLoading(true);
-      if (user.role === 'gym_owner') {
-        const url = selectedBranch
-          ? `/payments/analytics/overdue/gym-owner?branchId=${encodeURIComponent(selectedBranch)}`
-          : '/payments/analytics/overdue/gym-owner';
-        const response = await api.request(url);
-        const list: PendingMember[] = [];
-        if ((response as any)?.branches && Array.isArray((response as any).branches)) {
-          (response as any).branches.forEach((branch: any) => {
-            if (branch.overdueMembersList && Array.isArray(branch.overdueMembersList)) {
-              branch.overdueMembersList.forEach((member: any) => {
-                list.push({
-                  memberId: member.memberId,
-                  memberName: member.memberName,
-                  totalAmount: member.totalAmount,
-                  paidAmount: member.paidAmount,
-                  overdueAmount: member.overdueAmount,
-                  membership: member.membership,
-                  branchId: branch.branchId || branch._id,
-                  branchName: branch.branchName,
-                });
-              });
-            }
-          });
-        }
-        setPendingMembers(list);
-      } else {
-        const response = await api.request('/payments/analytics/overdue/branch-manager');
-        setPendingMembers((response as any)?.members || (response as any)?.overdueMembers || []);
-      }
-    } catch (err) {
-      message.error('Failed to fetch pending members');
-      setPendingMembers([]);
-    } finally {
-      setLoading(false);
-    }
-  };
+  const dispatch = useAppDispatch();
+  const pendingMembers = useAppSelector(selectOverdueMembers) as PendingMember[];
+  const loading = useAppSelector(selectPaymentsLoading);
+  const paymentLoading = useAppSelector(selectCreatePaymentLoading);
 
   useEffect(() => {
-    fetchPendingMembers();
-  }, [user, selectedBranch]);
+    if (!user) {
+      return;
+    }
+    dispatch(
+      fetchOverdueMembersAsync({
+        role: user.role,
+        branchId: user.role === 'gym_owner' ? selectedBranch || undefined : undefined,
+      })
+    )
+      .unwrap()
+      .catch(() => {
+        message.error('Failed to fetch pending members');
+      });
+  }, [dispatch, user, selectedBranch, message]);
 
   const handleAddPayment = (member: PendingMember) => {
     setSelectedMember(member);
@@ -99,16 +75,26 @@ export default function BillingContent() {
       return;
     }
     try {
-      setPaymentLoading(true);
-      await api.payments.createForBranch(branchId, { memberId: selectedMember.memberId, paidAmount: values.amount });
+      await dispatch(
+        createPaymentAsync({
+          branchId,
+          memberId: selectedMember.memberId,
+          paidAmount: values.amount,
+        })
+      ).unwrap();
       message.success('Payment added successfully');
       setPaymentModalVisible(false);
       form.resetFields();
-      fetchPendingMembers();
+      if (user) {
+        dispatch(
+          fetchOverdueMembersAsync({
+            role: user.role,
+            branchId: user.role === 'gym_owner' ? selectedBranch || undefined : undefined,
+          })
+        );
+      }
     } catch (err) {
       message.error('Failed to add payment');
-    } finally {
-      setPaymentLoading(false);
     }
   };
 
@@ -149,15 +135,14 @@ export default function BillingContent() {
   }
 
   return (
-    <div style={{ padding: 24 }}>
+    <div style={{ padding: '24px' }}>
+      <Row justify="space-between" align="middle" style={{ marginBottom: 16 }}>
+        <Col>
+          <Title level={4} style={{ margin: 0 }}>Overdue Payments</Title>
+        </Col>
+        <Col />
+      </Row>
       <Card>
-        <div style={{ marginBottom: '1.5rem' }}>
-          <Title level={2} style={{ margin: 0, display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-            <ClockCircleOutlined style={{ color: '#F59E0B' }} />
-            Overdue Payments
-          </Title>
-          <p style={{ color: '#64748B', margin: '0.5rem 0 0 0' }}>Manage pending payments and add new payments for members</p>
-        </div>
         <Table
           columns={columns}
           dataSource={pendingMembers}

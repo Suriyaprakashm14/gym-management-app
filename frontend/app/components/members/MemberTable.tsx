@@ -30,12 +30,17 @@ import {
 } from '@ant-design/icons';
 import type { ColumnsType } from 'antd/es/table';
 import { useAppDispatch, useAppSelector } from '../../redux/hooks';
-import { fetchMembers, Member as StoreMember } from '../../redux/membersSlice';
+import {
+  deleteMemberAsync,
+  fetchMembers,
+  Member as StoreMember,
+  renewMemberAsync,
+  selectRenewMemberLoading,
+} from '../../redux/membersSlice';
 import { fetchMembershipPrices } from '../../redux/membershipsSlice';
 import { useMemberFilter } from '../../contexts/MemberFilterContext';
 import { useBranchContext } from '../../contexts/BranchContext';
 import { useAuth } from '../../contexts/AuthContext';
-import { api } from '../../utils/api';
 import EditMemberModal from './EditMemberModal';
 import MemberDetailsModal from './MemberDetailsModal';
 import PageLoader from '../PageLoader';
@@ -93,7 +98,13 @@ const PAGE_SIZE = 10;
 if (typeof window !== 'undefined' && process.env.NODE_ENV === 'development') {
   const originalError = console.error;
   console.error = (...args: unknown[]) => {
-    const msg = typeof args[0] === 'string' ? args[0] : String(args[0] ?? '');
+    const firstArg = args[0];
+    const msg =
+      typeof firstArg === 'string'
+        ? firstArg
+        : firstArg instanceof Error && typeof firstArg.message === 'string'
+          ? firstArg.message
+          : '';
     if (msg.includes('registering a cleanup function after unmount') && msg.includes('Ant Design CSS-in-JS')) return;
     originalError.apply(console, args);
   };
@@ -108,7 +119,6 @@ const MemberTable: React.FC = () => {
   const [selectedMemberId, setSelectedMemberId] = useState<string | null>(null);
   const [renewModalVisible, setRenewModalVisible] = useState(false);
   const [renewMember, setRenewMember] = useState<Member | null>(null);
-  const [renewLoading, setRenewLoading] = useState(false);
   const [membershipTypes, setMembershipTypes] = useState<Array<{ id: string; type: string; price: number; duration: number }>>([]);
   const [renewForm] = Form.useForm();
   const watchedRenewPlan = Form.useWatch(['membership', 'planQuantity'], renewForm);
@@ -127,6 +137,7 @@ const MemberTable: React.FC = () => {
   const dispatch = useAppDispatch();
   const { members, total, loading, error: membersError } = useAppSelector((s) => s.members);
   const reduxPlans = useAppSelector((s) => s.membershipPrices.items);
+  const renewLoading = useAppSelector(selectRenewMemberLoading);
   const { filter } = useMemberFilter();
   const { selectedBranch } = useBranchContext();
   const { user } = useAuth();
@@ -182,10 +193,8 @@ const MemberTable: React.FC = () => {
     [message]
   );
 
-  // When Renew modal opens: show Redux plans immediately (prompt render), then refresh from API
-  useEffect(() => {
-    if (!renewModalVisible) return;
-    const normalize = (list: any[]) =>
+  const normalizeMembershipPlans = useCallback(
+    (list: any[]) =>
       list
         .filter((m: any) => m.isActive !== false)
         .map((m: any) => ({
@@ -195,29 +204,25 @@ const MemberTable: React.FC = () => {
           name: m.name ?? m.type,
           price: m.price,
           duration: m.duration,
-        }));
+        })),
+    []
+  );
+
+  useEffect(() => {
+    if (!renewModalVisible) return;
     if (Array.isArray(reduxPlans) && reduxPlans.length > 0) {
-      setMembershipTypes(normalize(reduxPlans));
+      setMembershipTypes(normalizeMembershipPlans(reduxPlans));
     }
-    const fetchPlans = async () => {
-      try {
-        const response = await api.membershipPrices.getAll();
-        const listSource: any =
-          Array.isArray(response)
-            ? response
-            : Array.isArray((response as any)?.data)
-              ? (response as any).data
-              : Array.isArray((response as any)?.items)
-                ? (response as any).items
-                : [];
-        const list: any[] = Array.isArray(listSource) ? listSource : [];
-        setMembershipTypes(normalize(list));
-      } catch {
+  }, [renewModalVisible, reduxPlans, normalizeMembershipPlans]);
+
+  useEffect(() => {
+    if (!renewModalVisible) return;
+    dispatch(fetchMembershipPrices())
+      .unwrap()
+      .catch(() => {
         message.error('Failed to load membership plans');
-      }
-    };
-    fetchPlans();
-  }, [renewModalVisible, message, reduxPlans]);
+      });
+  }, [renewModalVisible, message, dispatch]);
 
   const handleOpenRenew = useCallback((record: Member) => {
     setRenewMember(record);
@@ -235,20 +240,21 @@ const MemberTable: React.FC = () => {
     if (!renewMember) return;
     const values = await renewForm.validateFields().catch(() => null);
     if (!values) return;
-    setRenewLoading(true);
     try {
-      await api.members.renew(renewMember.key, {
-        membership: values.membership,
-        planQuantity: values.planQuantity ?? 1,
-        paidAmount: values.paidAmount ?? 0,
-      });
+      await dispatch(renewMemberAsync({
+        memberId: renewMember.key,
+        data: {
+          membership: values.membership,
+          planQuantity: values.planQuantity ?? 1,
+          paidAmount: values.paidAmount ?? 0,
+          membershipStartDate: values.membershipStartDate?.toISOString?.(),
+        },
+      })).unwrap();
       message.success('Member renewed successfully');
       handleRenewModalClose();
       dispatch(fetchMembers(buildMemberFetchParams(page, pageSize)));
     } catch (err: any) {
       message.error(err?.message || 'Failed to renew member');
-    } finally {
-      setRenewLoading(false);
     }
   };
 
@@ -277,14 +283,14 @@ const MemberTable: React.FC = () => {
   const handleDelete = useCallback(
     async (record: Member) => {
       try {
-        await api.members.delete(record.key);
+        await dispatch(deleteMemberAsync(record.key)).unwrap();
         message.success('Member removed');
         loadPageRef.current(pageRef.current, pageSizeRef.current);
       } catch (err: any) {
         message.error(err?.message || 'Failed to remove member');
       }
     },
-    [message]
+    [dispatch, message]
   );
 
   const dataSource: Member[] = useMemo(() => {

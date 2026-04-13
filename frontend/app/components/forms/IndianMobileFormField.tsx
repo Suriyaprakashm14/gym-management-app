@@ -43,13 +43,12 @@ export function IndianMobileFormField({
   inputProps,
   formItemProps,
 }: IndianMobileFormFieldProps) {
-  const inputClass =
-    `ff-login-phone-input !bg-secondary/40 !border-border/60 !text-foreground placeholder:!text-muted-foreground/70 ${inputClassName}`.trim();
+  const inputClass = `member-phone-field__input ${inputClassName}`.trim();
 
   return (
     <Form.Item label={label} {...formItemProps}>
-      <Space.Compact block style={{ width: '100%' }}>
-        <Space.Addon className="!bg-secondary/50 !border-border/60">{addonBefore}</Space.Addon>
+      <Space.Compact block style={{ width: '100%' }} className="member-phone-field">
+        <Space.Addon className="member-phone-field__addon">{addonBefore}</Space.Addon>
         <Form.Item name={name} noStyle rules={rules}>
           <Input
             placeholder={placeholder}

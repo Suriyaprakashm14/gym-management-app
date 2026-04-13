@@ -2,17 +2,32 @@
 
 import React, { useState, useEffect } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
-import { Tabs, Button, Space, Typography, Badge, Select, ConfigProvider } from 'antd';
+import {
+  Tabs,
+  Button,
+  Space,
+  Typography,
+  Badge,
+  Select,
+  ConfigProvider,
+  Row,
+  Col,
+  Flex,
+} from 'antd';
 import {
   UserOutlined,
   CheckCircleOutlined,
   CreditCardOutlined,
   PlusOutlined,
+  ReloadOutlined,
 } from '@ant-design/icons';
 import { useAppDispatch, useAppSelector } from '../../redux/hooks';
 import { fetchMembershipPrices } from '../../redux/membershipsSlice';
+import { fetchMembers } from '../../redux/membersSlice';
 import { MemberFilterProvider, useMemberFilter, type MemberFilterValue } from '../../contexts/MemberFilterContext';
+import { useAuth } from '../../contexts/AuthContext';
 import AddMemberModal from './AddMemberModal';
+import CreateMembershipModal from './CreateMembershipModal';
 
 const { Title } = Typography;
 
@@ -36,6 +51,12 @@ function tabKeyFromPathname(pathname: string): MemberTabKey {
   return 'members';
 }
 
+const TAB_TITLES: Record<MemberTabKey, string> = {
+  members: 'Members',
+  'check-in': 'Check-in',
+  memberships: 'Memberships',
+};
+
 interface MembersLayoutProps {
   children: React.ReactNode;
   organizationName?: string;
@@ -46,7 +67,11 @@ function MembersLayoutInner({ children }: MembersLayoutProps) {
   const router = useRouter();
   const dispatch = useAppDispatch();
   const memberCount = useAppSelector((state) => state.members.total);
+  const membersLoading = useAppSelector((state) => state.members.loading);
   const [addModalOpen, setAddModalOpen] = useState(false);
+  const [createMembershipOpen, setCreateMembershipOpen] = useState(false);
+  const { user } = useAuth();
+  const isOwner = user?.role === 'gym_owner';
   const { filter, setFilter } = useMemberFilter();
 
   useEffect(() => {
@@ -99,69 +124,95 @@ function MembersLayoutInner({ children }: MembersLayoutProps) {
 
   return (
     <div style={{ minHeight: '100vh', background: '#f0f2f5' }}>
+      {/* ── Sticky page header ─────────────────────────────────────────────── */}
       <div
         style={{
           background: '#fff',
           borderBottom: '1px solid #e8e8e8',
-          boxShadow: '0 1px 2px rgba(0, 0, 0, 0.04)',
+          boxShadow: '0 1px 4px rgba(0,0,0,0.06)',
           position: 'sticky',
           top: 0,
           zIndex: 998,
+          padding: '16px 24px 0',
         }}
       >
-        <div style={{ padding: '12px 24px 0' }}>
-          <Title level={4} style={{ margin: 0, fontSize: 20, lineHeight: 1.2, marginBottom: 4 }}>
-            Members
-          </Title>
-          <Tabs
-            size="small"
-            activeKey={activeKey}
-            onChange={onTabChange}
-            items={tabItems}
-            tabBarStyle={{ marginBottom: 0 }}
-            style={{ minHeight: 40 }}
-          />
-        </div>
-        {activeKey === 'members' && (
-          <div
-            style={{
-              display: 'flex',
-              justifyContent: 'flex-end',
-              alignItems: 'center',
-              gap: 12,
-              minHeight: 52,
-              padding: '10px 24px 12px',
-              borderTop: '1px solid #f0f0f0',
-            }}
-          >
-            <Select
-              value={filter}
-              onChange={(value) => setFilter(value as MemberFilterValue)}
-              options={[
-                { label: 'All members', value: 'allMembers' },
-                { label: 'Active', value: 'activeUsers' },
-                { label: 'Inactive', value: 'inactiveUsers' },
-                { label: 'Long time inactive', value: 'longTimeInactiveUsers' },
-              ]}
-              style={{ minWidth: 160 }}
-            />
-            <Button
-              type="primary"
-              icon={<PlusOutlined />}
-              onClick={() => setAddModalOpen(true)}
-              style={{ flexShrink: 0, fontWeight: 600 }}
-            >
-              Add member
-            </Button>
-          </div>
-        )}
+        {/* Title row — mirrors gold-loan Row/Col/Flex pattern */}
+        <Row justify="space-between" align="middle" style={{ marginBottom: 12 }}>
+          <Col>
+            <Title level={4} style={{ margin: 0, fontWeight: 700, letterSpacing: '-0.2px' }}>
+              {TAB_TITLES[activeKey]}
+            </Title>
+          </Col>
+
+          {/* Right-side controls */}
+          {activeKey === 'members' && (
+            <Col>
+              <Flex align="center" gap={8}>
+                <Select
+                  value={filter}
+                  onChange={(value) => setFilter(value as MemberFilterValue)}
+                  options={[
+                    { label: 'All members', value: 'allMembers' },
+                    { label: 'Active', value: 'activeUsers' },
+                    { label: 'Inactive', value: 'inactiveUsers' },
+                    { label: 'Long time inactive', value: 'longTimeInactiveUsers' },
+                  ]}
+                  style={{ minWidth: 160 }}
+                />
+                <Button
+                  icon={<ReloadOutlined />}
+                  loading={membersLoading}
+                  onClick={() => dispatch(fetchMembers(undefined))}
+                >
+                  Refresh
+                </Button>
+                <Button
+                  type="primary"
+                  icon={<PlusOutlined />}
+                  onClick={() => setAddModalOpen(true)}
+                  style={{ fontWeight: 600 }}
+                >
+                  Add member
+                </Button>
+              </Flex>
+            </Col>
+          )}
+          {activeKey === 'memberships' && isOwner && (
+            <Col>
+              <Button
+                type="primary"
+                icon={<PlusOutlined />}
+                onClick={() => setCreateMembershipOpen(true)}
+                style={{ fontWeight: 600 }}
+              >
+                Create Membership
+              </Button>
+            </Col>
+          )}
+        </Row>
+
+        {/* Tabs */}
+        <Tabs
+          size="small"
+          activeKey={activeKey}
+          onChange={onTabChange}
+          items={tabItems}
+          tabBarStyle={{ marginBottom: 0 }}
+          style={{ minHeight: 40 }}
+        />
       </div>
 
-      <div style={{ background: '#f0f2f5', minHeight: 'calc(100vh - 120px)', padding: '24px 24px 32px' }}>
+      {/* ── Page content ───────────────────────────────────────────────────── */}
+      <div style={{ padding: '24px', minHeight: 'calc(100vh - 120px)' }}>
         {children}
       </div>
 
       <AddMemberModal open={addModalOpen} onClose={() => setAddModalOpen(false)} />
+      <CreateMembershipModal
+        visible={createMembershipOpen}
+        onClose={() => setCreateMembershipOpen(false)}
+        onSuccess={() => { dispatch(fetchMembershipPrices()); setCreateMembershipOpen(false); }}
+      />
     </div>
   );
 }

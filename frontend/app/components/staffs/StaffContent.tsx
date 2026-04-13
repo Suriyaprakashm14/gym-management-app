@@ -16,9 +16,11 @@ import {
   Popconfirm,
   Empty,
   Switch,
+  Row,
+  Col,
+  Flex,
 } from 'antd';
 import {
-  PlusOutlined,
   EditOutlined,
   DeleteOutlined,
   StopOutlined,
@@ -27,11 +29,31 @@ import {
   KeyOutlined,
 } from '@ant-design/icons';
 import type { ColumnsType } from 'antd/es/table';
-import { api } from '../../utils/api';
 import PageLoader from '../PageLoader';
 import { useAuth } from '../../contexts/AuthContext';
 import { useBranchContext } from '../../contexts/BranchContext';
 import dayjs from 'dayjs';
+import { useAppDispatch, useAppSelector } from '../../redux/hooks';
+import {
+  createStaffAsync,
+  deleteStaffAsync,
+  fetchStaffsAsync,
+  resetStaffPasswordAsync,
+  selectAssignableBranches,
+  selectResetStaffPasswordLoading,
+  selectStaffs,
+  selectStaffsLoading,
+  selectStaffsSaving,
+  updateStaffAsync,
+  updateStaffStatusAsync,
+} from '../../redux/staffsSlice';
+import { createBranchManagerAsync, selectBranchManagerSaving } from '../../redux/branchesSlice';
+import {
+  blockNonDigitKeysOnPhoneField,
+  indianMobileTenDigitsRule,
+  mobileRequiredRule,
+  sanitizeIndianMobileDigits,
+} from '../../utils/validation';
 
 const { Title, Text } = Typography;
 
@@ -45,7 +67,7 @@ interface StaffRecord {
   _id: string;
   firstName: string;
   lastName: string;
-  email: string;
+  phone: string;
   role: string;
   branchId: string;
   branchName?: string;
@@ -61,58 +83,40 @@ export default function StaffContent() {
   const { message, modal } = App.useApp();
   const { user } = useAuth();
   const { selectedBranch } = useBranchContext();
-  const [staffs, setStaffs] = useState<StaffRecord[]>([]);
-  const [assignableBranches, setAssignableBranches] = useState<AssignableBranch[]>([]);
-  const [loading, setLoading] = useState(true);
   const [createModalOpen, setCreateModalOpen] = useState(false);
   const [editModalOpen, setEditModalOpen] = useState(false);
   const [editingStaff, setEditingStaff] = useState<StaffRecord | null>(null);
-  const [submitLoading, setSubmitLoading] = useState(false);
   const [statusLoadingId, setStatusLoadingId] = useState<string | null>(null);
   const [roleFilter, setRoleFilter] = useState<'all' | 'managers' | 'staff'>('all');
   const [resetPasswordModalOpen, setResetPasswordModalOpen] = useState(false);
   const [resetPasswordStaff, setResetPasswordStaff] = useState<StaffRecord | null>(null);
-  const [resetPasswordLoading, setResetPasswordLoading] = useState(false);
   const [form] = Form.useForm();
   const [editForm] = Form.useForm();
   const [resetPasswordForm] = Form.useForm();
+  const dispatch = useAppDispatch();
+  const staffs = useAppSelector(selectStaffs) as StaffRecord[];
+  const assignableBranches = useAppSelector(selectAssignableBranches) as AssignableBranch[];
+  const loading = useAppSelector(selectStaffsLoading);
+  const submitLoading = useAppSelector(selectStaffsSaving);
+  const managerSubmitLoading = useAppSelector(selectBranchManagerSaving);
+  const resetPasswordLoading = useAppSelector(selectResetStaffPasswordLoading);
 
   const isOwner = user?.role === 'gym_owner';
-  const isManager = user?.role === 'manager';
 
   const fetchStaffs = useCallback(async () => {
     try {
-      setLoading(true);
-      const params = isOwner && selectedBranch ? { branchId: selectedBranch } : undefined;
-      const response = await api.users.getStaff(params);
-      const data = (response as any)?.data ?? response;
-      const list = Array.isArray(data?.staffs) ? data.staffs : [];
-      const branches = Array.isArray(data?.assignableBranches) ? data.assignableBranches : [];
-      setStaffs(
-        list.map((s: any) => ({
-          key: s._id,
-          _id: s._id,
-          firstName: s.firstName ?? '',
-          lastName: s.lastName ?? '',
-          email: s.email ?? '',
-          role: s.role ?? 'staff',
-          branchId: s.branchId ?? '',
-          branchName: s.branchName ?? '—',
-          status: s.status ?? 'active',
-          isActive: s.isActive !== false,
-          createdAt: s.createdAt ?? '',
-          createdBy: s.createdBy ?? null,
-        }))
-      );
-      setAssignableBranches(branches);
-    } catch (err) {
+      const params: { branchId?: string; roleFilter?: 'all' | 'staff' | 'managers' } = {};
+      if (isOwner && selectedBranch) {
+        params.branchId = selectedBranch;
+      }
+      if (isOwner) {
+        params.roleFilter = roleFilter;
+      }
+      await dispatch(fetchStaffsAsync(params)).unwrap();
+    } catch {
       message.error('Failed to load staff');
-      setStaffs([]);
-      setAssignableBranches([]);
-    } finally {
-      setLoading(false);
     }
-  }, [message, isOwner, selectedBranch]);
+  }, [dispatch, isOwner, message, selectedBranch, roleFilter]);
 
   useEffect(() => {
     fetchStaffs();
@@ -126,27 +130,50 @@ export default function StaffContent() {
   const handleCreateSubmit = async () => {
     try {
       const values = await form.validateFields();
-      setSubmitLoading(true);
       const branchId =
         user?.role === 'gym_owner'
           ? values.branchId
           : user?.branchId;
+      const selectedRole = values.userRole === 'manager' ? 'manager' : 'staff';
+      const firstName = values.firstName?.trim() ?? '';
+      const lastName = values.lastName?.trim() ?? '';
+      const phone = values.phone;
 
-      await api.staffs.createStaff({
-        firstName: values.firstName?.trim() ?? '',
-        lastName: values.lastName?.trim() ?? '',
-        email: values.email?.trim() ?? '',
-        password: values.password,
-        branchId,
-      });
-      message.success('Staff created successfully');
+      if (selectedRole === 'manager') {
+        if (!user?.gymId) {
+          message.error('Gym ID not found.');
+          return;
+        }
+        await dispatch(createBranchManagerAsync({
+          firstName,
+          lastName,
+          phone,
+          password: values.password,
+          gymId: user.gymId,
+          branchId,
+        })).unwrap();
+      } else {
+        await dispatch(createStaffAsync({
+          firstName,
+          lastName,
+          phone,
+          password: values.password,
+          branchId,
+        })).unwrap();
+      }
+      message.success(selectedRole === 'manager' ? 'Manager created successfully' : 'Staff created successfully');
       setCreateModalOpen(false);
+      form.resetFields();
       fetchStaffs();
     } catch (err: any) {
       if (err?.errorFields) return;
-      message.error(err?.message ?? 'Failed to create staff');
-    } finally {
-      setSubmitLoading(false);
+      const apiMessage =
+        (typeof err === 'string' ? err : undefined) ||
+        err?.error?.details?.message ||
+        err?.details?.message ||
+        err?.error?.message ||
+        err?.message;
+      message.error(apiMessage ?? 'Failed to create user');
     }
   };
 
@@ -166,15 +193,17 @@ export default function StaffContent() {
     if (!editingStaff) return;
     try {
       const values = await editForm.validateFields();
-      setSubmitLoading(true);
-      await api.staffs.updateStaff(editingStaff._id, {
+      await dispatch(updateStaffAsync({
+        id: editingStaff._id,
+        data: {
         firstName: values.firstName?.trim(),
         lastName: values.lastName?.trim(),
         status: values.status,
         isActive: values.isActive,
         // Only owners can change branch assignment; managers keep existing branch
         branchId: isOwner ? (values.branchId || undefined) : undefined,
-      });
+        },
+      })).unwrap();
       message.success('Staff updated successfully');
       setEditModalOpen(false);
       setEditingStaff(null);
@@ -182,8 +211,6 @@ export default function StaffContent() {
     } catch (err: any) {
       if (err?.errorFields) return;
       message.error(err?.message ?? 'Failed to update staff');
-    } finally {
-      setSubmitLoading(false);
     }
   };
 
@@ -200,7 +227,7 @@ export default function StaffContent() {
       onOk: async () => {
         try {
           setStatusLoadingId(record._id);
-          await api.users.updateStatus(record._id, { isActive: false });
+          await dispatch(updateStaffStatusAsync({ userId: record._id, isActive: false })).unwrap();
           message.success('User deactivated');
           fetchStaffs();
         } catch (err: any) {
@@ -215,7 +242,7 @@ export default function StaffContent() {
   const handleActivate = async (record: StaffRecord) => {
     try {
       setStatusLoadingId(record._id);
-      await api.users.updateStatus(record._id, { isActive: true });
+      await dispatch(updateStaffStatusAsync({ userId: record._id, isActive: true })).unwrap();
       message.success('User activated');
       fetchStaffs();
     } catch (err: any) {
@@ -227,11 +254,11 @@ export default function StaffContent() {
 
   const handleDelete = async (id: string) => {
     try {
-      await api.staffs.deleteStaff(id);
+      await dispatch(deleteStaffAsync(id)).unwrap();
       message.success('Staff deleted');
       fetchStaffs();
-    } catch (err) {
-      message.error('Failed to delete staff');
+    } catch (err: any) {
+      message.error(err?.message ?? 'Failed to delete staff');
     }
   };
 
@@ -249,10 +276,10 @@ export default function StaffContent() {
         message.error('Passwords do not match');
         return;
       }
-      setResetPasswordLoading(true);
-      const res = await api.auth.resetUserPassword(resetPasswordStaff._id, {
+      const res = await dispatch(resetStaffPasswordAsync({
+        userId: resetPasswordStaff._id,
         newPassword: values.newPassword,
-      });
+      })).unwrap();
       const data = res as { success?: boolean; error?: string; message?: string; data?: unknown };
       const success = data?.success === true;
       const errMsg =
@@ -273,8 +300,6 @@ export default function StaffContent() {
     } catch (err: any) {
       if (err?.errorFields) return;
       message.error(err?.message ?? 'Failed to reset password');
-    } finally {
-      setResetPasswordLoading(false);
     }
   };
 
@@ -285,7 +310,7 @@ export default function StaffContent() {
       width: 180,
       render: (_, record) => `${record.firstName || ''} ${record.lastName || ''}`.trim() || '—',
     },
-    { title: 'Email', dataIndex: 'email', key: 'email', ellipsis: true },
+    { title: 'Phone', dataIndex: 'phone', key: 'phone', ellipsis: true, render: (v: string) => (v ? `+91 ${v}` : '—') },
     {
       title: 'Role',
       dataIndex: 'role',
@@ -382,46 +407,36 @@ export default function StaffContent() {
   const branchOptions = assignableBranches.map((b) => ({ label: b.name, value: b._id }));
 
   return (
-    <div style={{ padding: 24, maxWidth: 1200, margin: '0 auto' }}>
-      <div
-        style={{
-          marginBottom: 24,
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-          flexWrap: 'wrap',
-          gap: 16,
-        }}
-      >
-        <div>
-          <Title level={2} style={{ margin: 0, marginBottom: 4 }}>
-            Staff
-          </Title>
-          <Text type="secondary">Manage managers and staff, roles, and branch assignments</Text>
-        </div>
-        <Space wrap>
-          {isOwner && (
-            <Select
-              value={roleFilter}
-              onChange={(v) => setRoleFilter(v)}
-              style={{ width: 140 }}
-              options={[
-                { label: 'All', value: 'all' },
-                { label: 'Managers', value: 'managers' },
-                { label: 'Staff', value: 'staff' },
-              ]}
-            />
-          )}
-          <Button type="primary" icon={<UserAddOutlined />} onClick={handleCreate}>
-            Create Staff
-          </Button>
-        </Space>
-      </div>
+    <div style={{ padding: '24px' }}>
+      <Row justify="space-between" align="middle" style={{ marginBottom: 16 }}>
+        <Col>
+          <Title level={4} style={{ margin: 0 }}>Staff</Title>
+        </Col>
+        <Col>
+          <Flex align="center" gap={8}>
+            {isOwner && (
+              <Select
+                value={roleFilter}
+                onChange={(v) => setRoleFilter(v)}
+                style={{ width: 140 }}
+                options={[
+                  { label: 'All', value: 'all' },
+                  { label: 'Managers', value: 'managers' },
+                  { label: 'Staff', value: 'staff' },
+                ]}
+              />
+            )}
+            <Button type="primary" icon={<UserAddOutlined />} onClick={handleCreate}>
+              Create User
+            </Button>
+          </Flex>
+        </Col>
+      </Row>
 
       <Card style={{ boxShadow: '0 1px 2px rgba(0,0,0,0.04)' }}>
         <Table<StaffRecord>
           columns={columns}
-          dataSource={staffs.filter((s) => roleFilter === 'all' || (roleFilter === 'managers' && s.role === 'manager') || (roleFilter === 'staff' && s.role === 'staff'))}
+          dataSource={staffs}
           loading={loading && staffs.length > 0}
           rowKey="key"
           scroll={{ x: 900 }}
@@ -442,7 +457,7 @@ export default function StaffContent() {
                 style={{ padding: '32px 0' }}
               >
                 <Text type="secondary" style={{ display: 'block', marginTop: 8 }}>
-                  Add staff using the &quot;Create Staff&quot; button above.
+                  Add users using the &quot;Create User&quot; button above.
                 </Text>
               </Empty>
             ),
@@ -451,16 +466,30 @@ export default function StaffContent() {
       </Card>
 
       <Modal
-        title="Create Staff"
+        title="Create User"
         open={createModalOpen}
         onOk={() => form.submit()}
         onCancel={() => setCreateModalOpen(false)}
-        confirmLoading={submitLoading}
+        confirmLoading={submitLoading || managerSubmitLoading}
         okText="Create"
+        rootClassName="staff-modal"
         destroyOnHidden={false}
         width={480}
       >
         <Form form={form} layout="vertical" onFinish={handleCreateSubmit}>
+          <Form.Item
+            name="userRole"
+            label="Role"
+            initialValue="staff"
+            rules={[{ required: true, message: 'Select role' }]}
+          >
+            <Select
+              options={[
+                { label: 'Staff', value: 'staff' },
+                { label: 'Manager', value: 'manager' },
+              ]}
+            />
+          </Form.Item>
           <Form.Item
             name="firstName"
             label="First Name"
@@ -476,14 +505,22 @@ export default function StaffContent() {
             <Input placeholder="Last name" />
           </Form.Item>
           <Form.Item
-            name="email"
-            label="Email"
+            name="phone"
+            label="Phone"
+            normalize={(v) => sanitizeIndianMobileDigits(v as string)}
             rules={[
-              { required: true, message: 'Enter email' },
-              { type: 'email', message: 'Enter a valid email' },
+              mobileRequiredRule,
+              indianMobileTenDigitsRule(),
             ]}
           >
-            <Input type="email" placeholder="email@example.com" />
+            <Input
+              prefix="+91"
+              placeholder="9876543210"
+              maxLength={10}
+              inputMode="numeric"
+              autoComplete="tel-national"
+              onKeyDown={blockNonDigitKeysOnPhoneField}
+            />
           </Form.Item>
           <Form.Item
             name="password"
@@ -547,6 +584,7 @@ export default function StaffContent() {
         }}
         confirmLoading={submitLoading}
         okText="Update"
+        rootClassName="staff-modal"
         destroyOnHidden={false}
         width={480}
       >
@@ -618,6 +656,7 @@ export default function StaffContent() {
         }}
         confirmLoading={resetPasswordLoading}
         okText="Reset Password"
+        rootClassName="staff-modal"
         width={400}
       >
         {resetPasswordStaff && (
@@ -626,7 +665,7 @@ export default function StaffContent() {
             <strong>
               {resetPasswordStaff.firstName} {resetPasswordStaff.lastName}
             </strong>{' '}
-            ({resetPasswordStaff.email}).
+            ({resetPasswordStaff.phone ? `+91 ${resetPasswordStaff.phone}` : 'No phone'}).
           </p>
         )}
         <Form form={resetPasswordForm} layout="vertical" onFinish={handleResetPasswordSubmit}>

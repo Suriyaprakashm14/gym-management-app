@@ -1,6 +1,5 @@
 'use client';
 
-
 import React, { useState, useEffect } from 'react';
 import {
   Form,
@@ -25,37 +24,53 @@ import {
   MinusCircleOutlined,
   CheckOutlined,
   VideoCameraOutlined,
+  PhoneOutlined,
 } from '@ant-design/icons';
 import { useAuth } from '../../contexts/AuthContext';
 import { api } from '../../utils/api';
 import {
-  emailRule,
-  emailPatternRule,
   mobileRequiredRule,
-  dobValidator,
+  mobilePatternRule,
   sanitizeIndianMobileDigits,
   indianMobileTenDigitsRule,
-
+  normalizeIndianMobileDigits,
   blockNonDigitKeysOnPhoneField,
   toE164IndiaLocal,
 } from '../../utils/validation';
 import { useAppDispatch, useAppSelector } from '../../redux/hooks';
-import { addMember, fetchMembers, normalizeMember } from '../../redux/membersSlice';
-import { fetchMembershipPrices } from '../../redux/membershipsSlice';
+import {
+  fetchMembers,
+  normalizeMember,
+  createMemberAsync,
+  createMemberPersonalDetailsAsync,
+  selectCreateMemberLoading,
+} from '../../redux/membersSlice';
+import {
+  fetchMembershipPrices,
+  selectMembershipPrices,
+  selectMembershipPricesLoading,
+} from '../../redux/membershipsSlice';
+import {
+  fetchBranchesAsync,
+  selectBranches,
+  selectBranchesLoading,
+} from '../../redux/branchesSlice';
 import FaceCapture from '../biometrics/FaceCapture';
-import { Fingerprint } from 'lucide-react'; // If not already imported
+import { Fingerprint } from 'lucide-react';
 import { useMemberFingerprintWebAuthn } from '../../hooks/useMemberFingerprintWebAuthn';
 import { IndianMobileFormField } from '../forms/IndianMobileFormField';
-
+import {
+  DEFAULT_CITY_CODE,
+  DEFAULT_COUNTRY_CODE,
+  DEFAULT_STATE_CODE,
+  getCityOptions,
+  getCountryOptions,
+  getStateOptions,
+  hasCityOptions,
+} from '../../utils/addressOptions';
 
 const { Option } = Select;
 const { Text } = Typography;
-
-interface Branch {
-  _id: string;
-  name: string;
-  status: string;
-}
 
 interface AddMemberFormProps {
   visible?: boolean;
@@ -66,129 +81,98 @@ interface AddMemberFormProps {
 export default function AddMemberForm({ visible = true, onSuccess, onCancel }: AddMemberFormProps) {
   const { message } = App.useApp();
   const [form] = Form.useForm();
-  const [loading, setLoading] = useState(false);
   const [fileList, setFileList] = useState<any[]>([]);
-  const [branches, setBranches] = useState<Branch[]>([]);
-  const [branchesLoading, setBranchesLoading] = useState(false);
-  const [membershipTypes, setMembershipTypes] = useState<any[]>([]);
-  const [membershipTypesLoading, setMembershipTypesLoading] = useState(false);
   const [fingerprintRegistered, setFingerprintRegistered] = useState(false);
   const [faceRegistered, setFaceRegistered] = useState(false);
   const [facePersonId, setFacePersonId] = useState<string | null>(null);
-  const [fingerprintLoading, setFingerprintLoading] = useState(false);
   const [faceScanning, setFaceScanning] = useState(false);
   const [faceModalOpen, setFaceModalOpen] = useState(false);
+  const [fingerprintEnrolling, setFingerprintEnrolling] = useState(false);
+  const [submitLoading, setSubmitLoading] = useState(false);
+
   const { user } = useAuth();
   const dispatch = useAppDispatch();
-  const reduxPlans = useAppSelector((s) => s.membershipPrices.items);
   const { registerPendingFingerprint, attachPendingFingerprintToMember } = useMemberFingerprintWebAuthn();
-  const [fingerprintEnrolling, setFingerprintEnrolling] = useState(false);
 
-  const normalizePlans = React.useCallback((list: any[]) => {
-    return list
-      .filter((m: any) => m.isActive !== false)
-      .map((m: any) => ({
-        id: m.id ?? m._id,
-        _id: m._id ?? m.id,
-        type: typeof m.type === 'string' ? m.type.trim() : (m.name || String(m._id || m.id || '')),
-        name: m.name ?? m.type,
-        price: m.price,
-        duration: m.duration,
-        isActive: m.isActive,
-      }));
-  }, []);
-
-  // Use Redux plans immediately so dropdown renders promptly (MembersLayout prefetches)
-  const plansFromRedux = React.useMemo(
-    () => (Array.isArray(reduxPlans) && reduxPlans.length > 0 ? normalizePlans(reduxPlans) : []),
-    [reduxPlans, normalizePlans]
+  // ── Redux state ──────────────────────────────────────────────────────────────
+  const reduxPlans = useAppSelector(selectMembershipPrices);
+  const plansLoading = useAppSelector(selectMembershipPricesLoading);
+  const branches = useAppSelector(selectBranches);
+  const branchesLoading = useAppSelector(selectBranchesLoading);
+  const createLoading = useAppSelector(selectCreateMemberLoading);
+  const selectedCountry = Form.useWatch('country', form) as string | undefined;
+  const selectedState = Form.useWatch('state', form) as string | undefined;
+  const countryOptions = React.useMemo(() => getCountryOptions(), []);
+  const stateOptions = React.useMemo(
+    () => getStateOptions(selectedCountry || DEFAULT_COUNTRY_CODE),
+    [selectedCountry]
+  );
+  const cityOptions = React.useMemo(
+    () => getCityOptions(selectedState || DEFAULT_STATE_CODE),
+    [selectedState]
   );
 
-  const fetchMembershipTypes = React.useCallback(async () => {
-    setMembershipTypesLoading(true);
-    try {
-      const response = await api.membershipPrices.getAll();
-      const listSource: any =
-        Array.isArray(response)
-          ? response
-          : Array.isArray((response as any)?.data)
-            ? (response as any).data
-            : Array.isArray((response as any)?.items)
-              ? (response as any).items
-              : [];
-      const list: any[] = Array.isArray(listSource) ? listSource : [];
-      setMembershipTypes(normalizePlans(list));
-    } catch {
-      message.error('Failed to fetch membership types');
-      setMembershipTypes([]);
-    } finally {
-      setMembershipTypesLoading(false);
-    }
-  }, [message, normalizePlans]);
+  // Derive active plans with the shape the form needs
+  const membershipTypes = React.useMemo(
+    () =>
+      reduxPlans
+        .filter((m) => m.isActive !== false)
+        .map((m) => ({
+          id: m.id,
+          type: typeof m.type === 'string' ? m.type.trim() : m.name || String(m.id || ''),
+          name: m.name ?? m.type,
+          price: m.price,
+          duration: m.duration,
+        })),
+    [reduxPlans]
+  );
 
-  // Use Redux plans immediately so dropdown renders promptly
-  useEffect(() => {
-    if (plansFromRedux.length > 0) setMembershipTypes(plansFromRedux);
-  }, [plansFromRedux]);
-
-  // Fetch once on mount if Redux is empty (e.g. navigated straight to add-member page)
-  useEffect(() => {
-    if (plansFromRedux.length === 0) fetchMembershipTypes();
-  }, [fetchMembershipTypes, plansFromRedux.length]);
-
+  // ── Fetch on mount / visibility change ───────────────────────────────────────
   const prevVisibleRef = React.useRef(false);
   useEffect(() => {
     if (visible && !prevVisibleRef.current) {
       dispatch(fetchMembershipPrices());
-      fetchMembershipTypes();
+      if (user?.role === 'gym_owner' && user?.gymId) {
+        dispatch(fetchBranchesAsync(user.gymId));
+      }
     }
     prevVisibleRef.current = visible;
-  }, [visible, dispatch, fetchMembershipTypes]);
+  }, [visible, dispatch, user?.role, user?.gymId]);
 
   useEffect(() => {
-    const fetchBranches = async () => {
-      if (!user?.gymId) return;
-      setBranchesLoading(true);
-      try {
-        let branchesData: Branch[] = [];
-        if (user.role === 'gym_owner') {
-          const response = await api.branches.getByGym(user.gymId);
-          const rawBranches =
-            (response as any)?.branches || (Array.isArray(response) ? response : []);
-          branchesData = Array.isArray(rawBranches) ? rawBranches : [];
-        }
-        setBranches(branchesData);
-      } catch {
-        message.error('Failed to fetch branches');
-      } finally {
-        setBranchesLoading(false);
-      }
-    };
-    // Only owners fetch branch list; managers/staff rely on their own branchId
-    if (user?.role === 'gym_owner') {
-      fetchBranches();
-    }
-  }, [user?.gymId, user?.role, form]);
+    if (!visible) return;
+    const country = form.getFieldValue('country');
+    const state = form.getFieldValue('state');
+    const city = form.getFieldValue('city');
 
+    if (!country) {
+      form.setFieldValue('country', DEFAULT_COUNTRY_CODE);
+    }
+    if (!state) {
+      form.setFieldValue('state', DEFAULT_STATE_CODE);
+    }
+    if (!city) {
+      form.setFieldValue('city', DEFAULT_CITY_CODE);
+    }
+  }, [visible, form]);
+
+  // ── Handlers ─────────────────────────────────────────────────────────────────
   const handleSubmit = async (values: any) => {
-    setLoading(true);
+    setSubmitLoading(true);
+    let memberId: string | null = null;
     try {
+      // Build FormData for member creation
       const formData = new FormData();
       formData.append('firstName', values.firstName);
       formData.append('lastName', values.lastName);
       formData.append('phone', normalizeIndianMobileDigits(values.phoneNumber));
       formData.append('role', values.role ?? 'member');
       formData.append('branchId', values.branchId);
-      // Fingerprint enrollment happens after member creation (WebAuthn).
-      
-      // Add fingerprint ID if available (similar to facePersonId)
-      // if (fingerprintAdded?.fi ngerprintId) {
-      //   formData.append('fingerprintId', fingerprintData.fingerprintId);
-      // }
-      
       if (facePersonId) formData.append('facePersonId', facePersonId);
       if (values.dateOfBirth) {
-        const d = values.dateOfBirth instanceof Date ? values.dateOfBirth : new Date(values.dateOfBirth);
+        const d = values.dateOfBirth instanceof Date
+          ? values.dateOfBirth
+          : new Date(values.dateOfBirth);
         if (!Number.isNaN(d.getTime())) {
           formData.append('dateOfBirth', d.toISOString().split('T')[0]);
         }
@@ -197,41 +181,48 @@ export default function AddMemberForm({ visible = true, onSuccess, onCancel }: A
         formData.append('image', fileList[0].originFileObj);
       }
 
-      const memberResponse = await api.members.create(formData);
-      const raw = (memberResponse as any)?.data ?? memberResponse;
-      const memberObj = raw?.member ?? raw;
-      let memberId: string | null = memberObj?.id ?? memberObj?._id;
+      // ── Dispatch create member (goes directly to backend via axiosClient) ──
+      const memberObj = await dispatch(createMemberAsync(formData)).unwrap();
+      memberId = memberObj?.id ?? memberObj?._id ?? null;
       if (memberId != null && typeof memberId !== 'string') memberId = String(memberId);
       if (!memberId) throw new Error('Failed to get member ID from response');
 
+      // ── Dispatch create personal details (non-critical) ───────────────────
       const gender = values.personalGender === 'other' ? 'others' : values.personalGender;
       try {
-        await api.membersPersonalDetails.create({
-          memberId,
-          gender,
-          streetAddress: values.streetAddress || '',
-          city: values.city || '',
-          zipcode: values.zipcode || '',
-          state: values.state || '',
-          country: values.country || '',
-          phoneNumber: toE164IndiaLocal(values.phoneNumber),
-          emergencyContacts: (values.emergencyContacts || []).map((c: { name?: string; phone?: string; relation?: string }) => ({
-            ...c,
-            phone: c?.phone != null && String(c.phone).trim() !== '' ? toE164IndiaLocal(String(c.phone)) : c.phone,
-          })),
-          dateOfBirth: values.dateOfBirth
-            ? new Date(values.dateOfBirth).toISOString().split('T')[0]
-            : '',
-          membership: values.membership ? String(values.membership).trim() : '',
-          planQuantity: values.planQuantity ?? 1,
-          paidAmount: values.paidAmount ? String(values.paidAmount) : '0',
-          membershipStartDate: values.membershipStartDate
-            ? (values.membershipStartDate instanceof Date
-                ? values.membershipStartDate
-                : new Date(values.membershipStartDate)
-              ).toISOString()
-            : undefined,
-        });
+        await dispatch(
+          createMemberPersonalDetailsAsync({
+            memberId,
+            gender,
+            streetAddress: values.streetAddress || '',
+            city: values.city || '',
+            zipcode: values.zipcode || '',
+            state: values.state || '',
+            country: values.country || '',
+            phoneNumber: toE164IndiaLocal(values.phoneNumber),
+            emergencyContacts: (values.emergencyContacts || []).map(
+              (c: { name?: string; phone?: string; relation?: string }) => ({
+                ...c,
+                phone:
+                  c?.phone != null && String(c.phone).trim() !== ''
+                    ? toE164IndiaLocal(String(c.phone))
+                    : c.phone,
+              })
+            ),
+            dateOfBirth: values.dateOfBirth
+              ? new Date(values.dateOfBirth).toISOString().split('T')[0]
+              : '',
+            membership: values.membership ? String(values.membership).trim() : '',
+            planQuantity: values.planQuantity ?? 1,
+            paidAmount: values.paidAmount ? String(values.paidAmount) : '0',
+            membershipStartDate: values.membershipStartDate
+              ? (values.membershipStartDate instanceof Date
+                  ? values.membershipStartDate
+                  : new Date(values.membershipStartDate)
+                ).toISOString()
+              : undefined,
+          })
+        ).unwrap();
       } catch (detailsErr: any) {
         message.warning(
           detailsErr?.message ||
@@ -239,54 +230,49 @@ export default function AddMemberForm({ visible = true, onSuccess, onCancel }: A
         );
       }
 
-      const normalized = normalizeMember(memberObj ?? {}, {
-        id: memberId,
-        firstName: values.firstName,
-        lastName: values.lastName,
-        phone: normalizeIndianMobileDigits(values.phoneNumber),
-        membership: values.membership,
-      });
-      dispatch(addMember(normalized));
+      // ── Refresh members list ───────────────────────────────────────────────
       try {
         await dispatch(fetchMembers(undefined)).unwrap();
       } catch {
-        // e.g. 403 for owner; table still has new member from addMember
+        // 403 for owner is expected; store already has new member from createMemberAsync
       }
+
       message.success('Member created successfully');
-    form.resetFields();
-    setFileList([]);
-    setFingerprintRegistered(false);
-    setFaceRegistered(false);
-    setFacePersonId(null);
+      form.resetFields();
+      setFileList([]);
+      setFingerprintRegistered(false);
+      setFaceRegistered(false);
+      setFacePersonId(null);
 
-    // Attach pending fingerprint enrollment stored in session to the newly created member.
-    // This keeps the intended UX order: fingerprint first, then face, then final creation.
-    if (memberId) {
-      const attachRes = await attachPendingFingerprintToMember(memberId);
-      if (!attachRes.success) {
-        message.error(attachRes.message || 'Failed to attach fingerprint to member');
-        return;
+      // ── Attach pending fingerprint to the newly created member ─────────────
+      if (memberId) {
+        const attachRes = await attachPendingFingerprintToMember(memberId);
+        if (!attachRes.success) {
+          message.error(attachRes.message || 'Failed to attach fingerprint to member');
+          return;
+        }
       }
-    }
 
-    // Close modal after successful enrollment + member creation.
-    onSuccess?.();
-  } catch (err: any) {
-    message.error(err?.message || 'Failed to create member');
-  } finally {
-    setLoading(false);
-  }
-};
+      onSuccess?.();
+    } catch (err: any) {
+      message.error(err?.message || 'Failed to create member');
+    } finally {
+      setSubmitLoading(false);
+    }
+  };
 
   const handleRegisterPendingFingerprint = async () => {
     if (fingerprintEnrolling || fingerprintRegistered) return;
-
     setFingerprintEnrolling(true);
     try {
       const firstName = form.getFieldValue('firstName') as string | undefined;
       const lastName = form.getFieldValue('lastName') as string | undefined;
-      const phoneDigits = normalizeIndianMobileDigits(form.getFieldValue('phoneNumber') as string | undefined);
-      const fullName = `${firstName || ''} ${lastName || ''}`.trim() || (phoneDigits ? `+91${phoneDigits}` : 'Pending Member');
+      const phoneDigits = normalizeIndianMobileDigits(
+        form.getFieldValue('phoneNumber') as string | undefined
+      );
+      const fullName =
+        `${firstName || ''} ${lastName || ''}`.trim() ||
+        (phoneDigits ? `+91${phoneDigits}` : 'Pending Member');
 
       const res = await registerPendingFingerprint({
         userName: phoneDigits ? `+91${phoneDigits}` : fullName,
@@ -305,10 +291,14 @@ export default function AddMemberForm({ visible = true, onSuccess, onCancel }: A
 
   const handleFaceCaptured = async (blob: Blob) => {
     try {
-      await form.validateFields(['firstName', 'lastName', 'email', 'branchId']);
+      await form.validateFields(['firstName', 'lastName', 'branchId']);
       setFaceScanning(true);
       const result = await api.biometrics.createFacePerson(blob);
-      if (result && typeof result === 'object' && (result as { success?: boolean }).success === false) {
+      if (
+        result &&
+        typeof result === 'object' &&
+        (result as { success?: boolean }).success === false
+      ) {
         const errMsg = (result as { error?: string }).error || 'Face registration failed';
         if (String(errMsg).toLowerCase().includes('face')) {
           message.warning('Face not detected clearly. Please retake the photo.');
@@ -334,12 +324,19 @@ export default function AddMemberForm({ visible = true, onSuccess, onCancel }: A
     }
   };
 
+  // ── Render ───────────────────────────────────────────────────────────────────
   return (
     <Form
       form={form}
       layout="vertical"
       onFinish={handleSubmit}
-      initialValues={{ role: 'member', personalGender: 'male' }}
+      initialValues={{
+        role: 'member',
+        personalGender: 'male',
+        country: DEFAULT_COUNTRY_CODE,
+        state: DEFAULT_STATE_CODE,
+        city: DEFAULT_CITY_CODE,
+      }}
     >
       <Row gutter={16}>
         <Col span={12}>
@@ -361,6 +358,7 @@ export default function AddMemberForm({ visible = true, onSuccess, onCancel }: A
           </Form.Item>
         </Col>
       </Row>
+
       <Row gutter={16}>
         <Col span={24}>
           <IndianMobileFormField
@@ -378,16 +376,14 @@ export default function AddMemberForm({ visible = true, onSuccess, onCancel }: A
           />
         </Col>
       </Row>
+
       {user?.role === 'gym_owner' ? (
         <Form.Item
           label="Branch"
           name="branchId"
           rules={[{ required: true, message: 'Please select branch' }]}
         >
-          <Select
-            placeholder="Select branch"
-            loading={branchesLoading}
-          >
+          <Select placeholder="Select branch" loading={branchesLoading}>
             {branches.map((b) => (
               <Option key={b._id} value={b._id}>
                 {b.name}
@@ -397,21 +393,15 @@ export default function AddMemberForm({ visible = true, onSuccess, onCancel }: A
         </Form.Item>
       ) : (
         <>
-          {/* Hidden field to carry branchId for manager/staff */}
           <Form.Item name="branchId" initialValue={user?.branchId} hidden>
             <Input type="hidden" />
           </Form.Item>
           <Form.Item label="Branch">
-            <Input
-              disabled
-              value={
-                (user as any)?.branchName ||
-                'My Branch'
-              }
-            />
+            <Input disabled value={(user as any)?.branchName || 'My Branch'} />
           </Form.Item>
         </>
       )}
+
       <Form.Item label="Profile photo" tooltip="Optional. Shown in members list and details.">
         <Upload
           fileList={fileList}
@@ -427,25 +417,9 @@ export default function AddMemberForm({ visible = true, onSuccess, onCancel }: A
           </div>
         </Upload>
       </Form.Item>
+
       <Divider>Personal details</Divider>
       <Row gutter={16}>
-        <Col span={12}>
-          <Form.Item
-            label="Phone Number"
-            name="phoneNumber"
-            normalize={(v) => sanitizeIndianMobileDigits(v as string)}
-            rules={[mobileRequiredRule, indianMobileTenDigitsRule()]}
-          >
-            <Input
-              prefix="+91"
-              placeholder="9876543210"
-              maxLength={10}
-              inputMode="numeric"
-              autoComplete="tel-national"
-              onKeyDown={blockNonDigitKeysOnPhoneField}
-            />
-          </Form.Item>
-        </Col>
         <Col span={12}>
           <Form.Item
             label="Gender"
@@ -460,25 +434,44 @@ export default function AddMemberForm({ visible = true, onSuccess, onCancel }: A
           </Form.Item>
         </Col>
       </Row>
-      <Form.Item
-        label="Date of Birth"
-        name="dateOfBirth"
-        
-      >
-        <DatePicker style={{ width: '100%' }} placeholder="Select date of birth" format="DD-MM-YYYY" />
+
+      <Form.Item label="Date of Birth" name="dateOfBirth">
+        <DatePicker
+          style={{ width: '100%' }}
+          placeholder="Select date of birth"
+          format="DD-MM-YYYY"
+        />
       </Form.Item>
+
       <Form.Item label="Street Address" name="streetAddress">
         <Input prefix={<HomeOutlined />} placeholder="Enter street address" />
       </Form.Item>
+
       <Row gutter={16}>
         <Col span={8}>
           <Form.Item label="City" name="city">
-            <Input placeholder="Enter city" />
+            <Select
+              placeholder="Select city"
+              options={cityOptions}
+              showSearch
+              optionFilterProp="label"
+              disabled={!hasCityOptions(selectedState || DEFAULT_STATE_CODE)}
+              notFoundContent="No city options available"
+            />
           </Form.Item>
         </Col>
         <Col span={8}>
           <Form.Item label="State" name="state">
-            <Input placeholder="Enter state" />
+            <Select
+              placeholder="Select state"
+              options={stateOptions}
+              showSearch
+              optionFilterProp="label"
+              onChange={(value) => {
+                form.setFieldValue('state', value);
+                form.setFieldValue('city', undefined);
+              }}
+            />
           </Form.Item>
         </Col>
         <Col span={8}>
@@ -487,8 +480,21 @@ export default function AddMemberForm({ visible = true, onSuccess, onCancel }: A
           </Form.Item>
         </Col>
       </Row>
+
       <Form.Item label="Country" name="country">
-        <Input placeholder="Enter country" />
+        <Select
+          placeholder="Select country"
+          options={countryOptions}
+          showSearch
+          optionFilterProp="label"
+          onChange={(value) => {
+            form.setFieldsValue({
+              country: value,
+              state: undefined,
+              city: undefined,
+            });
+          }}
+        />
       </Form.Item>
 
       <Divider>Plan & payment</Divider>
@@ -502,18 +508,22 @@ export default function AddMemberForm({ visible = true, onSuccess, onCancel }: A
             >
               <Select
                 placeholder={
-                  membershipTypesLoading
+                  plansLoading
                     ? 'Loading plans...'
                     : membershipTypes.length === 0
                       ? 'No active plans found'
                       : 'Select plan'
                 }
-                loading={membershipTypesLoading}
+                loading={plansLoading}
                 showSearch
                 optionFilterProp="children"
-                notFoundContent={!membershipTypesLoading && membershipTypes.length === 0 ? 'No active membership plans. Add plans in Memberships first.' : null}
-                options={membershipTypes.map((m: any) => ({
-                  key: m.id ?? m._id,
+                notFoundContent={
+                  !plansLoading && membershipTypes.length === 0
+                    ? 'No active membership plans. Add plans in Memberships first.'
+                    : null
+                }
+                options={membershipTypes.map((m) => ({
+                  key: m.id,
                   value: m.type,
                   label: `${m.type} – ₹${Number(m.price) ?? 0} (${Number(m.duration) ?? 0} days)`,
                 }))}
@@ -526,26 +536,26 @@ export default function AddMemberForm({ visible = true, onSuccess, onCancel }: A
               name="planQuantity"
               initialValue={1}
               tooltip="Consecutive periods; after one ends, the next starts automatically."
-              rules={[
-                { type: 'number', min: 1, max: 12, message: 'Between 1 and 12' },
-              ]}
+              rules={[{ type: 'number', min: 1, max: 12, message: 'Between 1 and 12' }]}
             >
-              <InputNumber
-                style={{ width: '100%' }}
-                min={1}
-                max={12}
-              />
+              <InputNumber style={{ width: '100%' }} min={1} max={12} />
             </Form.Item>
           </Col>
         </Row>
+
         <Form.Item
           label="Start date"
           name="membershipStartDate"
-          tooltip="Membership period starts from this date. Used for calculations and renewal."
+          tooltip="Membership period starts from this date."
           initialValue={undefined}
         >
-          <DatePicker style={{ width: '100%' }} format="DD-MM-YYYY" disabledDate={(current) => current && current < dayjs().startOf('day')} />
+          <DatePicker
+            style={{ width: '100%' }}
+            format="DD-MM-YYYY"
+            disabledDate={(current) => current && current < dayjs().startOf('day')}
+          />
         </Form.Item>
+
         <Form.Item
           noStyle
           shouldUpdate={(prev, curr) =>
@@ -554,7 +564,7 @@ export default function AddMemberForm({ visible = true, onSuccess, onCancel }: A
         >
           {() => {
             const plan = membershipTypes.find(
-              (m: any) => m.type === form.getFieldValue('membership')
+              (m) => m.type === form.getFieldValue('membership')
             );
             const qty = form.getFieldValue('planQuantity') || 1;
             const maxAmount =
@@ -567,6 +577,7 @@ export default function AddMemberForm({ visible = true, onSuccess, onCancel }: A
             ) : null;
           }}
         </Form.Item>
+
         <Form.Item
           label="Paid amount"
           name="paidAmount"
@@ -581,12 +592,12 @@ export default function AddMemberForm({ visible = true, onSuccess, onCancel }: A
                 const selectedType = form.getFieldValue('membership');
                 const quantity = form.getFieldValue('planQuantity') || 1;
                 if (!selectedType) return Promise.resolve();
-                const plan = membershipTypes.find((m: any) => m.type === selectedType);
+                const plan = membershipTypes.find((m) => m.type === selectedType);
                 if (!plan || typeof plan.price !== 'number') return Promise.resolve();
                 const maxAmount = plan.price * quantity;
                 if (value > maxAmount) {
                   return Promise.reject(
-                    new Error(`Cannot exceed maximum (₹${maxAmount.toLocaleString('en-IN')})`),
+                    new Error(`Cannot exceed maximum (₹${maxAmount.toLocaleString('en-IN')})`)
                   );
                 }
                 return Promise.resolve();
@@ -601,6 +612,7 @@ export default function AddMemberForm({ visible = true, onSuccess, onCancel }: A
           />
         </Form.Item>
       </Card>
+
       <Form.List name="emergencyContacts">
         {(fields, { add, remove }) => (
           <>
@@ -634,7 +646,10 @@ export default function AddMemberForm({ visible = true, onSuccess, onCancel }: A
                       {...rest}
                       name={[name, 'phone']}
                       normalize={(v) => sanitizeIndianMobileDigits(v as string)}
-                      rules={[{ required: true, message: 'Missing phone number' }, indianMobileTenDigitsRule()]}
+                      rules={[
+                        { required: true, message: 'Missing phone number' },
+                        indianMobileTenDigitsRule(),
+                      ]}
                     >
                       <Input
                         prefix="+91"
@@ -675,54 +690,47 @@ export default function AddMemberForm({ visible = true, onSuccess, onCancel }: A
           </>
         )}
       </Form.List>
+
       <Form.Item style={{ marginTop: 24 }}>
-  <div
-    style={{
-      display: 'flex',
-      flexWrap: 'wrap',
-      gap: 8,
-      alignItems: 'center',
-    }}
-  >
-    <Button
-      onClick={handleRegisterPendingFingerprint}
-      type={fingerprintRegistered ? 'primary' : 'default'}
-      loading={fingerprintEnrolling}
-      disabled={fingerprintEnrolling || fingerprintRegistered}
-      icon={fingerprintRegistered ? <CheckOutlined /> : <Fingerprint className="w-4 h-4" />}
-      style={fingerprintRegistered ? { background: '#52c41a', borderColor: '#52c41a' } : {}}
->
-  {fingerprintRegistered ? 'Fingerprint Registered' : 'Register Fingerprint'}
-</Button>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center' }}>
+          <Button
+            onClick={handleRegisterPendingFingerprint}
+            type={fingerprintRegistered ? 'primary' : 'default'}
+            loading={fingerprintEnrolling}
+            disabled={fingerprintEnrolling || fingerprintRegistered}
+            icon={fingerprintRegistered ? <CheckOutlined /> : <Fingerprint className="w-4 h-4" />}
+            style={fingerprintRegistered ? { background: '#52c41a', borderColor: '#52c41a' } : {}}
+          >
+            {fingerprintRegistered ? 'Fingerprint Registered' : 'Register Fingerprint'}
+          </Button>
 
+          <Button
+            onClick={() => setFaceModalOpen(true)}
+            loading={faceScanning}
+            type={faceRegistered ? 'primary' : 'default'}
+            disabled={!fingerprintRegistered || faceRegistered}
+            icon={faceRegistered ? <CheckOutlined /> : <VideoCameraOutlined />}
+            style={
+              faceRegistered
+                ? { background: '#52c41a', borderColor: '#52c41a', color: '#fff' }
+                : undefined
+            }
+          >
+            {faceRegistered ? 'Face Added' : 'Add Face Recognition'}
+          </Button>
 
-    <Button
-      onClick={() => setFaceModalOpen(true)}
-      loading={faceScanning}
-      type={faceRegistered ? 'primary' : 'default'}
-      disabled={!fingerprintRegistered || faceRegistered}
-      icon={faceRegistered ? <CheckOutlined /> : <VideoCameraOutlined />}
-      style={
-        faceRegistered
-          ? { background: '#52c41a', borderColor: '#52c41a', color: '#fff' }
-          : undefined
-      }
-    >
-      {faceRegistered ? 'Face Added' : 'Add Face Recognition'}
-    </Button>
-
-    <Button
-      type="primary"
-      htmlType="submit"
-      loading={loading}
-      size="large"
-      disabled={!fingerprintRegistered || !faceRegistered || fingerprintEnrolling}
-    >
-      Create Member
-    </Button>
-    <Button onClick={onCancel}>Cancel</Button>
-  </div>
-</Form.Item>
+          <Button
+            type="primary"
+            htmlType="submit"
+            loading={submitLoading || createLoading}
+            size="large"
+            disabled={!fingerprintRegistered || !faceRegistered || fingerprintEnrolling}
+          >
+            Create Member
+          </Button>
+          <Button onClick={onCancel}>Cancel</Button>
+        </div>
+      </Form.Item>
 
       <FaceCapture
         visible={faceModalOpen}

@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React from 'react';
 import {
   App,
   Modal,
@@ -14,7 +14,11 @@ import {
   PlusOutlined,
   CalendarOutlined,
 } from '@ant-design/icons';
-import { api } from '../../utils/api';
+import { useAppDispatch, useAppSelector } from '../../redux/hooks';
+import {
+  createMembershipPriceAsync,
+  selectCreateMembershipLoading,
+} from '../../redux/membershipsSlice';
 
 const { TextArea } = Input;
 
@@ -38,12 +42,12 @@ const CreateMembershipModal: React.FC<CreateMembershipModalProps> = ({
 }) => {
   const { message } = App.useApp();
   const [form] = Form.useForm();
-  const [loading, setLoading] = useState(false);
+  const dispatch = useAppDispatch();
+  const loading = useAppSelector(selectCreateMembershipLoading);
 
   const handleSubmit = async (values: MembershipFormData) => {
-    setLoading(true);
     try {
-      await api.membershipPrices.create(values);
+      await dispatch(createMembershipPriceAsync(values)).unwrap();
       message.success('Membership created successfully');
       form.resetFields();
       onClose();
@@ -52,8 +56,6 @@ const CreateMembershipModal: React.FC<CreateMembershipModalProps> = ({
       }
     } catch (error: any) {
       message.error(error.message || 'Failed to create membership');
-    } finally {
-      setLoading(false);
     }
   };
 

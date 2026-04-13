@@ -1,19 +1,17 @@
 'use client';
 
 import { Table, Typography, Tag, Button, Space, Tooltip, Popconfirm, App } from 'antd';
-import { PlusOutlined, EditOutlined, DeleteOutlined } from '@ant-design/icons';
+import { EditOutlined, DeleteOutlined } from '@ant-design/icons';
 import type { ColumnsType } from 'antd/es/table';
 import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { useAppDispatch, useAppSelector } from '../../redux/hooks';
-import { fetchMembershipPrices } from '../../redux/membershipsSlice';
+import { deleteMembershipPriceAsync, fetchMembershipPrices } from '../../redux/membershipsSlice';
 import { useAuth } from '../../contexts/AuthContext';
-import CreateMembershipModal from '../../components/members/CreateMembershipModal';
 import EditMembershipModal from '../../components/members/EditMembershipModal';
-import { api } from '../../utils/api';
 import PageLoader from '../../components/PageLoader';
 
-const { Title, Text } = Typography;
+const { Text } = Typography;
 
 const CANNOT_DELETE_MESSAGE = 'Cannot delete this membership plan because active users are currently assigned.';
 const CANNOT_DELETE_ACTIVE_MESSAGE = 'Cannot delete an active plan. Make it inactive first.';
@@ -27,7 +25,6 @@ export default function MembershipsPage() {
   const { items, loading, error } = useAppSelector((s) => s.membershipPrices);
   const router = useRouter();
   const { user } = useAuth();
-  const [createModalVisible, setCreateModalVisible] = useState(false);
   const [editModalVisible, setEditModalVisible] = useState(false);
   const [selectedMembership, setSelectedMembership] = useState<any>(null);
 
@@ -56,9 +53,8 @@ export default function MembershipsPage() {
     }
     const run = async () => {
       try {
-        await api.membershipPrices.delete(record.key);
+        await dispatch(deleteMembershipPriceAsync(record.key)).unwrap();
         message.success('Membership plan deleted');
-        dispatch(fetchMembershipPrices());
       } catch (err: any) {
         const msg = String(err?.message || '');
         if (msg.includes('active users') || msg.includes('currently assigned')) {
@@ -176,17 +172,7 @@ export default function MembershipsPage() {
   }
 
   return (
-    <div style={{ padding: 24 }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-        <Title level={3} style={{ margin: 0 }}>
-          Membership Prices
-        </Title>
-        {isGymOwner && (
-          <Button type="primary" icon={<PlusOutlined />} onClick={() => setCreateModalVisible(true)}>
-            Create Membership
-          </Button>
-        )}
-      </div>
+    <div>
       {error && items.length === 0 && (
         <Text type="danger" style={{ display: 'block', marginBottom: 12 }}>{error}</Text>
       )}
@@ -198,7 +184,6 @@ export default function MembershipsPage() {
         sticky
         scroll={{ x: 800, y: 500 }}
       />
-      <CreateMembershipModal visible={createModalVisible} onClose={() => setCreateModalVisible(false)} onSuccess={() => dispatch(fetchMembershipPrices())} />
       <EditMembershipModal visible={editModalVisible} onClose={() => setEditModalVisible(false)} onSuccess={() => dispatch(fetchMembershipPrices())} membership={selectedMembership} />
     </div>
   );

@@ -72,7 +72,7 @@ interface AttendanceData {
   allDates: string[];
 }
 
-const { Text, Title } = Typography;
+const { Text } = Typography;
 
 interface AttendanceMember {
   key: string;
@@ -313,14 +313,7 @@ export default function CheckInPage() {
   }
 
   return (
-    <div style={{ padding: 24 }}>
-      <div style={{ marginBottom: 24 }}>
-        <Title level={2} style={{ margin: 0, marginBottom: 8 }}>
-          Check-in Dashboard
-        </Title>
-        <Text type="secondary">Monitor member attendance and check-in status</Text>
-      </div>
-
+    <div>
       <Card style={{ marginBottom: 24 }}>
         <Row gutter={16} align="middle">
           <Col>
@@ -352,7 +345,7 @@ export default function CheckInPage() {
             </Space>
           </Col>
           <Col flex="auto" />
-          <Col>
+          {/* <Col>
             <Button type="primary" icon={<ReloadOutlined />} onClick={() => fetchAttendanceReport(true)} loading={loading}>
               Refresh
             </Button>
@@ -361,7 +354,7 @@ export default function CheckInPage() {
             <Button type="default" onClick={handleVerifyFingerprintTest} loading={verifyingFingerprint}>
               Verify Fingerprint (Test)
             </Button>
-          </Col>
+          </Col> */}
         </Row>
       </Card>
 

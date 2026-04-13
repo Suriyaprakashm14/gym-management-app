@@ -16,12 +16,14 @@ export default function AddMemberModal({ open, onClose }: AddMemberModalProps) {
       open={open}
       onCancel={onClose}
       footer={null}
-      width={720}
+      width={"60%"}
+      height={"90%"}
+      centered={true}
       destroyOnHidden={false}
       rootClassName="add-member-modal"
       styles={{
         body: {
-          maxHeight: 'min(72vh, 760px)',
+          maxHeight: 'min(80vh, 760px)',
           overflowY: 'auto',
           overflowX: 'hidden',
           padding: '16px 20px 20px',
